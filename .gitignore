@@ -1,0 +1,5 @@
+# runtime artifacts (regenerated per patrol)
+cluster-wiki.md
+*.log
+__pycache__/
+.venv/
