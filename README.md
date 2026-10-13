@@ -7,7 +7,10 @@ on a schedule, an LLM agentically explores a cluster **read-only**, validates re
 against a persistent **wiki** (its memory), updates/refines the wiki, and notifies a
 human (console / Slack) about anything it thinks is wrong.
 
-Design rationale + prior-art landscape: see `sentinel-poc-plan.md` (same folder).
+Prior-art landscape and positioning: see [`docs/prior-art.md`](docs/prior-art.md).
+Plans are tracked in [GitHub issues and milestones](../../milestones), not in a
+document — v0.1 *in-cluster*, v0.2 *compounding wiki*, v0.3 *operational
+hardening*, plus a `future` milestone for deferred direction.
 
 ## Run it
 
@@ -152,4 +155,4 @@ Real-cluster runs (2026-10-13, ols-demo-2 / OCP 4.21, EnMaaS GLM 5.3):
 - No per-scope cadence, no cost control beyond step budget, no notify-dedup
   beyond the anomaly log, wiki is a plain file (not MCP/vector memory).
 - Investigation engine is intentionally dumb-pluggable: swap in HolmesGPT or an
-  AgenticRun later rather than growing this (see plan §12).
+  AgenticRun later rather than growing this (see `docs/prior-art.md`).
