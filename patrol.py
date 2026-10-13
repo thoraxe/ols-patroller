@@ -69,7 +69,7 @@ MODEL      = os.environ.get("PATROL_MODEL", "")      # model id on that endpoint
 API_KEY    = os.environ.get("PATROL_API_KEY", "")
 KUBECTL    = os.environ.get("KUBECTL", "")  # resolved later
 SLACK_URL  = os.environ.get("SLACK_WEBHOOK_URL", "")
-MAX_STEPS  = int(os.environ.get("PATROL_MAX_STEPS", "15"))  # LLM turns per patrol
+MAX_STEPS  = int(os.environ.get("PATROL_MAX_STEPS", "30"))  # LLM turns per patrol
 TOOL_TIMEOUT = int(os.environ.get("PATROL_TOOL_TIMEOUT", "60"))
 OUT_CAP    = 15_000  # max chars of tool output fed back to the model
 
@@ -98,7 +98,9 @@ Your patrol, in order:
 3. Decide what a human should actually care about (don't cry wolf).
 4. Produce an UPDATED wiki and a refined watch-list for the next patrol.
 
-When you are DONE exploring, stop calling tools and produce your final report. It has three parts:
+When you are DONE exploring, call the PatrolReport tool with your final report — that is how
+you end the patrol (do not just stop calling tools). Do not keep exploring once you have
+covered the main areas. The report has three parts:
 - "findings": everything worth recording. severity is "info" (note / baseline / expected state),
   "warn" (drift, degradation, something suspicious), or "crit" (broken, needs a human now).
   Give each finding short "evidence" citing what you actually observed.
@@ -368,7 +370,7 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
         f"=== CLUSTER WIKI (your prior notes — may be stale, verify against reality) ===\n{wiki}\n\n"
         f"Begin your patrol. Explore with kubectl_readonly. You have a hard budget of "
         f"~{max_steps} turns — once you have covered the main areas or hit diminishing "
-        f"returns, produce your final report."
+        f"returns, call PatrolReport with your final report."
     )
 
     model = make_model()

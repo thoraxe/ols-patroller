@@ -88,7 +88,7 @@ patrol N writes the rules patrol N+1 follows.
 | `PATROL_MODEL` | — | model id on that endpoint (required) |
 | `KUBECTL` | `oc`→`kubectl` | cluster CLI |
 | `SLACK_WEBHOOK_URL` | — | if set, notifications also go to Slack |
-| `PATROL_MAX_STEPS` | `15` | tool-step budget per patrol |
+| `PATROL_MAX_STEPS` | `30` | LLM-turn budget per patrol (raised from 15 after real-cluster runs; GLM needs >15 turns even single-node — budget exhaustion triggers the salvage pass) |
 | `PATROL_INTERVAL` | `900` | seconds (`--loop`) |
 | `PATROL_TOOL_TIMEOUT` | `60` | per-command timeout |
 
