@@ -61,7 +61,6 @@ from deepagents import (
     register_harness_profile,
 )
 from deepagents.middleware.filesystem import FilesystemMiddleware
-from langchain.agents.structured_output import ToolStrategy
 
 # --------------------------------------------------------------------------- config
 BASE_URL   = os.environ.get("PATROL_BASE_URL", "")   # e.g. https://api.example.com/v1
@@ -98,17 +97,14 @@ Your patrol, in order:
 3. Decide what a human should actually care about (don't cry wolf).
 4. Produce an UPDATED wiki and a refined watch-list for the next patrol.
 
-When you are DONE exploring, call the PatrolReport tool with your final report — that is how
-you end the patrol (do not just stop calling tools). Do not keep exploring once you have
-covered the main areas. The report has three parts:
-- "findings": everything worth recording. severity is "info" (note / baseline / expected state),
-  "warn" (drift, degradation, something suspicious), or "crit" (broken, needs a human now).
-  Give each finding short "evidence" citing what you actually observed.
-- "notifications": ONLY the warn/crit findings a human should actually see (don't cry wolf),
-  as human-readable messages.
-- "updated_wiki": the FULL new markdown content of the cluster wiki. Keep it well structured
-  with sections: Topology, Baselines, Watch-list, Open questions, Anomaly log. Tag entries with
-  (source, timestamp, confidence) inline and expire stale ones.
+When you are DONE exploring, stop calling tools and write your final summary as plain text:
+your key findings with severity and the evidence you saw, what you verified or corrected
+against the wiki, and what the next patrol should watch. Use the severity vocabulary
+info (note/baseline/expected), warn (drift/degradation/suspicious), crit (broken,
+needs a human now). Do not keep exploring once you have covered the main areas — a
+complete, honest summary of a focused patrol beats an exhaustive sweep. A separate
+reporting step will format your patrol into its final structured report, so write
+for that reader: concrete, specific, no filler.
 """
 
 WIKI_SEED = """\
@@ -342,6 +338,55 @@ def report_fields(report: object) -> tuple[list[dict], list[str], str]:
     return ([], [], "")
 
 
+REPORT_CONTRACT = """\
+Produce the final PatrolReport for the cluster patrol above:
+- "findings": everything worth recording. severity: "info" (note / baseline /
+  expected state), "warn" (drift, degradation, something suspicious), "crit"
+  (broken, needs a human now). Give each finding short "evidence" citing what was
+  actually observed.
+- "notifications": ONLY the warn/crit findings a human should actually see (don't
+  cry wolf), as human-readable messages.
+- "updated_wiki": the FULL new markdown content of the cluster wiki, well
+  structured with sections: Topology, Baselines, Watch-list, Open questions,
+  Anomaly log. Tag entries with (source, timestamp, confidence) inline and expire
+  stale ones."""
+
+
+async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool):
+    """Tool-free structured-output pass over the finished patrol conversation.
+
+    Same pattern as the OLS agentic sandbox's "shape pass": the agent explores
+    freely (auto tool choice, natural termination); this pass converts the
+    conversation — including the patrol's plain-text final summary, if it wrote
+    one — into the typed PatrolReport. It runs identically whether the patrol
+    completed naturally or was cut off by the step budget, so there is one
+    reporting code path and no salvage special-case.
+    """
+    prefix = ("You are the REPORTING PASS for the cluster patrol recorded above. "
+              "The patrol completed and wrote its final summary. "
+              if not budget_cut else
+              "You are the REPORTING PASS for the cluster patrol recorded above. "
+              "The patrol was CUT OFF by its step budget mid-exploration; commands "
+              "marked 'not executed' never ran. Report only on what was actually "
+              "observed. ")
+    structured = model.with_structured_output(PatrolReport, method="function_calling")
+    msgs: list = [*messages, {"role": "user", "content": prefix + REPORT_CONTRACT}]
+    for attempt in (1, 2):
+        reason = None
+        try:
+            result = await structured.ainvoke(msgs)
+            if result is not None:
+                return result
+            reason = "empty result"
+        except Exception as e:  # noqa: BLE001
+            reason = str(e)
+        print(f"[patrol] reporting pass attempt {attempt} failed ({reason})",
+              file=sys.stderr)
+        msgs = [*msgs, {"role": "user",
+                        "content": "That was not a valid PatrolReport. Produce it now."}]
+    return None
+
+
 # --------------------------------------------------------------------------- one patrol
 async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
                      max_steps: int) -> None:
@@ -370,16 +415,21 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
         f"=== CLUSTER WIKI (your prior notes — may be stale, verify against reality) ===\n{wiki}\n\n"
         f"Begin your patrol. Explore with kubectl_readonly. You have a hard budget of "
         f"~{max_steps} turns — once you have covered the main areas or hit diminishing "
-        f"returns, call PatrolReport with your final report."
+        f"returns, stop exploring and write your final summary."
     )
 
     model = make_model()
     _disable_default_subagent(model)
+    # No response_format here: an in-agent ToolStrategy forces tool_choice="any" on
+    # every turn, which removes the model's natural stopping signal (GLM under it
+    # never self-terminated — patrols always ran to the budget). Instead the agent
+    # explores with auto tool choice and ends on its own; the typed PatrolReport
+    # comes from the separate tool-free shape_report pass below — the same pattern
+    # the OLS agentic sandbox uses.
     agent = create_deep_agent(
         model=model,
         tools=[make_kubectl_tool(kubectl=kubectl, dry=dry, verbose=verbose)],
         system_prompt=SYSTEM_PROMPT,
-        response_format=ToolStrategy(PatrolReport),
         # Replace deepagents' default FilesystemMiddleware (which would expose
         # ls/read_file/write_file/edit_file/delete/glob/grep/execute) with the minimum
         # it allows: read_file only, on the default in-memory StateBackend. Combined
@@ -394,10 +444,10 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
     # output pass adds a few more. max_steps counts LLM turns, like the old loop.
     recursion_limit = max_steps * 2 + 12
 
-    report: object | None = None
     tokens_in = tokens_out = 0
     seen = 0
     messages: list = []
+    budget_cut = False
     try:
         async for state in agent.astream(
             {"messages": [{"role": "user", "content": user}]},
@@ -426,40 +476,28 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
                 elif isinstance(m, ToolMessage):
                     if verbose:
                         print(f"[patrol]   ↳ {preview(m.content, 220)}", file=sys.stderr)
-            sr = state.get("structured_response")
-            if sr is not None:
-                report = sr
     except GraphRecursionError:
-        # Budget exhausted mid-exploration — salvage like the old engine did: force a
-        # final report from everything observed so far instead of losing the patrol.
-        print(f"[patrol] WARNING: step budget ({max_steps} turns) exhausted; "
-              "forcing final report from observations so far.")
+        # Exploration budget exhausted. Not a failure: the reporting pass runs over
+        # whatever was observed, exactly as it does for a naturally-completed patrol.
+        budget_cut = True
+        print(f"[patrol] WARNING: exploration budget ({max_steps} turns) exhausted; "
+              "reporting from observations so far.")
         # If the run died between a tool call and its execution, close those calls so
-        # the history is valid to feed back in.
+        # the history is valid to feed into the reporting pass.
         last = messages[-1] if messages else None
         if isinstance(last, AIMessage) and last.tool_calls:
             for tc in last.tool_calls:
                 messages.append(ToolMessage(
                     content="ERROR: step budget exhausted; command not executed.",
                     tool_call_id=tc["id"], name=tc["name"]))
-        messages.append({"role": "user", "content":
-                         "Step budget reached. STOP exploring. Call PatrolReport NOW with "
-                         "findings, notifications, and the updated wiki based on "
-                         "everything you have observed so far."})
-        try:
-            salvage = await agent.ainvoke({"messages": messages},
-                                          config={"recursion_limit": 8})
-        except GraphRecursionError:
-            print("[patrol] WARNING: salvage pass also exhausted; skipping wiki write.")
-            print(f"[patrol] tokens: in={tokens_in} out={tokens_out}")
-            return
-        report = salvage.get("structured_response")
-        if report is None:
-            print("[patrol] WARNING: no structured report after salvage; skipping wiki write.")
-            return
 
+    if not messages:
+        print("[patrol] WARNING: patrol made no observations; skipping wiki write.")
+        return
+
+    report = await shape_report(model, messages, budget_cut)
     if report is None:
-        print("[patrol] WARNING: patrol produced no structured report; skipping wiki write.")
+        print("[patrol] WARNING: reporting pass produced no report; skipping wiki write.")
         return
 
     findings, notifications, new_wiki = report_fields(report)

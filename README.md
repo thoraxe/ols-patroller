@@ -33,8 +33,10 @@ across patrols, and escalates per its own previously-written rules.
 2. Loads `cluster-wiki.md` (seeded on first run).
 3. Agentic loop: model explores via a single **`kubectl_readonly`** tool (it decides
    what to look at; ~5–15 steps typical).
-4. Final report as **typed structured output** (`ToolStrategy`): `findings`,
-   `notifications`, `updated_wiki` — parsed by schema, not hand-rolled JSON regex.
+4. The agent ends on its own with a plain-text summary (auto tool choice — no
+   forced tool calls); a tool-free **shape pass** (`with_structured_output`) then
+   converts the conversation into the typed report: `findings`,
+   `notifications`, `updated_wiki`.
 5. Writes the wiki back; prints/Sends notifications.
 
 ## Engine
@@ -51,11 +53,19 @@ standalone/open-source):
   `HarnessProfile`, keeping the patrol single-threaded.
 - Effective tool surface: **`[read_file, kubectl_readonly]`** (verified in tests:
   `execute`/`task` calls are rejected as invalid tools).
+- **No in-agent response format.** An earlier revision passed
+  `ToolStrategy(PatrolReport)` to `create_deep_agent`, but that forces
+  `tool_choice="any"` on every turn — under it GLM never self-terminated
+  (every real patrol ran to the budget). Now the agent explores with natural
+  tool choice and writes a plain-text summary when done; a separate tool-free
+  reporting pass (`with_structured_output`, function-calling) shapes the
+  finished conversation into the typed `PatrolReport` — the same "shape pass"
+  pattern as the OLS agentic sandbox.
 - Model via `langchain-openai`'s `ChatOpenAI` — any OpenAI-compatible endpoint,
   same `PATROL_*` env contract as before.
-- Step budget = `recursion_limit` (`max_steps * 2 + 12`); budget exhaustion is
-  treated like the old JSON-parse failure: log, skip the wiki write, patrol again
-  next cycle (the wiki is only hypotheses; a lost patrol is cheap).
+- Step budget = `recursion_limit` (`max_steps * 2 + 12`) caps exploration.
+  Whether the patrol ends naturally or is cut off by the budget, the same
+  reporting pass produces the report — one code path, no salvage special-case.
 
 ## The wiki (`cluster-wiki.md`)
 
@@ -88,7 +98,7 @@ patrol N writes the rules patrol N+1 follows.
 | `PATROL_MODEL` | — | model id on that endpoint (required) |
 | `KUBECTL` | `oc`→`kubectl` | cluster CLI |
 | `SLACK_WEBHOOK_URL` | — | if set, notifications also go to Slack |
-| `PATROL_MAX_STEPS` | `30` | LLM-turn budget per patrol (raised from 15 after real-cluster runs; GLM needs >15 turns even single-node — budget exhaustion triggers the salvage pass) |
+| `PATROL_MAX_STEPS` | `30` | LLM-turn exploration budget per patrol (raised from 15 after real-cluster runs; GLM needs >15 turns even single-node — if exhausted, the reporting pass reports from observations so far) |
 | `PATROL_INTERVAL` | `900` | seconds (`--loop`) |
 | `PATROL_TOOL_TIMEOUT` | `60` | per-command timeout |
 
@@ -108,8 +118,9 @@ deepagents engine (scripted fake-model e2e, no endpoint needed):
 
 - Full graph runs: tool calls dispatched, guard refusals (mutation verb, secret
   read), `execute`/`task` rejected as invalid tools (surface is exactly
-  `[read_file, kubectl_readonly]`), `PatrolReport` structured output parsed,
-  wiki written, notifications emitted.
+  `[read_file, kubectl_readonly]`), natural termination and budget-cut paths
+  both flow through the same shape pass (`PatrolReport` parsed), wiki written,
+  notifications emitted.
 
 Real-cluster runs (2026-10-13, ols-demo-2 / OCP 4.21, EnMaaS GLM 5.3):
 
@@ -125,6 +136,15 @@ Real-cluster runs (2026-10-13, ols-demo-2 / OCP 4.21, EnMaaS GLM 5.3):
   emptyDir risk marked "materialized once, non-fatally" (rhokp Solr rebuild).
   One guard refusal: jsonpath extracting `credentialsSecret` from OLSConfig
   (strict by design; model recovered via a plain `get -o yaml`).
+- Patrol #6 (30-turn budget): 36 turns / 63 tool calls, ~1.02M input tokens —
+  still ran to the budget under the then-forced tool choice; this motivated
+  the shape-pass switch.
+- Patrol #7 (shape pass, auto tool choice): **self-terminated** at 34 turns
+  (33 tool calls + plain-text summary, vs the 36-turn hard budget), 23
+  findings, 215k input tokens — 4.7× cheaper than #6. The summary itself
+  shows the memory economy: "restart sweep matches the 18:02 baseline
+  exactly" — wiki baselines verified instead of re-derived. Watch-list
+  entries carry "Unfixed through 5th patrol" persistence tracking.
 
 ## Known limitations (it's a hacky PoC)
 
