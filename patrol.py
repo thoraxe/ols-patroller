@@ -1,18 +1,29 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["requests>=2.31"]
+# dependencies = [
+#     "deepagents>=0.7",
+#     "langchain-openai>=1.0",
+#     "pydantic>=2",
+#     "requests>=2.31",
+# ]
 # ///
 """
-Cluster Sentinel — hacky PoC.
+Cluster Sentinel — hacky PoC (deepagents engine).
 
 A proactive, non-deterministic SRE "patrol": on each run an LLM agentically explores
 the live cluster read-only (it decides what to look at), validates reality against a
 persistent markdown "wiki" (its memory), rewrites the wiki, and notifies a human about
 anything that looks wrong.
 
-Read-only by design: the single tool exposed to the model is a whitelisted `oc/kubectl`
-that only permits non-mutating verbs. Nothing here ever changes the cluster.
+Read-only by design: the agent is built with `create_deep_agent()` and NO backend, so
+it has no shell and no filesystem tools. The single tool exposed to the model is a
+whitelisted `oc/kubectl` that only permits non-mutating verbs. Nothing here ever
+changes the cluster. The final report (findings / notifications / updated wiki) is
+collected as typed structured output instead of hand-parsed JSON.
+
+Engine alignment: same upstream `deepagents` library the OLS agentic sandbox uses
+(depending on it directly — no OLS code is imported).
 
 Run:
     export PATROL_API_KEY=...        # API key for your OpenAI-compatible endpoint
@@ -27,16 +38,30 @@ Point it at any OpenAI-compatible chat-completions endpoint via env (see below).
 from __future__ import annotations
 
 import argparse
-import json
+import asyncio
 import os
-import re
 import shlex
 import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Literal
 
 import requests
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.tools import tool
+from langchain_openai import ChatOpenAI
+from langgraph.errors import GraphRecursionError
+from pydantic import BaseModel, Field
+
+from deepagents import (
+    GeneralPurposeSubagentProfile,
+    HarnessProfile,
+    create_deep_agent,
+    register_harness_profile,
+)
+from deepagents.middleware.filesystem import FilesystemMiddleware
+from langchain.agents.structured_output import ToolStrategy
 
 # --------------------------------------------------------------------------- config
 BASE_URL   = os.environ.get("PATROL_BASE_URL", "")   # e.g. https://api.example.com/v1
@@ -44,7 +69,7 @@ MODEL      = os.environ.get("PATROL_MODEL", "")      # model id on that endpoint
 API_KEY    = os.environ.get("PATROL_API_KEY", "")
 KUBECTL    = os.environ.get("KUBECTL", "")  # resolved later
 SLACK_URL  = os.environ.get("SLACK_WEBHOOK_URL", "")
-MAX_STEPS  = int(os.environ.get("PATROL_MAX_STEPS", "15"))
+MAX_STEPS  = int(os.environ.get("PATROL_MAX_STEPS", "15"))  # LLM turns per patrol
 TOOL_TIMEOUT = int(os.environ.get("PATROL_TOOL_TIMEOUT", "60"))
 OUT_CAP    = 15_000  # max chars of tool output fed back to the model
 
@@ -73,16 +98,15 @@ Your patrol, in order:
 3. Decide what a human should actually care about (don't cry wolf).
 4. Produce an UPDATED wiki and a refined watch-list for the next patrol.
 
-When you are DONE exploring, reply with NO tool calls and ONLY a single JSON object (optionally in a
-```json code fence) matching exactly:
-{
-  "findings": [{"severity": "info|warn|crit", "summary": "...", "evidence": "short, cite what you saw"}],
-  "notifications": ["human-readable message to send", "..."],
-  "updated_wiki": "the FULL new markdown content of the cluster wiki"
-}
-Only put warn/crit items a human should see into "notifications". Keep "updated_wiki" well structured
-with sections: Topology, Baselines, Watch-list, Open questions, Anomaly log. Tag entries with
-(source, timestamp, confidence) inline and expire stale ones.
+When you are DONE exploring, stop calling tools and produce your final report. It has three parts:
+- "findings": everything worth recording. severity is "info" (note / baseline / expected state),
+  "warn" (drift, degradation, something suspicious), or "crit" (broken, needs a human now).
+  Give each finding short "evidence" citing what you actually observed.
+- "notifications": ONLY the warn/crit findings a human should actually see (don't cry wolf),
+  as human-readable messages.
+- "updated_wiki": the FULL new markdown content of the cluster wiki. Keep it well structured
+  with sections: Topology, Baselines, Watch-list, Open questions, Anomaly log. Tag entries with
+  (source, timestamp, confidence) inline and expire stale ones.
 """
 
 WIKI_SEED = """\
@@ -144,6 +168,27 @@ FIXTURES: list[tuple[str, str]] = [
 ]
 
 
+# --------------------------------------------------------------------------- report schema
+class Finding(BaseModel):
+    """One observation from the patrol."""
+    severity: Literal["info", "warn", "crit"] = Field(
+        description="info = note/baseline/expected; warn = drift/degradation/suspicious; "
+                    "crit = broken, needs a human now")
+    summary: str = Field(description="Short human-readable summary")
+    evidence: str = Field(default="", description="Short citation of what was actually observed")
+
+
+class PatrolReport(BaseModel):
+    """Final structured output of one patrol."""
+    findings: list[Finding] = Field(default_factory=list,
+                                    description="Everything worth recording from this patrol")
+    notifications: list[str] = Field(
+        default_factory=list,
+        description="ONLY warn/crit items a human should actually see, as human-readable messages")
+    updated_wiki: str = Field(default="",
+                              description="FULL new markdown content of the cluster wiki")
+
+
 # --------------------------------------------------------------------------- helpers
 def die(msg: str, code: int = 1) -> None:
     print(f"[patrol] ERROR: {msg}", file=sys.stderr)
@@ -165,7 +210,10 @@ def fixture_for(args: list[str]) -> str:
     for key, out in FIXTURES:
         if key in cmd:
             return out
-    return f"(dry-cluster) no fixture for: {cmd}\n(treat as empty / not present)"
+    avail = ", ".join(f"`{k}`" for k, _ in FIXTURES)
+    return (f"(dry-cluster) no fixture for: {cmd}. This demo cluster only has canned "
+            f"fixtures for: {avail}. Treat any other resource as absent — do not retry "
+            f"variations of this command.")
 
 
 def kubectl_readonly(arg_string: str, *, kubectl: str, dry: bool, verbose: bool) -> str:
@@ -206,68 +254,67 @@ def kubectl_readonly(arg_string: str, *, kubectl: str, dry: bool, verbose: bool)
     return out.strip() or "(no output)"
 
 
-TOOLS_SPEC = [{
-    "type": "function",
-    "function": {
-        "name": "kubectl_readonly",
-        "description": ("Run a READ-ONLY oc/kubectl command and return its output. "
-                        "Only non-mutating verbs are permitted (get, describe, logs, top, "
-                        "version, api-resources, explain, status, cluster-info). "
-                        "Pass everything after `oc` as a single string, e.g. "
-                        "'get pods -A' or 'describe node worker-1'."),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "command": {"type": "string",
-                            "description": "args after oc/kubectl, e.g. 'get clusteroperators'"}
-            },
-            "required": ["command"],
-        },
-    },
-}]
+def make_kubectl_tool(*, kubectl: str, dry: bool, verbose: bool):
+    """Wrap the guarded read-only kubectl as the single langchain tool."""
+    @tool("kubectl_readonly")
+    def _kubectl_tool(command: str) -> str:
+        """Run a READ-ONLY oc/kubectl command and return its output.
+
+        Only non-mutating verbs are permitted (get, describe, logs, top, version,
+        api-resources, api-versions, explain, status, cluster-info, whoami).
+        Pass everything after `oc` as a single string, e.g. 'get pods -A' or
+        'describe node worker-1'.
+
+        Args:
+            command: args after oc/kubectl, e.g. 'get clusteroperators'
+        """
+        return kubectl_readonly(command, kubectl=kubectl, dry=dry, verbose=verbose)
+    return _kubectl_tool
 
 
-def chat(messages: list[dict], *, with_tools: bool) -> tuple[dict, dict]:
-    body = {
-        "model": MODEL,
-        "messages": messages,
-        "temperature": 0.3,
-        "max_tokens": 16000,
-    }
-    if with_tools:
-        body["tools"] = TOOLS_SPEC
-        body["tool_choice"] = "auto"
-    r = requests.post(
-        f"{BASE_URL}/chat/completions",
-        headers={"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"},
-        json=body, timeout=300,
+def make_model() -> ChatOpenAI:
+    """Any OpenAI-compatible endpoint, same env contract as the raw-requests version."""
+    return ChatOpenAI(
+        model=MODEL,
+        base_url=BASE_URL,
+        api_key=API_KEY,
+        temperature=0.3,
+        max_tokens=16000,
+        timeout=300,
     )
-    if r.status_code != 200:
-        die(f"LLM call failed: HTTP {r.status_code}: {r.text[:500]}")
-    data = r.json()
-    return data["choices"][0]["message"], data.get("usage") or {}
+
+
+def _disable_default_subagent(model: ChatOpenAI) -> None:
+    """Stop deepagents from auto-adding its general-purpose `task` subagent.
+
+    Keeps the patrol single-threaded and the tool surface exactly one tool. Uses a
+    private helper to compute the profile key; if deepagents internals drift, we
+    degrade gracefully — the default subagent inherits our read-only middleware and
+    the same single tool, so it stays safe, just noisier.
+    """
+    try:
+        from deepagents._models import get_model_identifier, get_model_provider
+
+        provider = get_model_provider(model)
+        identifier = get_model_identifier(model)
+        # Register both the exact model key and the provider-wide fallback, so the
+        # profile is found however deepagents resolves the lookup.
+        keys = {provider, f"{provider}:{identifier}"} - {"", "None", "None:None"}
+        profile = HarnessProfile(
+            general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False)
+        )
+        for key in keys:
+            register_harness_profile(key, profile)
+    except Exception as e:  # noqa: BLE001
+        print(f"[patrol] note: could not disable default subagent ({e}); "
+              "the read-only tool set still applies", file=sys.stderr)
 
 
 def preview(s: str, n: int = 200) -> str:
     """One-line, length-capped preview for live output."""
+    s = s if isinstance(s, str) else str(s)
     s = " ".join((s or "").split())
     return s if len(s) <= n else s[:n] + "…"
-
-
-def extract_json(text: str) -> dict | None:
-    if not text:
-        return None
-    m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
-    blob = m.group(1) if m else None
-    if blob is None:
-        s, e = text.find("{"), text.rfind("}")
-        blob = text[s:e + 1] if (s != -1 and e > s) else None
-    if blob is None:
-        return None
-    try:
-        return json.loads(blob)
-    except json.JSONDecodeError:
-        return None
 
 
 def notify(messages: list[str]) -> None:
@@ -281,91 +328,158 @@ def notify(messages: list[str]) -> None:
                 print(f"[patrol]   (slack post failed: {e})", file=sys.stderr)
 
 
+def report_fields(report: object) -> tuple[list[dict], list[str], str]:
+    """Normalize the structured response (pydantic model or dict) into plain data."""
+    if isinstance(report, PatrolReport):
+        return ([f.model_dump() for f in report.findings],
+                list(report.notifications), report.updated_wiki)
+    if isinstance(report, dict):
+        return (report.get("findings") or [],
+                [m for m in (report.get("notifications") or []) if m],
+                report.get("updated_wiki") or "")
+    return ([], [], "")
+
+
 # --------------------------------------------------------------------------- one patrol
-def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool, max_steps: int) -> None:
+async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
+                     max_steps: int) -> None:
     ts = time.strftime("%Y-%m-%dT%H:%M:%S%z")
-    print(f"\n[patrol] === patrol start {ts} (model={MODEL}, dry={dry}) ===")
+    print(f"\n[patrol] === patrol start {ts} (model={MODEL}, dry={dry}, engine=deepagents) ===")
 
     wiki = wiki_path.read_text() if wiki_path.exists() else WIKI_SEED
 
     # best-effort dedup context: what's already being handled?
     inflight = kubectl_readonly("get agenticruns -A", kubectl=kubectl, dry=dry, verbose=verbose)
 
+    dry_note = ""
+    if dry:
+        avail = ", ".join(f"`{k}`" for k, _ in FIXTURES)
+        dry_note = (
+            "\n=== DRY-CLUSTER MODE ===\n"
+            "This is a canned demo cluster, not a real one. ONLY these commands have "
+            f"fixtures: {avail}. Any other command returns 'no fixture' — treat that "
+            "resource as absent and do NOT probe other resource types. Base your "
+            "patrol on the fixtures alone.\n"
+        )
+
     user = (
-        f"Current time: {ts}\n\n"
+        f"Current time: {ts}\n{dry_note}\n"
         f"=== IN-FLIGHT AGENTIC RUNS / WORK ALREADY IN PROGRESS ===\n{inflight}\n\n"
         f"=== CLUSTER WIKI (your prior notes — may be stale, verify against reality) ===\n{wiki}\n\n"
-        f"Begin your patrol. Explore with kubectl_readonly, then return the final JSON."
+        f"Begin your patrol. Explore with kubectl_readonly. You have a hard budget of "
+        f"~{max_steps} turns — once you have covered the main areas or hit diminishing "
+        f"returns, produce your final report."
     )
-    messages = [{"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user}]
 
-    final_text = ""
-    for step in range(1, max_steps + 1):
-        msg, usage = chat(messages, with_tools=True)
-        messages.append(msg)
-        tool_calls = msg.get("tool_calls") or []
-        if verbose:
-            tin, tout = usage.get("prompt_tokens", "?"), usage.get("completion_tokens", "?")
-            rc = msg.get("reasoning_content") or ""
-            print(f"[patrol] ── turn {step} (tokens in={tin} out={tout}) ──", file=sys.stderr)
-            if rc:
-                print(f"[patrol] 💭 {preview(rc, 400)}", file=sys.stderr)
-            c = msg.get("content") or ""
-            if c and not tool_calls:
-                print(f"[patrol] 💬 {preview(c, 600)}", file=sys.stderr)
-        if not tool_calls:
-            final_text = msg.get("content") or ""
-            if verbose:
-                print(f"[patrol]   model finished at step {step}", file=sys.stderr)
-            break
-        for tc in tool_calls:
-            try:
-                args = json.loads(tc["function"]["arguments"] or "{}")
-            except json.JSONDecodeError:
-                args = {}
-            result = kubectl_readonly(args.get("command", ""),
-                                      kubectl=kubectl, dry=dry, verbose=verbose)
-            if verbose:
-                print(f"[patrol]     ↳ {preview(result, 220)}", file=sys.stderr)
-            messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
-    else:
-        # exhausted steps — force a final answer
-        messages.append({"role": "user",
-                         "content": "Step budget reached. Stop exploring and return ONLY the final JSON now."})
-        m, _ = chat(messages, with_tools=False)
-        final_text = m.get("content") or ""
+    model = make_model()
+    _disable_default_subagent(model)
+    agent = create_deep_agent(
+        model=model,
+        tools=[make_kubectl_tool(kubectl=kubectl, dry=dry, verbose=verbose)],
+        system_prompt=SYSTEM_PROMPT,
+        response_format=ToolStrategy(PatrolReport),
+        # Replace deepagents' default FilesystemMiddleware (which would expose
+        # ls/read_file/write_file/edit_file/delete/glob/grep/execute) with the minimum
+        # it allows: read_file only, on the default in-memory StateBackend. Combined
+        # with no `backend` (nothing touches disk) and no `subagents`, the patrol's
+        # only meaningful tool is the guarded kubectl_readonly above — no shell, no
+        # filesystem writes, read-only by construction. (deepagents refuses a
+        # FilesystemMiddleware without read_file; it backs tool-result offloading.)
+        middleware=[FilesystemMiddleware(tools=["read_file"])],
+    )
 
-    result = extract_json(final_text)
-    if result is None:
-        # one retry asking for strict JSON
-        messages.append({"role": "user",
-                         "content": "Your last reply was not valid JSON. Reply with ONLY the JSON object."})
-        result = extract_json(chat(messages, with_tools=False)[0].get("content") or "")
-    if result is None:
-        print("[patrol] WARNING: could not parse final JSON; skipping wiki write.")
-        print("---- raw model output ----\n" + final_text[:2000])
+    # Each LLM round costs ~2 graph steps (model node + tools node); the structured
+    # output pass adds a few more. max_steps counts LLM turns, like the old loop.
+    recursion_limit = max_steps * 2 + 12
+
+    report: object | None = None
+    tokens_in = tokens_out = 0
+    seen = 0
+    messages: list = []
+    try:
+        async for state in agent.astream(
+            {"messages": [{"role": "user", "content": user}]},
+            config={"recursion_limit": recursion_limit},
+            stream_mode="values",
+        ):
+            messages = state.get("messages", [])
+            for m in messages[seen:]:
+                seen += 1
+                if isinstance(m, HumanMessage):
+                    continue
+                if isinstance(m, AIMessage):
+                    um = m.usage_metadata or {}
+                    tokens_in += um.get("input_tokens") or 0
+                    tokens_out += um.get("output_tokens") or 0
+                    if verbose:
+                        rc = (m.additional_kwargs or {}).get("reasoning_content")
+                        if rc:
+                            print(f"[patrol] 💭 {preview(rc, 400)}", file=sys.stderr)
+                        if m.tool_calls:
+                            for tc in m.tool_calls:
+                                print(f"[patrol] → {tc.get('name')} "
+                                      f"{preview(str(tc.get('args')))}", file=sys.stderr)
+                        elif m.content:
+                            print(f"[patrol] 💬 {preview(m.content, 600)}", file=sys.stderr)
+                elif isinstance(m, ToolMessage):
+                    if verbose:
+                        print(f"[patrol]   ↳ {preview(m.content, 220)}", file=sys.stderr)
+            sr = state.get("structured_response")
+            if sr is not None:
+                report = sr
+    except GraphRecursionError:
+        # Budget exhausted mid-exploration — salvage like the old engine did: force a
+        # final report from everything observed so far instead of losing the patrol.
+        print(f"[patrol] WARNING: step budget ({max_steps} turns) exhausted; "
+              "forcing final report from observations so far.")
+        # If the run died between a tool call and its execution, close those calls so
+        # the history is valid to feed back in.
+        last = messages[-1] if messages else None
+        if isinstance(last, AIMessage) and last.tool_calls:
+            for tc in last.tool_calls:
+                messages.append(ToolMessage(
+                    content="ERROR: step budget exhausted; command not executed.",
+                    tool_call_id=tc["id"], name=tc["name"]))
+        messages.append({"role": "user", "content":
+                         "Step budget reached. STOP exploring. Call PatrolReport NOW with "
+                         "findings, notifications, and the updated wiki based on "
+                         "everything you have observed so far."})
+        try:
+            salvage = await agent.ainvoke({"messages": messages},
+                                          config={"recursion_limit": 8})
+        except GraphRecursionError:
+            print("[patrol] WARNING: salvage pass also exhausted; skipping wiki write.")
+            print(f"[patrol] tokens: in={tokens_in} out={tokens_out}")
+            return
+        report = salvage.get("structured_response")
+        if report is None:
+            print("[patrol] WARNING: no structured report after salvage; skipping wiki write.")
+            return
+
+    if report is None:
+        print("[patrol] WARNING: patrol produced no structured report; skipping wiki write.")
         return
 
-    findings = result.get("findings", [])
+    findings, notifications, new_wiki = report_fields(report)
+
     print(f"\n[patrol] findings ({len(findings)}):")
     for f in findings:
-        print(f"  [{f.get('severity','?'):>4}] {f.get('summary','')}")
+        print(f"  [{f.get('severity', '?'):>4}] {f.get('summary', '')}")
         if verbose and f.get("evidence"):
             print(f"         ↳ {f['evidence']}")
 
-    notify([m for m in result.get("notifications", []) if m])
+    notify([m for m in notifications if m])
 
-    new_wiki = result.get("updated_wiki")
     if new_wiki:
         wiki_path.write_text(new_wiki)
         print(f"[patrol] wiki updated → {wiki_path}")
+    print(f"[patrol] tokens: in={tokens_in} out={tokens_out}")
     print(f"[patrol] === patrol done ===")
 
 
 # --------------------------------------------------------------------------- main
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Cluster Sentinel hacky PoC")
+    ap = argparse.ArgumentParser(description="Cluster Sentinel hacky PoC (deepagents engine)")
     ap.add_argument("--once", action="store_true", help="run a single patrol (default)")
     ap.add_argument("--loop", action="store_true", help="patrol repeatedly")
     ap.add_argument("--interval", type=int, default=int(os.environ.get("PATROL_INTERVAL", "900")),
@@ -374,7 +488,8 @@ def main() -> None:
                     help="use canned fixtures instead of a real cluster")
     ap.add_argument("--wiki", default=str(Path(__file__).parent / "cluster-wiki.md"),
                     help="path to the wiki memory file")
-    ap.add_argument("--max-steps", type=int, default=MAX_STEPS)
+    ap.add_argument("--max-steps", type=int, default=MAX_STEPS,
+                    help="max LLM turns per patrol")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
 
@@ -385,20 +500,25 @@ def main() -> None:
     kubectl = resolve_kubectl()
     wiki_path = Path(args.wiki)
 
-    def one():
-        run_patrol(kubectl=kubectl, wiki_path=wiki_path, dry=args.dry_cluster,
-                   verbose=args.verbose, max_steps=args.max_steps)
+    def one(fatal: bool) -> None:
+        try:
+            asyncio.run(run_patrol(kubectl=kubectl, wiki_path=wiki_path, dry=args.dry_cluster,
+                                   verbose=args.verbose, max_steps=args.max_steps))
+        except Exception as e:  # noqa: BLE001
+            if fatal:
+                raise
+            print(f"[patrol] patrol failed ({e}); continuing loop", file=sys.stderr)
 
     if args.loop:
         print(f"[patrol] loop mode: every {args.interval}s (ctrl-c to stop)")
         try:
             while True:
-                one()
+                one(fatal=False)
                 time.sleep(args.interval)
         except KeyboardInterrupt:
             print("\n[patrol] stopped.")
     else:
-        one()
+        one(fatal=True)
 
 
 if __name__ == "__main__":
