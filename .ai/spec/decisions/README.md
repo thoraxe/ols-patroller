@@ -29,3 +29,4 @@ Date: YYYY-MM-DD · Status: proposed | accepted | superseded by NNNN
 | [0002](0002-shape-pass-not-tool-strategy.md) | Shape pass instead of in-agent ToolStrategy |
 | [0003](0003-git-backed-wiki.md) | Git-backed wiki instead of an MCP memory service |
 | [0004](0004-readonly-with-delegated-remediation.md) | Read-only patrol with delegated remediation |
+| [0005](0005-pinned-requirements-for-image.md) | Pinned requirements.txt for the image; uv header stays for dev |

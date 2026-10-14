@@ -35,6 +35,9 @@ redefined here.
 - **GLM** — the model family used in real-run tuning evidence (GLM 5.3 via EnMaaS);
   source of the "never self-terminates under forced tool choice" finding.
 - **EnMaaS** — the model-endpoint hosting service used for real-cluster runs.
+- **Container image** — the ubi9-minimal image built from the repo-root
+  `Containerfile` that runs `patrol.py` in-cluster (#1); dev mode stays
+  `uv run patrol.py` via the PEP 723 header.
 - **cluster-reader** — built-in OpenShift ClusterRole (94 rules, zero Secret access)
   planned as the patrol pod's RBAC boundary in-cluster (#2).
 - **Severity** — finding vocabulary: `info` (note/baseline/expected), `warn`
