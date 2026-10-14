@@ -19,7 +19,8 @@ held to production standards: documented, unit-checked, and verified end-to-end.
    ServiceAccount's RBAC (binding to the built-in `cluster-reader` role — verified on
    live OCP 4.21: 94 rules, zero Secret access, read-equivalent verbs only) is the
    server-side enforcement boundary. The tool guard is defense-in-depth, not the
-   boundary itself.
+   boundary itself. Manifest contract: `in-cluster-deployment.md` (decision record
+   `decisions/0006-cluster-reader-binding.md`).
 5. Remediation is **delegated, never local**: a warn/crit finding with a known
    remediation becomes a governed AgenticRun (sandbox + approval + derived RBAC +
    audit) [PLANNED: #12]. The patrol itself stays read-only forever — it is the eyes
@@ -39,7 +40,7 @@ held to production standards: documented, unit-checked, and verified end-to-end.
 
 | Ticket | Summary |
 |---|---|
-| #2 | In-cluster manifests: SA + `cluster-reader` ClusterRoleBinding + RWO PVC at `/wiki` + single-replica non-root Deployment — makes Layer 3 real |
+| #2 | In-cluster manifests: SA + `cluster-reader` ClusterRoleBinding + RWO PVC at `/wiki` + single-replica non-root Deployment — makes Layer 3 real (`in-cluster-deployment.md`; ADR 0006) |
 | #12 | Remediation handoff: dispatch governed AgenticRuns for actionable findings; harvest their result CRs back into the wiki |
 | #11 | Guard hardening: refuse `--raw` proxy/stats endpoints |
 | #4 | Commit guard unit tests + fake-model e2e into the repo |

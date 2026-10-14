@@ -27,6 +27,8 @@ issue numbers with `[PLANNED: #N]` markers.
 Covered: `patrol.py` (the entire implementation), its runtime artifacts
 (the wiki directory — `wiki/cluster-wiki.md` and its git repo [DONE: #3]), the
 in-cluster image artifacts (repo-root `Containerfile` + `requirements.txt`, #1),
+the in-cluster deployment manifests (repo `manifests/` kustomize root + the
+post-merge image CI at `.github/workflows/image.yml`, #2),
 `docs/prior-art.md` positioning, and planned behavior tied to
 GitHub issues.
 
@@ -47,6 +49,7 @@ AI agents. Content is optimized for precision and machine consumption.
 | Read-only safety guarantees | `what/safety-model.md`, `what/kubectl-guard.md` |
 | The wiki (agent memory) contract | `what/wiki-memory.md` |
 | The in-cluster container image | `what/container-image.md` |
+| Run it in-cluster (manifests + CI-published image) | `what/in-cluster-deployment.md` |
 | Report & notification formats | `what/reporting-notifications.md` |
 | Where code lives | `how/project-structure.md` |
 | How the deepagents engine is wired | `how/agent-engine.md` |
@@ -61,6 +64,7 @@ AI agents. Content is optimized for precision and machine consumption.
 | `what/reporting-notifications.md` | `how/reporting-pipeline.md` |
 | `what/kubectl-guard.md`, `what/wiki-memory.md` | `how/project-structure.md` (all symbols live in `patrol.py`) |
 | `what/container-image.md` | `how/project-structure.md` (Containerfile + `requirements.txt` path entries) |
+| `what/in-cluster-deployment.md` | `how/project-structure.md` (`manifests/` + `.github/workflows/` path entries) |
 
 ## Conventions
 
