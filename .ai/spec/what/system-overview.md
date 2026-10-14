@@ -45,12 +45,13 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
 12a. **Container image** — ubi9-minimal image that runs `patrol.py` in-cluster:
      version-pinned OpenShift client, build-time pip install from
      `requirements.txt`, non-root random-UID, default command `--loop --interval
-     900 --wiki /wiki/cluster-wiki.md` [DONE: #1] (`container-image.md`).
+     21600 --wiki /wiki/cluster-wiki.md` [DONE: #1] [PLANNED: #25]
+     (`container-image.md`).
 12b. **In-cluster deployment** — kustomize manifests (`manifests/`):
      ServiceAccount bound to the built-in `cluster-reader`, RWO PVC at `/wiki`,
-     single-replica non-root Deployment running `--loop --interval 900`,
+     single-replica non-root Deployment running `--loop --interval 21600`,
      Secret-sourced env; merges to `main` build and publish the image to GHCR
-     (`container-image.md` rules 13–16) [DONE: #2]
+     (`container-image.md` rules 13–16) [DONE: #2] [PLANNED: #25]
      (`in-cluster-deployment.md`).
 
 ### Lifecycle
@@ -63,6 +64,15 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
     `PATROL_WIKI_REMOTE` is set [DONE: #3].
 15. If the reporting pass fails entirely, the patrol ends with a warning and the wiki
     is left unchanged.
+16. **Doc-surface consistency for the defaults.** Every committed surface that
+    names the default cadence or the output flag states the post-#25/#27 truth:
+    the `--interval` help text and `patrol.py`'s module docstring, the
+    `Containerfile`'s loop comment, `ARCHITECTURE.md`'s diagram, `README.md`
+    (quickstart commands and config table), and `AGENTS.md`'s run commands. No
+    committed surface may carry a stale form: `--interval 900`, "every 15 min"
+    or "every 900 s" prose, a `(default 900)` help text, a `PATROL_INTERVAL`
+    default of `900` — or a `-v` flag on a `patrol.py` command line (verbose is
+    the default now; `-q` suppresses) [PLANNED: #25, #27].
 
 ## Configuration Surface
 
@@ -74,7 +84,8 @@ Environment variables:
 - `KUBECTL` — cluster CLI override; otherwise resolved `oc` → `kubectl` → `oc`
 - `SLACK_WEBHOOK_URL` — if set, notifications are also posted to Slack
 - `PATROL_MAX_STEPS` — LLM-turn exploration budget per patrol (default `30`)
-- `PATROL_INTERVAL` — seconds between patrols in `--loop` mode (default `900`)
+- `PATROL_INTERVAL` — seconds between patrols in `--loop` mode (default
+  `21600`, six hours) [PLANNED: #25 — was `900`]
 - `PATROL_TOOL_TIMEOUT` — per-command timeout in seconds (default `60`)
 - `PATROL_CLUSTER_ID` — cluster identity for wiki commit emails (default `local`)
   [DONE: #3]
@@ -83,9 +94,10 @@ Environment variables:
 
 CLI flags: `--once` (default), `--loop`, `--interval`, `--dry-cluster`, `--wiki`
 (default `wiki/cluster-wiki.md` next to `patrol.py` [DONE: #3; was
-`cluster-wiki.md`]), `--max-steps`, `-v/--verbose`. In-cluster, the image's
-default command is `--loop --interval 900 --wiki /wiki/cluster-wiki.md`
-[DONE: #1] (`container-image.md`).
+`cluster-wiki.md`]), `--max-steps`, `-q/--quiet` (suppress the per-turn output
+stream, on by default [PLANNED: #27 — was the opt-in `-v/--verbose`]).
+In-cluster, the image's default command is `--loop --interval 21600 --wiki
+/wiki/cluster-wiki.md` [DONE: #1] [PLANNED: #25] (`container-image.md`).
 
 Hard-coded constants (not env-configurable): `OUT_CAP` = 15,000 chars of tool output
 fed back to the model; model temperature 0.3, `max_tokens` 16000, request timeout
@@ -111,7 +123,7 @@ documents). Milestone shape:
 
 | Ticket | Summary |
 |---|---|
-| v0.1 (#1–#4) | In-cluster: Containerfile, manifests (SA + cluster-reader + PVC + Deployment), git-backed wiki, e2e tests in-repo |
-| v0.2 (#5–#8) | Compounding wiki: skeleton schema + validation-on-write, per-entry recheck commands, `stale_after` expiry, `--wiki-stats` |
-| v0.3 (#9–#11) | Operational hardening: notification dedup on state change, cost control, guard refuses `--raw` |
+| v0.1 (#1–#4, #9, #11, #24, #25, #27, #28) | In-cluster: Containerfile, manifests (SA + cluster-reader + PVC + Deployment), git-backed wiki, e2e tests in-repo, deployment defaults & observability (6 h cadence, unbuffered + verbose logs, git-safe `/wiki`), guard `--raw` refusal, notification dedup |
+| v0.2 (#5–#8, #20) | Compounding wiki: skeleton schema + validation-on-write, per-entry recheck commands, `stale_after` expiry, `--wiki-stats`, efficient-sweep guidance |
+| v0.3 (#10, #9 digest) | Operational hardening: cost control, periodic digest reminder for long-unfixed entries |
 | future (#12–#16) | Remediation handoff to AgenticRuns, fleet/multicluster, CRD dispatcher, pluggable investigation engine, MCP-memory decision record |

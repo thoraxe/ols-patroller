@@ -65,10 +65,11 @@ manifests deploy by default.
    Git needs no `HOME` or user config: `wiki-memory.md` rule 4d already passes
    `-c user.name=… -c user.email=… safe.directory=…` per command [DONE: #1].
 9. The image copies `patrol.py` and `requirements.txt` in, and its default
-   command is `patrol.py --loop --interval 900 --wiki /wiki/cluster-wiki.md` —
+   command is `patrol.py --loop --interval 21600 --wiki /wiki/cluster-wiki.md` —
    `ENTRYPOINT` invokes the script via the image's `python3.12`; runtime wiring
    (Deployment args, Secret-sourced env) belongs to the #2 manifests and may
-   override the default command [DONE: #1].
+   override the default command [DONE: #1] [PLANNED: #25 — cadence 900 s →
+   6 h, kept identical to the Deployment args].
 10. The image bakes **no configuration and no secrets**: no `ENV` instruction
     sets any `PATROL_*` or `SLACK_*` variable. `PATROL_API_KEY` /
     `PATROL_BASE_URL` / `PATROL_MODEL` arrive at runtime from the Secret defined
@@ -145,3 +146,4 @@ manifests deploy by default.
 |---|---|
 | ~~#1~~ | This file's own contract: Containerfile + `requirements.txt` (rules 1–12) |
 | ~~#2~~ | Manifests consuming this image (`in-cluster-deployment.md`) + the post-merge CI that publishes it to GHCR (rules 13–16) |
+| #25 | Default cadence 6 h: CMD `--interval 21600` (rule 9), kept identical to the Deployment args and the `patrol.py` env default |

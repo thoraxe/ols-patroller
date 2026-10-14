@@ -45,5 +45,8 @@ redefined here.
   planned as the patrol pod's RBAC boundary in-cluster (#2).
 - **Severity** — finding vocabulary: `info` (note/baseline/expected), `warn`
   (drift/degradation/suspicious), `crit` (broken, needs a human now).
-- **Milestones** — v0.1 in-cluster (#1–#4), v0.2 compounding wiki (#5–#8), v0.3
-  operational hardening (#9–#11), future (#12–#16). Plans live in GitHub issues.
+- **Milestones** — v0.1 in-cluster (#1–#4, #9, #11, #24, #25, #27, #28), v0.2
+  compounding wiki (#5–#8, #20), v0.3 operational hardening (#10 plus #9's
+  digest), future (#12–#16). Plans live in GitHub issues; #9/#11 were promoted
+  into v0.1 and #20 slotted into v0.2 after the first in-cluster acceptance
+  run (PR #29 discussion).
