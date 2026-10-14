@@ -25,7 +25,8 @@ issue numbers with `[PLANNED: #N]` markers.
 ## Scope
 
 Covered: `patrol.py` (the entire implementation), its runtime artifacts
-(the wiki directory — `wiki/cluster-wiki.md` and its git repo [DONE: #3]),
+(the wiki directory — `wiki/cluster-wiki.md` and its git repo [DONE: #3]), the
+in-cluster image artifacts (repo-root `Containerfile` + `requirements.txt`, #1),
 `docs/prior-art.md` positioning, and planned behavior tied to
 GitHub issues.
 
@@ -45,6 +46,7 @@ AI agents. Content is optimized for precision and machine consumption.
 | What one patrol does | `what/patrol-engine.md` |
 | Read-only safety guarantees | `what/safety-model.md`, `what/kubectl-guard.md` |
 | The wiki (agent memory) contract | `what/wiki-memory.md` |
+| The in-cluster container image | `what/container-image.md` |
 | Report & notification formats | `what/reporting-notifications.md` |
 | Where code lives | `how/project-structure.md` |
 | How the deepagents engine is wired | `how/agent-engine.md` |
@@ -58,6 +60,7 @@ AI agents. Content is optimized for precision and machine consumption.
 | `what/patrol-engine.md` | `how/agent-engine.md` |
 | `what/reporting-notifications.md` | `how/reporting-pipeline.md` |
 | `what/kubectl-guard.md`, `what/wiki-memory.md` | `how/project-structure.md` (all symbols live in `patrol.py`) |
+| `what/container-image.md` | `how/project-structure.md` (Containerfile + `requirements.txt` path entries) |
 
 ## Conventions
 

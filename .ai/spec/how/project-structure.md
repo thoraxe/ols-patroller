@@ -27,9 +27,11 @@ Other paths:
 |---|---|
 | `docs/prior-art.md` | Landscape survey + positioning (drives roadmap #12, #15) |
 | `wiki/` | Runtime artifact — the wiki directory: `cluster-wiki.md` + its git repo; **gitignored**, never commit [DONE: #3 — was a bare `cluster-wiki.md` beside `patrol.py`] |
-| `tests/` | `conftest.py` (repo-root import path) + `test_wiki_git.py` — wiki git persistence unit tests (#3 spec PR). Fake-model e2e still planned for `tests/test_patrol_deepagents.py` [PLANNED: #4] |
-| `pyproject.toml`, `uv.lock` | Project + dev dependency groups for the test environment (`uv run --group dev pytest tests/`); mirrors `patrol.py`'s PEP 723 inline metadata — both run modes work (#1 will consolidate) |
-| `Containerfile`, `manifests/` | Planned [PLANNED: #1, #2] |
+| `tests/` | `conftest.py` (repo-root import path) + `test_wiki_git.py` — wiki git persistence unit tests (#3 spec PR) + `test_container_image.py` — Containerfile/`requirements.txt` static contract tests [DONE: #1]. Fake-model e2e still planned for `tests/test_patrol_deepagents.py` [PLANNED: #4] |
+| `pyproject.toml`, `uv.lock` | Project + dev dependency groups for the test environment (`uv run --group dev pytest tests/`); mirrors `patrol.py`'s PEP 723 inline metadata (range constraints) — the image instead installs the exactly-pinned `requirements.txt` [DONE: #1] |
+| `Containerfile` | In-cluster image build recipe: ubi9-minimal base, version-pinned + checksum-verified `oc`/`kubectl` client, pip install from `requirements.txt`, non-root random-UID, default command `--loop --interval 900 --wiki /wiki/cluster-wiki.md` [DONE: #1] (`what/container-image.md`) |
+| `requirements.txt` | Exact pins (`name==version`) of the PEP 723 top-level runtime set; installed into the image at build time [DONE: #1] |
+| `manifests/` | Planned [PLANNED: #2] |
 
 ## Key Entry Points
 
@@ -39,6 +41,10 @@ Other paths:
 - `--loop` wraps `one(fatal=False)` in `while True` + `time.sleep(interval)`; a patrol
   exception is logged and the loop continues; `KeyboardInterrupt` stops cleanly.
   `--once` (default) re-raises patrol failures.
+- Container: `ENTRYPOINT ["python3.12", "patrol.py"]` with default
+  `CMD ["--loop", "--interval", "900", "--wiki", "/wiki/cluster-wiki.md"]`;
+  dependencies were pip-installed from `requirements.txt` at build — nothing
+  resolves or installs at container start [DONE: #1].
 - `run_patrol()` is the whole patrol lifecycle: load wiki → in-flight AgenticRuns →
   build agent → stream exploration → shape pass → findings/notify/wiki write.
 
