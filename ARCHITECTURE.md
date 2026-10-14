@@ -82,7 +82,10 @@ lives on the `/wiki` PVC. Planned next (v0.2): a skeleton schema, per-entry
 ## Deployment topology (current vs planned)
 
 Today the patroller runs as a CLI process (`uv run patrol.py --loop`) against a
-kubeconfig. Planned in-cluster shape (v0.1, issues #1–#2):
+kubeconfig; the in-cluster image (repo-root `Containerfile`: ubi9-minimal,
+version-pinned OpenShift client, build-time pip install from a pinned
+`requirements.txt` — ADR 0005) exists as of #1. Planned in-cluster wiring (v0.1,
+issue #2):
 
 ```mermaid
 flowchart TD
@@ -110,6 +113,7 @@ A `PatrolSchedule` CRD is planned to replace the `--loop` process eventually
 | Shape pass, not in-agent ToolStrategy | Forced tool choice killed self-termination; shape pass made patrols 4.7× cheaper | `.ai/spec/decisions/0002` |
 | Git-backed wiki, not MCP memory | Single-writer whole-file access pattern; revert insurance; federation later | `.ai/spec/decisions/0003` |
 | Read-only patrol + delegated remediation | Structural safety; act via governed AgenticRuns with approval + audit | `.ai/spec/decisions/0004` |
+| Pinned `requirements.txt` for the image | Build-time installs, no runtime drift or network package management in crash loops; uv header stays for dev | `.ai/spec/decisions/0005` |
 
 Agent-facing specs (numbered behavioral rules, module maps, guard contract) live in
 `.ai/spec/` — start at `.ai/spec/README.md`.

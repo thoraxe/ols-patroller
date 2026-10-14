@@ -1,0 +1,4 @@
+deepagents==0.7.25
+langchain-openai==1.7.1
+pydantic==2.14.1
+requests==2.34.2

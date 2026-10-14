@@ -45,7 +45,7 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
 12a. **Container image** — ubi9-minimal image that runs `patrol.py` in-cluster:
      version-pinned OpenShift client, build-time pip install from
      `requirements.txt`, non-root random-UID, default command `--loop --interval
-     900 --wiki /wiki/cluster-wiki.md` [PLANNED: #1] (`container-image.md`).
+     900 --wiki /wiki/cluster-wiki.md` [DONE: #1] (`container-image.md`).
 
 ### Lifecycle
 
@@ -79,7 +79,7 @@ CLI flags: `--once` (default), `--loop`, `--interval`, `--dry-cluster`, `--wiki`
 (default `wiki/cluster-wiki.md` next to `patrol.py` [DONE: #3; was
 `cluster-wiki.md`]), `--max-steps`, `-v/--verbose`. In-cluster, the image's
 default command is `--loop --interval 900 --wiki /wiki/cluster-wiki.md`
-[PLANNED: #1] (`container-image.md`).
+[DONE: #1] (`container-image.md`).
 
 Hard-coded constants (not env-configurable): `OUT_CAP` = 15,000 chars of tool output
 fed back to the model; model temperature 0.3, `max_tokens` 16000, request timeout
