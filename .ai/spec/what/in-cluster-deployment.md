@@ -17,14 +17,14 @@ layer 3 (RBAC boundary) real, and what the CI-published image
    `pvc.yaml`, `secret.yaml`, `deployment.yaml`), the committed
    `secret.yaml.example` template — a template, not a resource (rule 14) —
    and, once the operator follows rule 14, the gitignored `secret.yaml`
-   itself; nothing else [PLANNED: #2].
+   itself; nothing else [DONE: #2].
 2. Every namespaced object carries the literal `metadata.namespace:
    ols-patroller`, the `ClusterRoleBinding`'s subject namespace is the same,
    and the `kustomization.yaml` sets **no** `namespace:` field — the kustomize
    namespace transformer does not rewrite `ClusterRoleBinding` subjects, so
    hardcoded literals (consistency enforced by the static tests) are the
    safe form. Changing the deployment namespace is an edit across the files,
-   not one field [PLANNED: #2].
+   not one field [DONE: #2].
 
 ### Identity & RBAC (safety layer 3)
 
@@ -32,7 +32,7 @@ layer 3 (RBAC boundary) real, and what the CI-published image
    Deployment's pod template sets `serviceAccountName: ols-patroller`. The SA
    token automounts (k8s default) — the image's `oc` authenticates via the
    pod's in-cluster service account and `KUBERNETES_SERVICE_HOST`; no
-   kubeconfig is mounted or built (verified in the #1 container run) [PLANNED:
+   kubeconfig is mounted or built (verified in the #1 container run) [DONE:
    #2].
 4. A single `ClusterRoleBinding` named `ols-patroller` binds that SA to the
    **built-in** `ClusterRole` `cluster-reader` (`roleRef`: apiGroup
@@ -42,7 +42,7 @@ layer 3 (RBAC boundary) real, and what the CI-published image
    built-in role is the entire grant (ADR
    `decisions/0006-cluster-reader-binding.md`). This binding is
    `safety-model.md` layer 3 — the server-side enforcement boundary; the
-   `kubectl_readonly` guard is defense-in-depth on top [PLANNED: #2].
+   `kubectl_readonly` guard is defense-in-depth on top [DONE: #2].
 
 ### Persistence (the wiki volume)
 
@@ -51,7 +51,7 @@ layer 3 (RBAC boundary) real, and what the CI-published image
    cluster's default storage class applies — most portable for a dev cluster;
    override by patch when the default class is wrong). The Deployment mounts
    it at `/wiki` (volume name `wiki`, `claimName` matching the PVC) — the wiki
-   directory is the PVC mount (`wiki-memory.md` rule 4a) [PLANNED: #2].
+   directory is the PVC mount (`wiki-memory.md` rule 4a) [DONE: #2].
 6. **Volume writability under the SCC.** The pod's `securityContext` sets
    `runAsNonRoot: true` and sets **no** `runAsUser`, `runAsGroup`, or
    `fsGroup`. Under the cluster-default restricted SCC (`restricted-v2`), the
@@ -65,7 +65,7 @@ layer 3 (RBAC boundary) real, and what the CI-published image
    `755` root-owned bind mount → `PermissionError` creating the wiki). No
    init-container permission fixup: chmod on a root-owned volume requires
    root, i.e. the `anyuid` SCC — a privilege escalation the read-only posture
-   forbids (ADR `decisions/0007-scc-fsgroup-writable-wiki.md`) [PLANNED: #2].
+   forbids (ADR `decisions/0007-scc-fsgroup-writable-wiki.md`) [DONE: #2].
 
 ### The Deployment
 
@@ -74,17 +74,17 @@ layer 3 (RBAC boundary) real, and what the CI-published image
    `RollingUpdate` at one replica is maxSurge 1 / maxUnavailable 0: a surge
    pod can never mount the RWO volume until the old pod dies, so the rollout
    stalls; `Recreate` also guarantees no two-writer window on the single-writer
-   wiki (`wiki-memory.md` Constraints) [PLANNED: #2].
+   wiki (`wiki-memory.md` Constraints) [DONE: #2].
 8. The container image is the literal name `ols-patroller` (no registry, no
    tag — a stable key for the kustomize `images` transformer); the
    kustomization's `images:` entry maps it to the CI-published
    `ghcr.io/thoraxe/ols-patroller:main` (`container-image.md` rules 13–16).
    That entry is the single override point for clusters that must pull from
-   elsewhere (private registry, the cluster's internal registry) [PLANNED:
+   elsewhere (private registry, the cluster's internal registry) [DONE:
    #2].
 9. The container args are exactly `--loop --interval 900 --wiki
    /wiki/cluster-wiki.md` (identical to the image's default CMD; stated
-   explicitly so the manifests are self-describing) [PLANNED: #2].
+   explicitly so the manifests are self-describing) [DONE: #2].
 10. **Env wiring.** `PATROL_API_KEY`, `PATROL_BASE_URL`, `PATROL_MODEL` (and
     `SLACK_WEBHOOK_URL` / `PATROL_WIKI_REMOTE` when present in the Secret)
     arrive **only** via `envFrom` → `secretRef` on the Secret named
@@ -92,20 +92,20 @@ layer 3 (RBAC boundary) real, and what the CI-published image
     them (mirrors `container-image.md` rule 10). `PATROL_CLUSTER_ID` is set as
     a plain literal `env` entry (not secret material): a placeholder the
     operator edits to the real cluster name for wiki commit identity
-    (`wiki-memory.md`), never left at the `local` default [PLANNED: #2].
+    (`wiki-memory.md`), never left at the `local` default [DONE: #2].
 11. **Security context.** Pod: `runAsNonRoot: true`, `seccompProfile:
     RuntimeDefault`, nothing else (rule 6 forbids the identity fields).
     Container: `allowPrivilegeEscalation: false`, `capabilities: drop:
     [ALL]`. The pod must admit under the cluster-default restricted SCC with
     **no SCC grant**: no root, no privilege escalation, no added capabilities,
-    no host namespaces, no hostPath volumes, no `privileged` [PLANNED: #2].
+    no host namespaces, no hostPath volumes, no `privileged` [DONE: #2].
 12. Resources: requests `cpu: 100m` / `memory: 256Mi`, limits `cpu: "1"` /
     `memory: 512Mi` (the patrol is a Python process mostly waiting on the
     model endpoint; the values are defaults — the contract is that requests
-    and limits are both set for CPU and memory) [PLANNED: #2].
+    and limits are both set for CPU and memory) [DONE: #2].
 13. The Deployment and its pod template carry the label `app: ols-patroller`;
     the selector's `matchLabels` matches it (this is what the acceptance
-    procedure's `delete pod -l app=ols-patroller` keys on) [PLANNED: #2].
+    procedure's `delete pod -l app=ols-patroller` keys on) [DONE: #2].
 
 ### The Secret
 
@@ -117,10 +117,10 @@ layer 3 (RBAC boundary) real, and what the CI-published image
     `PATROL_BASE_URL`, `PATROL_MODEL`) set to obvious placeholder values, with
     the optional keys (`SLACK_WEBHOOK_URL`, `PATROL_WIKI_REMOTE`) present as
     commented-out lines. Procedure: `cp secret.yaml.example secret.yaml`,
-    fill in, apply [PLANNED: #2].
+    fill in, apply [DONE: #2].
 15. No committed manifest contains a real or plausible value for any secret
     env key: those key names appear only in `secret.yaml.example`, only with
-    placeholder values [PLANNED: #2].
+    placeholder values [DONE: #2].
 
 ### Optional remote-push wiring (deploy key)
 
@@ -132,7 +132,7 @@ layer 3 (RBAC boundary) real, and what the CI-published image
     patch the Deployment to mount it read-only (e.g. at `/wiki-deploy-key`)
     and set `GIT_SSH_COMMAND: ssh -i /wiki-deploy-key/<key> -o
     StrictHostKeyChecking=accept-new`, and set `PATROL_WIKI_REMOTE` in the
-    patrol Secret [PLANNED: #2].
+    patrol Secret [DONE: #2].
 
 ### Acceptance (done-when)
 
@@ -198,4 +198,4 @@ layer 3 (RBAC boundary) real, and what the CI-published image
 
 | Ticket | Summary |
 |---|---|
-| #2 | This file's contract: manifests (rules 1–17) + the CI workflow that publishes the deployed image (`container-image.md` rules 13–16) |
+| ~~#2~~ | This file's contract: manifests (rules 1–17) + the CI workflow that publishes the deployed image (`container-image.md` rules 13–16) |

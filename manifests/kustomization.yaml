@@ -1,0 +1,25 @@
+# In-cluster deployment (#2) — kustomize root.
+# Contract: .ai/spec/what/in-cluster-deployment.md.
+
+# Rule 1: exactly six resources — secret.yaml is the gitignored operator file
+# (rule 14); secret.yaml.example is a template, NOT listed here.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - clusterrolebinding.yaml
+  - pvc.yaml
+  - secret.yaml
+  - deployment.yaml
+
+# Rule 2: NO `namespace:` field here — the namespace transformer does not
+# rewrite ClusterRoleBinding subjects; namespaces are per-file literals.
+
+# Rule 8: the single override point — the Deployment carries the literal image
+# key `ols-patroller`; this maps it to the CI-published GHCR image
+# (container-image.md rules 13-16). Edit here to pull from elsewhere.
+images:
+  - name: ols-patroller
+    newName: ghcr.io/thoraxe/ols-patroller
+    newTag: main

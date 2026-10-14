@@ -64,7 +64,7 @@ sees these messages and recovers based on them.
 
 - The guard is **defense-in-depth**, not the boundary itself: when deployed
   in-cluster, the pod ServiceAccount's RBAC is the server-side enforcement boundary
-  [PLANNED: #2] (see `safety-model.md`).
+  [DONE: #2] (see `safety-model.md`).
 - Guard refusals were unit-checked for mutation verbs and secret-value reads; those
   tests are slated to land in-repo [PLANNED: #4].
 

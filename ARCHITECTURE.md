@@ -49,7 +49,7 @@ stopping signal (GLM never self-terminated under it — see
 flowchart LR
     M["LLM"] -->|"only tools:<br/>read_file + kubectl_readonly"| G["Layer 1 · Tool guard<br/>verb whitelist<br/>secret-value refusal"]
     G --> CLI["oc/kubectl subprocess<br/>(arg list, no shell)"]
-    CLI --> R["Layer 3 · RBAC boundary (planned #2)<br/>SA bound to cluster-reader<br/>— the real enforcement edge"]
+    CLI --> R["Layer 3 · RBAC boundary<br/>SA bound to cluster-reader<br/>— the real enforcement edge"]
     subgraph E["Layer 2 · Engine surface"]
         T["no backend → no shell / fs writes / execute<br/>default task subagent disabled"]
     end
@@ -84,8 +84,11 @@ lives on the `/wiki` PVC. Planned next (v0.2): a skeleton schema, per-entry
 Today the patroller runs as a CLI process (`uv run patrol.py --loop`) against a
 kubeconfig; the in-cluster image (repo-root `Containerfile`: ubi9-minimal,
 version-pinned OpenShift client, build-time pip install from a pinned
-`requirements.txt` — ADR 0005) exists as of #1. Planned in-cluster wiring (v0.1,
-issue #2):
+`requirements.txt` — ADR 0005) exists as of #1, and the in-cluster wiring exists
+as of #2: the `manifests/` kustomize root (ServiceAccount bound to the built-in
+`cluster-reader`, RWO PVC at `/wiki`, single-replica Recreate Deployment,
+Secret-sourced env) plus post-merge CI publishing the image to GHCR
+(`ghcr.io/thoraxe/ols-patroller`, rolling `main` + `sha-<SHA>` tags — ADR 0008):
 
 ```mermaid
 flowchart TD
@@ -114,6 +117,9 @@ A `PatrolSchedule` CRD is planned to replace the `--loop` process eventually
 | Git-backed wiki, not MCP memory | Single-writer whole-file access pattern; revert insurance; federation later | `.ai/spec/decisions/0003` |
 | Read-only patrol + delegated remediation | Structural safety; act via governed AgenticRuns with approval + audit | `.ai/spec/decisions/0004` |
 | Pinned `requirements.txt` for the image | Build-time installs, no runtime drift or network package management in crash loops; uv header stays for dev | `.ai/spec/decisions/0005` |
+| Built-in `cluster-reader` binding, not a bespoke role | Platform-maintained read semantics across OCP upgrades; the repo defines no RBAC of its own | `.ai/spec/decisions/0006` |
+| `/wiki` writability via the SCC-assigned fsGroup | No privileged SCC, no init-container chmod; fails loudly where the storage ignores fsGroup | `.ai/spec/decisions/0007` |
+| Post-merge CI publishes the image to GHCR | Shared pullable artifact, merge to `main` is the release event, `sha-<SHA>` tags pin exact merges | `.ai/spec/decisions/0008` |
 
 Agent-facing specs (numbered behavioral rules, module maps, guard contract) live in
 `.ai/spec/` — start at `.ai/spec/README.md`.

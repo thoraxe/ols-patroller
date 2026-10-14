@@ -50,7 +50,7 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
      ServiceAccount bound to the built-in `cluster-reader`, RWO PVC at `/wiki`,
      single-replica non-root Deployment running `--loop --interval 900`,
      Secret-sourced env; merges to `main` build and publish the image to GHCR
-     (`container-image.md` rules 13–16) [PLANNED: #2]
+     (`container-image.md` rules 13–16) [DONE: #2]
      (`in-cluster-deployment.md`).
 
 ### Lifecycle

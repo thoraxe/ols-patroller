@@ -104,23 +104,23 @@ manifests deploy by default.
     pipeline, not a merge gate; PR-time builds are deliberately excluded — CI
     stays free on draft/spec work). No path filter: every merge republishes
     `:main`, keeping the tag equal to "latest main" (accepted slack)
-    [PLANNED: #2].
+    [DONE: #2].
 14. The workflow builds with `docker/build-push-action` from the repo root:
     build context `.`, file `./Containerfile` (the action's default
     `Dockerfile` name is wrong for this repo — the workflow must name the
-    file), platform `linux/amd64` only, `push: true` [PLANNED: #2].
+    file), platform `linux/amd64` only, `push: true` [DONE: #2].
 15. Publication target is GHCR: `ghcr.io/thoraxe/ols-patroller`, tagged `main`
     (rolling, latest merged state) and `sha-<full commit SHA>` (per-merge,
     traceable pin). Login is `docker/login-action` with the built-in
     `GITHUB_TOKEN`; workflow permissions are exactly `contents: read` +
     `packages: write` — no personal access tokens, no registry credentials
-    stored anywhere [PLANNED: #2].
+    stored anywhere [DONE: #2].
 16. The CI-published image is the deployment artifact: the #2 manifests
     reference `ghcr.io/thoraxe/ols-patroller:main` by default (kustomize
     `images` override — `in-cluster-deployment.md` rule 8). The first publish
     requires flipping the GHCR package to public once (the repo is public), or
     the deploying cluster uses an image pull secret / an overridden ref
-    (ADR `decisions/0008-ci-published-image.md`) [PLANNED: #2].
+    (ADR `decisions/0008-ci-published-image.md`) [DONE: #2].
 
 ## Constraints
 
@@ -144,4 +144,4 @@ manifests deploy by default.
 | Ticket | Summary |
 |---|---|
 | ~~#1~~ | This file's own contract: Containerfile + `requirements.txt` (rules 1–12) |
-| #2 | Manifests consuming this image (`in-cluster-deployment.md`) + the post-merge CI that publishes it to GHCR (rules 13–16) |
+| ~~#2~~ | Manifests consuming this image (`in-cluster-deployment.md`) + the post-merge CI that publishes it to GHCR (rules 13–16) |
