@@ -6,3 +6,7 @@ __pycache__/
 
 # spec-first review-loop reports (session artifacts)
 .ai/spec/verification/
+
+# wiki git runtime artifact dir (#3) and pytest cache
+wiki/
+.pytest_cache/

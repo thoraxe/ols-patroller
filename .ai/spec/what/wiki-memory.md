@@ -8,8 +8,10 @@ knowledge base of the observed cluster.
 
 ### Storage & Lifecycle
 
-1. The wiki is a single markdown file; default path `cluster-wiki.md` next to
-   `patrol.py`, overridable with `--wiki`.
+1. The wiki is a single markdown file in a dedicated **wiki directory**; default
+   path `wiki/cluster-wiki.md` next to `patrol.py`, overridable with `--wiki`
+   [DONE: #3 — the default moves from `cluster-wiki.md` beside `patrol.py` so
+   the wiki directory can be the patroller's own git repository, rule 4a].
 2. On first run (file absent) it is seeded from `WIKI_SEED`, which pre-declares the
    section structure and states the file will be rewritten each patrol.
 3. At patrol start the wiki is read in full and injected into the prompt as the
@@ -18,6 +20,51 @@ knowledge base of the observed cluster.
 4. After a successful report, the wiki is wholly replaced by
    `report.updated_wiki` (only if non-empty); if the reporting pass fails, the wiki
    is left untouched.
+
+### Git History
+
+4a. The **wiki repo**: the wiki directory (the parent directory of the wiki file)
+    is a git repository owned by the patroller. The wiki repo is **local storage**
+    — in-cluster it lives on the `/wiki` PVC mount (#2) — and no remote is
+    required for any patrol behavior; the optional push (rule 4e) is replication
+    only. If the wiki directory contains no repository, the patroller initializes
+    one at startup, before the first patrol (default branch `main`), creating the
+    directory if absent. The wiki directory must be dedicated to the wiki: if it
+    already contains a git repository of any origin, the patroller uses that
+    repository as the wiki repo and commits into it [DONE: #3].
+4b. If git is not on `PATH`, or repository initialization fails, the patroller
+    logs a warning and runs the process **file-only** — no init, no commit, no
+    push; the wiki file itself keeps working. A missing or broken git never fails
+    or blocks a patrol [DONE: #3].
+4c. Every wiki write is atomic: content is written to a temporary file in the
+    wiki directory and renamed over the wiki file. A crash mid-write must never
+    truncate or delete the existing wiki; if the rename fails, the temporary file
+    is removed, the old wiki stands, and the error propagates to the caller. The
+    commit history is the second net — a bad rewrite is always revertible
+    [DONE: #3].
+4d. One wiki-changing patrol, one commit. When a successful report's
+    `updated_wiki` has replaced the wiki file, the patroller stages exactly the
+    wiki file (never anything else in the wiki directory) and commits with:
+    - identity `ols-patroller <patrol@CLUSTER_ID>` (`CLUSTER_ID` from
+      `PATROL_CLUSTER_ID`, default `local`), passed per command as
+      `-c user.name=… -c user.email=…` together with `safe.directory` for the
+      wiki directory — git invocations must not depend on the invoking user's
+      config or `HOME` (non-root, random-UID safe);
+    - message `patrol N: X findings, Y warn`, where N is the number of commits
+      already in the wiki repo plus one, X is the report's finding count, and Y is
+      the count of findings of severity `warn` or `crit`.
+    A patrol that does not change the wiki file on disk — empty `updated_wiki`,
+    failed reporting pass, or byte-identical rewrite — creates no commit
+    [DONE: #3].
+4e. The remote push is optional replication of the local wiki repo, never a
+    dependency: it runs only if `PATROL_WIKI_REMOTE` is set, pushing the current
+    branch to the same-named branch on that remote after each successful commit
+    (deploy-key wiring is the deployment's concern, #2 — the patroller only runs
+    `git push`). The push is best-effort and bounded: at most `PUSH_ATTEMPTS` (3)
+    attempts, `PUSH_TIMEOUT` (30 s) per attempt, `PUSH_BACKOFF` (5 s) between
+    attempts; any failure is logged and never fails the patrol or blocks the loop
+    indefinitely — the local commit is the source of truth (local-first)
+    [DONE: #3].
 
 ### Format Contract
 
@@ -39,7 +86,14 @@ knowledge base of the observed cluster.
 
 ## Configuration Surface
 
-- `--wiki` — path to the wiki file (default `cluster-wiki.md` beside `patrol.py`)
+- `--wiki` — path to the wiki file (default `wiki/cluster-wiki.md` beside
+  `patrol.py` [DONE: #3; was `cluster-wiki.md`])
+- `PATROL_CLUSTER_ID` — cluster identity used in wiki commit emails
+  (`patrol@<cluster-id>`); default `local` (the in-cluster Deployment, #2, sets
+  the real cluster name) [DONE: #3]
+- `PATROL_WIKI_REMOTE` — if set, each wiki commit is pushed to this git remote
+  (best-effort and bounded, rule 4e; local commit is the source of truth)
+  [DONE: #3]
 
 ## Constraints
 
@@ -51,12 +105,19 @@ knowledge base of the observed cluster.
   (#16 decision record).
 - Single writer (one patrol process), whole-file read/write, low frequency — the
   access pattern that made git the chosen backing store.
+- **Git is process-level persistence, never an agent capability.** All git activity
+  (init, commit, push) runs in the patrol process for durability; the agent's tool
+  surface stays exactly `[read_file, kubectl_readonly]` — `safety-model.md` layer 2
+  is unchanged by #3.
+- **Dedicated wiki directory.** The wiki directory holds only wiki state (the wiki
+  file, its git repo, transient temp files). Pointing `--wiki` into a directory
+  someone cares about means patrol commits land in its git history [DONE: #3].
 
 ## Planned Changes
 
 | Ticket | Summary |
 |---|---|
-| #3 | Git-backed wiki: `/wiki` becomes a git repo, one patrol one commit, atomic write (temp + rename), optional remote push that never blocks the patrol loop |
+| ~~#3~~ | ~~Git-backed wiki: wiki directory is a git repo (init at startup, file-only fallback), atomic write (temp + rename), one commit per wiki-changing patrol (`patrol N: X findings, Y warn`), optional `PATROL_WIKI_REMOTE` push — bounded, best-effort, local-first~~ |
 | #5 | Skeleton schema + validation-on-write: YAML frontmatter (`wiki_version`, `cluster_id`, `patrol_count`, `last_patrol`), fixed section set, per-entry metadata (`id`, `status`, `first_seen`, `last_verified`, `source`, `confidence`), one repair pass on invalid write else keep old wiki |
 | #6 | Per-entry `recheck:` commands — each watch-list entry carries the kubectl invocation that re-verifies it (self-linting wiki) |
 | #7 | `stale_after`: auto-expire watch-list entries not re-verified within N patrols (flip to `expired`, keep in anomaly log) |
