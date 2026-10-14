@@ -21,9 +21,10 @@ issue number. Resolve with `gh pr view` / `gh pr diff` as needed.
 
 1. The PR exists with exactly one commit (specs + failing tests). If it has none or
    more than one, something is off — stop and report.
-2. The spec has human approval: the PR carries an approving review from a human
-   (`gh pr view <N> --json reviews`). If not: "Human gate not passed — approve the
-   spec first." Do not proceed on the user's say-so alone if the review is missing;
+2. The spec has human approval: the PR carries the `spec-approved` label — a
+   human adds it after reviewing the spec (`gh pr view <N> --json labels`). If
+   not: "Human gate not passed — approve the spec first (add `spec-approved` to
+   the PR)." Do not proceed on the user's say-so alone if the label is missing;
    ask them to record the approval on the PR.
 3. The failing tests currently fail. Run them and confirm — if they already pass,
    the work may be done or the tests are wrong; report instead of implementing.
@@ -37,7 +38,8 @@ issue number. Resolve with `gh pr view` / `gh pr diff` as needed.
   strikethroughs.
 - Exactly one additional commit on the PR branch. Never amend, rebase, or otherwise
   touch commit 1.
-- Never merge. Human approval is the only merge path.
+- Never merge, and never add the `spec-approved` label — both are human actions.
+  `implementation-complete` signals the PR *could* be merged; it does not merge it.
 - If the spec is wrong or impossible to implement as written: STOP. Report the
   conflict in the PR conversation and to the user. Spec changes need their own
   `/skill:spec-first` review loop — do not fix the spec inline.
@@ -68,6 +70,10 @@ ask the user rather than guessing.
 
 ### 4. Fresh-AI review loop
 
+Add the `ai-implementation-review` label to the PR before dispatching
+(`gh pr edit <N> --add-label ai-implementation-review`) — the PR is now visibly
+under AI review.
+
 Dispatch an independent reviewer — a separate `pi` process with no session context
 (procedure below; template: `reviewer-prompt.md` in this skill's directory). Inputs,
 inline and labeled by path: the approved spec files in full, the complete PR diff
@@ -85,8 +91,12 @@ glossary.
 - One commit on the PR branch: `impl: <title> (#N)` — implementation + how/ sync +
   `[DONE: #N]` marker flips + Planned Changes strikethroughs.
 - Push to the PR branch. Do not merge.
+- Flip the state: remove `ai-implementation-review`, add
+  `implementation-complete` (`gh pr edit <N> --remove-label
+  ai-implementation-review --add-label implementation-complete`). The PR now
+  signals it could be merged — the merge itself stays with a human.
 - Report to the user: what was implemented, test results, review outcome, and that
-  the PR awaits their final approval.
+  the PR awaits their final approval (merge or further human review).
 
 ## Reviewer dispatch (Pi)
 
