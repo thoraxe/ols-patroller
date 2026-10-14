@@ -36,8 +36,11 @@ issues inform the specs.
 - Real cluster: `uv run patrol.py --once -v` (needs `oc`/`kubectl` + kubeconfig).
 - Loop mode: `uv run patrol.py --loop --interval 900`.
 - Dependencies are PEP 723 inline metadata in `patrol.py`; `uv` resolves them — no
-  separate install step.
-- No tests in-repo yet; the fake-model e2e is planned for `tests/` (#4).
+  separate install step. `pyproject.toml` mirrors them for the test environment
+  only (`uv run patrol.py` still uses the PEP 723 script mode).
+- Tests: `uv run --group dev pytest tests/ -q` — `tests/test_wiki_git.py` covers
+  the wiki git persistence contract (#3); the fake-model e2e is still planned for
+  `tests/` (#4).
 - `cluster-wiki.md` is a runtime artifact (gitignored) — never commit it.
 - Roadmap: GitHub issues + milestones, not documents. Spec files mark planned
   behavior as `[PLANNED: #N]`.

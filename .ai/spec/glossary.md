@@ -8,6 +8,10 @@ redefined here.
   interval.
 - **Wiki** (`cluster-wiki.md`) — the agent's persistent memory: a markdown file the
   agent reads and wholly rewrites each patrol. Hypotheses, not truth.
+- **Wiki repo** — the local git repository in the wiki directory (the wiki
+  file's parent dir; in-cluster, the `/wiki` PVC mount), owned by the patroller:
+  one wiki-changing patrol, one commit. The wiki's irreversibility insurance and
+  audit trail (planned, #3).
 - **Watch-list** — wiki section holding the refinement loop: rules patrol N writes
   for patrol N+1 (what to re-check, escalate, or expire).
 - **Shape pass** — the tool-free structured-output pass (`shape_report`) that
