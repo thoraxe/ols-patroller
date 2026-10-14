@@ -16,8 +16,19 @@ issues inform the specs.
 
 | Phase | Command | Gate |
 |---|---|---|
-| 1. Spec PR — contract rules + failing tests, fresh-AI review loop until clean | `/skill:spec-first <issue or feature>` | **Human approves the spec** |
-| 2. Implementation — context-clear agent makes the tests pass, fresh-AI review loop | `/skill:spec-implement <PR>` (fresh session) | **Human approves and merges** |
+| 1. Spec PR — contract rules + failing tests, fresh-AI review loop until clean | `/skill:spec-first <issue or feature>` | **Human adds `spec-approved`** |
+| 2. Implementation — context-clear agent makes the tests pass, fresh-AI review loop | `/skill:spec-implement <PR>` (fresh session) | **Human merges** |
+
+PR state labels track where a PR is in that loop. The skills manage the AI-review
+and ready states; humans own the gate transitions (`spec-approved`, merging):
+
+| Label | Meaning |
+|---|---|
+| `ai-spec-review` | PR is currently being reviewed by AI (spec phase) |
+| `spec-review-required` | Spec passed all AI reviews — ready for human review |
+| `spec-approved` | A human reviewed and approved the spec changes (gate to phase 2) |
+| `ai-implementation-review` | PR is currently being reviewed by AI (implementation phase) |
+| `implementation-complete` | Fully AI-reviewed — could be merged; optional human review |
 
 - Every feature PR has exactly **two commits**: (1) specs + failing tests,
   (2) implementation.

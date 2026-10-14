@@ -28,6 +28,8 @@ The argument names the work:
 - The PR contains **spec changes + failing tests only**. No implementation code
   beyond test scaffolding (conftest, dependency wiring, test fixtures).
 - Never merge, never push to `main`. Human approval is the only merge path.
+- Never add the `spec-approved` label yourself — that transition belongs to a
+  human; the label is the gate `spec-implement` keys on.
 - Write for a context-clear implementer: the implementing agent will read the
   approved spec, the failing tests, and the repo — nothing from this session. The
   spec must be complete and unambiguous on its own.
@@ -65,7 +67,18 @@ The argument names the work:
   the dependency wiring, document how tests run in the relevant how/ file, and say
   so in the PR body.
 
-### 4. Fresh-AI review loop
+### 4. Open the PR as a draft
+
+- Branch: `spec/<N>-<slug>` (or `spec/<slug>` with no issue).
+- Exactly one commit: `spec: <title> (#N)` — spec changes + failing tests. Keep it
+  one commit while iterating: amend, never stack commits.
+- Open a **draft** PR (`gh pr create --draft`). The body is a placeholder for now
+  ("spec drafted; AI review loop in progress"); the final body lands in step 6.
+  Put `Closes #N` in the body (not the commit) so merging closes the issue.
+- Add the `ai-spec-review` label (`gh pr edit <N> --add-label ai-spec-review`) —
+  the PR is now visibly under AI review.
+
+### 5. Fresh-AI review loop
 
 Dispatch an independent reviewer — a separate `pi` process with no session context
 (procedure below). The reviewer gets, inline and labeled by path: the issue or
@@ -80,18 +93,21 @@ glossary. Build the prompt from `reviewer-prompt.md` in this skill's directory.
 - Save each round's report to `.ai/spec/verification/spec-<slug>-report.md`
   (directory is gitignored; the PR body carries the outcome).
 
-### 5. Open the PR
+### 6. Mark ready for human review
 
-- Branch: `spec/<N>-<slug>` (or `spec/<slug>` with no issue).
-- Exactly one commit: `spec: <title> (#N)` — spec changes + failing tests.
-- PR body: what contract is added/changed (bullets), how tests were scaffolded if
-  applicable, the review-loop outcome (rounds run + verdict), and the gate notice:
+- Replace the placeholder PR body: what contract is added/changed (bullets), how
+  tests were scaffolded if applicable, the review-loop outcome (rounds run +
+  verdict), and the gate notice:
 
-  > Human gate: review and approve this spec. Implementation (commit 2) begins only
-  > after approval, via the `spec-implement` skill in a fresh session.
+  > Human gate: review and approve this spec — add the `spec-approved` label.
+  > Implementation (commit 2) begins only once that label is on the PR, via the
+  > `spec-implement` skill in a fresh session.
 
-- Put `Closes #N` in the PR body (not the commit) so merging closes the issue.
-- Report the PR URL to the user and stop.
+- Flip the state: remove `ai-spec-review`, add `spec-review-required`
+  (`gh pr edit <N> --remove-label ai-spec-review --add-label
+  spec-review-required`), and mark the PR ready for review (`gh pr ready <N>`).
+- Report the PR URL to the user and stop. `spec-approved` is the human's to add —
+  `spec-implement` keys on it.
 
 ## Reviewer dispatch (Pi)
 
