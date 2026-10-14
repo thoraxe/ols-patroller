@@ -65,7 +65,7 @@ is the hands (`.ai/spec/decisions/0004`).
 
 ## The memory loop
 
-The wiki (`cluster-wiki.md`) is read fully at patrol start and wholly rewritten at
+The wiki (`wiki/cluster-wiki.md`) is read fully at patrol start and wholly rewritten at
 patrol end. Entries carry `(source, timestamp, confidence)` tags; the **watch-list**
 section is the refinement loop — patrol N writes the rules patrol N+1 follows
 ("still unfixed at 2nd patrol", "downgraded to FYI after 4.6h non-recurrence"). The
@@ -73,9 +73,11 @@ epistemic rule is fixed in the prompt: the wiki is hypotheses, the live cluster 
 truth; every patrol re-validates and expires stale claims. Since patrols are
 non-deterministic, the wiki plus logs are the audit trail.
 
-Planned (v0.1–v0.2): the wiki becomes a git repo on a PVC — one patrol, one commit —
-with a skeleton schema, per-entry `recheck:` commands, `stale_after` expiry, and
-`--wiki-stats` health numbers.
+The wiki directory is a git repo (#3, `.ai/spec/decisions/0003`): one wiki-changing
+patrol, one commit (`patrol N: X findings, Y warn`), atomic writes (temp + rename),
+optional `PATROL_WIKI_REMOTE` replication that never blocks the loop — in-cluster it
+lives on the `/wiki` PVC. Planned next (v0.2): a skeleton schema, per-entry
+`recheck:` commands, `stale_after` expiry, and `--wiki-stats` health numbers.
 
 ## Deployment topology (current vs planned)
 

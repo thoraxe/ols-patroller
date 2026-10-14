@@ -25,7 +25,7 @@ issue numbers with `[PLANNED: #N]` markers.
 ## Scope
 
 Covered: `patrol.py` (the entire implementation), its runtime artifacts
-(the wiki directory — `wiki/cluster-wiki.md` and its git repo [PLANNED: #3]),
+(the wiki directory — `wiki/cluster-wiki.md` and its git repo [DONE: #3]),
 `docs/prior-art.md` positioning, and planned behavior tied to
 GitHub issues.
 

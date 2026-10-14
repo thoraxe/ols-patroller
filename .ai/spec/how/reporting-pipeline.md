@@ -11,7 +11,7 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
 | `shape_report` | Tool-free structured-output pass with one retry |
 | `report_fields` | Normalizes the result (pydantic model or dict) into plain data |
 | `notify` | Console `🔔 NOTIFY` + optional Slack webhook post |
-| `run_patrol` (tail) | Prints findings, calls `notify`, writes the wiki atomically, commits + pushes it (wiki git persistence — `project-structure.md`) [PLANNED: #3] |
+| `run_patrol` (tail) | Prints findings, calls `notify`, writes the wiki atomically, commits + pushes it (wiki git persistence — `project-structure.md`) [DONE: #3] |
 
 ## Data Flow
 
@@ -29,7 +29,7 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
    notifications filtered).
 5. Consumers: findings printed (severity column; evidence in verbose), `notify`
    called per notification, wiki written atomically and committed to the wiki repo
-   if `updated_wiki` non-empty (push when `PATROL_WIKI_REMOTE` is set) [PLANNED: #3],
+   if `updated_wiki` non-empty (push when `PATROL_WIKI_REMOTE` is set) [DONE: #3],
    token totals printed.
 
 ## Key Abstractions
@@ -48,7 +48,7 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
 | `shape_report` | langchain `with_structured_output` | function-calling schema binding to `PatrolReport` |
 | `run_patrol` | `shape_report` | message history + `budget_cut` flag |
 | `notify` | Slack incoming webhook | `requests.post` (15 s timeout, failure logged not raised) |
-| `run_patrol` | wiki file | `write_wiki_atomic` → `commit_wiki` → `push_wiki`, only when `updated_wiki` non-empty [PLANNED: #3] |
+| `run_patrol` | wiki file | `write_wiki_atomic` → `commit_wiki` → `push_wiki`, only when `updated_wiki` non-empty [DONE: #3] |
 
 ## Implementation Notes
 
@@ -62,4 +62,4 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
   choice) at ~1.02M — 4.7× cheaper.
 - No report → wiki untouched (rule: never let a failed reporting pass corrupt
   memory) — and no commit is created: history advances only on wiki writes
-  [PLANNED: #3].
+  [DONE: #3].

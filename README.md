@@ -33,14 +33,16 @@ across patrols, and escalates per its own previously-written rules.
 ## What it does per patrol
 
 1. Reads in-flight `AgenticRuns` (best-effort dedup context).
-2. Loads `cluster-wiki.md` (seeded on first run).
+2. Loads the wiki (`wiki/cluster-wiki.md`, seeded on first run).
 3. Agentic loop: model explores via a single **`kubectl_readonly`** tool (it decides
    what to look at; ~5–15 steps typical).
 4. The agent ends on its own with a plain-text summary (auto tool choice — no
    forced tool calls); a tool-free **shape pass** (`with_structured_output`) then
    converts the conversation into the typed report: `findings`,
    `notifications`, `updated_wiki`.
-5. Writes the wiki back; prints/Sends notifications.
+5. Writes the wiki back atomically and commits it to the wiki repo (one
+   wiki-changing patrol, one commit; optional `PATROL_WIKI_REMOTE` replication);
+   prints/Sends notifications.
 
 ## Engine
 
@@ -70,13 +72,20 @@ standalone/open-source):
   Whether the patrol ends naturally or is cut off by the budget, the same
   reporting pass produces the report — one code path, no salvage special-case.
 
-## The wiki (`cluster-wiki.md`)
+## The wiki (`wiki/cluster-wiki.md`)
 
 Sections the agent reads **and rewrites** every patrol: Topology, Baselines,
 Watch-list, Open questions, Anomaly log — entries tagged `(source, timestamp,
 confidence)`. The wiki is **hypotheses**; live cluster is **truth**; each patrol
 re-validates and expires stale claims. The watch-list is the refinement loop:
 patrol N writes the rules patrol N+1 follows.
+
+The wiki directory is a git repo (initialized at startup if absent): each
+wiki-changing patrol stages exactly the wiki file and commits
+`patrol N: X findings, Y warn` — irreversibility insurance, since a bad rewrite
+is always revertible. Set `PATROL_WIKI_REMOTE` to replicate the repo off-cluster
+(best-effort, bounded, never blocks the patrol; the local repo is the source of
+truth). If git is unavailable, the patroller degrades to file-only.
 
 ## Safety model
 
@@ -104,6 +113,8 @@ patrol N writes the rules patrol N+1 follows.
 | `PATROL_MAX_STEPS` | `30` | LLM-turn exploration budget per patrol (raised from 15 after real-cluster runs; GLM needs >15 turns even single-node — if exhausted, the reporting pass reports from observations so far) |
 | `PATROL_INTERVAL` | `900` | seconds (`--loop`) |
 | `PATROL_TOOL_TIMEOUT` | `60` | per-command timeout |
+| `PATROL_CLUSTER_ID` | `local` | cluster identity for wiki commit emails (`patrol@<id>`) |
+| `PATROL_WIKI_REMOTE` | — | if set, wiki commits are pushed there (best-effort replication) |
 
 ## Smoke-test results (2026-10-13, dry-cluster)
 

@@ -71,6 +71,13 @@ SLACK_URL  = os.environ.get("SLACK_WEBHOOK_URL", "")
 MAX_STEPS  = int(os.environ.get("PATROL_MAX_STEPS", "30"))  # LLM turns per patrol
 TOOL_TIMEOUT = int(os.environ.get("PATROL_TOOL_TIMEOUT", "60"))
 OUT_CAP    = 15_000  # max chars of tool output fed back to the model
+CLUSTER_ID = os.environ.get("PATROL_CLUSTER_ID", "local")  # wiki commit identity
+WIKI_REMOTE = os.environ.get("PATROL_WIKI_REMOTE", "")     # optional wiki replication
+# Wiki push bounds (wiki-memory.md rule 4e). Read at call time, not import time,
+# so tests can bound retries.
+PUSH_ATTEMPTS = 3  # max push attempts
+PUSH_TIMEOUT  = 30 # seconds per push attempt
+PUSH_BACKOFF  = 5  # seconds between push attempts
 
 READONLY_VERBS = {
     "get", "describe", "logs", "top", "version", "api-resources",
@@ -387,6 +394,160 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool):
     return None
 
 
+# --------------------------------------------------------------------------- wiki git
+# Git-backed wiki persistence (wiki-memory.md rules 4a-4e, #3). Git is process-level
+# durability, never an agent capability: everything here runs in the patrol process
+# and the model's tool surface stays [read_file, kubectl_readonly]. Local-first: the
+# local wiki repo is the source of truth; the optional push is replication only.
+
+
+def _git_err(r) -> str:
+    """Human-readable failure reason for a git invocation (None = git unusable)."""
+    if r is None:
+        return "git unusable (not on PATH, or timed out)"
+    return (r.stderr or r.stdout or "unknown git error").strip()
+
+
+def _run_git(wiki_dir: Path, *args: str, timeout: float | None = None):
+    """Run git in wiki_dir with patrol-owned config only (never the user's).
+
+    Every invocation passes `safe.directory` for the wiki directory so git does
+    not depend on the invoking user's config or HOME (non-root, random-UID safe,
+    rule 4d). Returns None when git itself is unusable — callers degrade to
+    file-only mode instead of failing the patrol (rule 4b).
+    """
+    cmd = ["git", "-C", str(wiki_dir),
+           "-c", f"safe.directory={wiki_dir.resolve()}", *args]
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def ensure_wiki_repo(wiki_dir) -> bool:
+    """Rule 4a/4b: make the wiki directory a git repo, before the first patrol.
+
+    Creates the directory if absent, inits a repo (default branch `main`) if the
+    directory contains none, and adopts any repo already there (the wiki dir
+    must be dedicated to the wiki — patrol commits land in whatever repo
+    governs it). Returns True when git backing is on. Returns False — with a
+    warning, never an exception — when git is missing or init fails: the process
+    then runs file-only (no init/commit/push), and the wiki file itself keeps
+    working.
+    """
+    wiki_dir = Path(wiki_dir)
+    try:
+        wiki_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        print(f"[patrol] WARNING: cannot create wiki directory {wiki_dir} ({e}); "
+              "running file-only (no wiki history)", file=sys.stderr)
+        return False
+    if (wiki_dir / ".git").exists():
+        return True  # already a repository of any origin: adopt it
+    r = _run_git(wiki_dir, "init", "-b", "main")
+    if r is None or r.returncode != 0:
+        print(f"[patrol] WARNING: wiki repo init failed ({_git_err(r)}); "
+              "running file-only (no wiki history)", file=sys.stderr)
+        return False
+    return True
+
+
+def write_wiki_atomic(wiki_path, content: str) -> None:
+    """Rule 4c: temp file + rename — a crash mid-write never truncates the wiki.
+
+    Content is written to a temporary file in the wiki directory and renamed
+    over the wiki file. If the rename fails, the temporary file is removed, the
+    old wiki stands, and the error propagates to the caller. The commit history
+    is the second net: a bad rewrite is always revertible.
+    """
+    wiki_path = Path(wiki_path)
+    tmp = wiki_path.parent / f".{wiki_path.name}.tmp"
+    try:
+        tmp.write_text(content)
+        os.replace(tmp, wiki_path)  # atomic on POSIX; overwrites
+    except BaseException:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+
+
+def commit_wiki(wiki_path, findings, cluster_id: str) -> bool:
+    """Rule 4d: one wiki-changing patrol, one commit. Returns False, never raises.
+
+    Stages exactly the wiki file — never anything else in the wiki directory —
+    and commits with the patrol identity `ols-patroller <patrol@CLUSTER_ID>`,
+    passed per command together with `safe.directory` so no user config or HOME
+    is consulted. Message: `patrol N: X findings, Y warn` (N = commits already
+    in the repo + 1, X = finding count, Y = warn+crit count). No change on disk
+    (empty update, failed report, or byte-identical rewrite) → no commit. No
+    repo (file-only mode) → no commit; a repo is never initted here.
+    """
+    wiki_path = Path(wiki_path).resolve()
+    wiki_dir = wiki_path.parent
+    if not (wiki_dir / ".git").exists():
+        return False  # file-only mode: nothing to commit into, never init one
+
+    def _sev(f) -> str:
+        return f.get("severity", "") if isinstance(f, dict) else getattr(f, "severity", "")
+
+    r = _run_git(wiki_dir, "rev-list", "--count", "HEAD")
+    prior = int(r.stdout.strip()) if (r is not None and r.returncode == 0
+                                      and r.stdout.strip().isdigit()) else 0
+    r = _run_git(wiki_dir, "add", "--", str(wiki_path))
+    if r is None or r.returncode != 0:
+        print(f"[patrol] WARNING: could not stage wiki ({_git_err(r)}); no commit",
+              file=sys.stderr)
+        return False
+    r = _run_git(wiki_dir, "diff", "--cached", "--quiet")
+    if r is not None and r.returncode == 0:
+        return False  # nothing staged: the rewrite was byte-identical
+    warned = sum(1 for f in findings if _sev(f) in ("warn", "crit"))
+    message = f"patrol {prior + 1}: {len(findings)} findings, {warned} warn"
+    r = _run_git(wiki_dir,
+                 "-c", "user.name=ols-patroller", "-c", f"user.email=patrol@{cluster_id}",
+                 "commit", "-m", message)
+    if r is None or r.returncode != 0:
+        print(f"[patrol] WARNING: wiki commit failed ({_git_err(r)}); "
+              "the wiki file stands without a history entry", file=sys.stderr)
+        return False
+    print(f"[patrol] wiki commit: {message}")
+    return True
+
+
+def push_wiki(wiki_dir, remote: str) -> bool:
+    """Rule 4e: bounded, best-effort replication of the local wiki repo.
+
+    Pushes the current branch to the same-named branch on `remote`, at most
+    PUSH_ATTEMPTS attempts of PUSH_TIMEOUT seconds each with PUSH_BACKOFF
+    between them (bounds are read at call time). Never raises and never blocks
+    the patrol loop: any failure is logged and the local commit stands — it is
+    the source of truth (local-first).
+    """
+    wiki_dir = Path(wiki_dir)
+    r = _run_git(wiki_dir, "symbolic-ref", "--short", "HEAD")
+    if r is None or r.returncode != 0:
+        print(f"[patrol] WARNING: cannot resolve wiki branch ({_git_err(r)}); "
+              "skipping push", file=sys.stderr)
+        return False
+    branch = r.stdout.strip()
+    if not branch:
+        return False
+    for attempt in range(1, PUSH_ATTEMPTS + 1):
+        r = _run_git(wiki_dir, "push", remote, f"{branch}:{branch}", timeout=PUSH_TIMEOUT)
+        if r is not None and r.returncode == 0:
+            print(f"[patrol] wiki pushed → {remote}")
+            return True
+        print(f"[patrol] WARNING: wiki push attempt {attempt}/{PUSH_ATTEMPTS} failed "
+              f"({_git_err(r)})", file=sys.stderr)
+        if attempt < PUSH_ATTEMPTS:
+            time.sleep(PUSH_BACKOFF)
+    print(f"[patrol] WARNING: wiki push gave up after {PUSH_ATTEMPTS} attempts; "
+          "local commit stands (source of truth)", file=sys.stderr)
+    return False
+
+
 # --------------------------------------------------------------------------- one patrol
 async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
                      max_steps: int) -> None:
@@ -511,8 +672,10 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
     notify([m for m in notifications if m])
 
     if new_wiki:
-        wiki_path.write_text(new_wiki)
+        write_wiki_atomic(wiki_path, new_wiki)
         print(f"[patrol] wiki updated → {wiki_path}")
+        if commit_wiki(wiki_path, findings, CLUSTER_ID) and WIKI_REMOTE:
+            push_wiki(wiki_path.parent, WIKI_REMOTE)
     print(f"[patrol] tokens: in={tokens_in} out={tokens_out}")
     print(f"[patrol] === patrol done ===")
 
@@ -526,8 +689,9 @@ def main() -> None:
                     help="seconds between patrols in --loop mode (default 900)")
     ap.add_argument("--dry-cluster", action="store_true",
                     help="use canned fixtures instead of a real cluster")
-    ap.add_argument("--wiki", default=str(Path(__file__).parent / "cluster-wiki.md"),
-                    help="path to the wiki memory file")
+    ap.add_argument("--wiki", default=str(Path(__file__).parent / "wiki" / "cluster-wiki.md"),
+                    help="path to the wiki memory file (default wiki/cluster-wiki.md; "
+                         "its parent directory is the wiki git repo)")
     ap.add_argument("--max-steps", type=int, default=MAX_STEPS,
                     help="max LLM turns per patrol")
     ap.add_argument("-v", "--verbose", action="store_true")
@@ -539,6 +703,11 @@ def main() -> None:
 
     kubectl = resolve_kubectl()
     wiki_path = Path(args.wiki)
+    # Git-backed wiki (#3): ensure the wiki directory is a repo before the first
+    # patrol (wiki-memory.md rule 4a). If git is unusable this warns and the
+    # process runs file-only (rule 4b) — patrol behavior never depends on git.
+    if ensure_wiki_repo(wiki_path.parent):
+        print(f"[patrol] wiki repo: {wiki_path.parent}")
 
     def one(fatal: bool) -> None:
         try:

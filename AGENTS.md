@@ -41,6 +41,7 @@ issues inform the specs.
 - Tests: `uv run --group dev pytest tests/ -q` — `tests/test_wiki_git.py` covers
   the wiki git persistence contract (#3); the fake-model e2e is still planned for
   `tests/` (#4).
-- `cluster-wiki.md` is a runtime artifact (gitignored) — never commit it.
+- `wiki/` (the wiki directory: `cluster-wiki.md` + its git repo) is a runtime
+  artifact (gitignored) — never commit it.
 - Roadmap: GitHub issues + milestones, not documents. Spec files mark planned
   behavior as `[PLANNED: #N]`.

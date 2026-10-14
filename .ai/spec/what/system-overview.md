@@ -35,7 +35,7 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
    secret-value refusal, timeouts, output cap (`kubectl-guard.md`).
 9. **Wiki memory** — persistent markdown memory, seeded on first run, wholly
    rewritten each patrol, git-backed: one wiki-changing patrol, one commit
-   [PLANNED: #3] (`wiki-memory.md`).
+   [DONE: #3] (`wiki-memory.md`).
 10. **Reporting & notifications** — typed report schema, severity vocabulary,
     console/Slack delivery (`reporting-notifications.md`).
 11. **Safety model** — layered read-only enforcement spanning guard, engine, and
@@ -50,7 +50,7 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
 14. Each patrol: load wiki → gather in-flight AgenticRuns context (best-effort) →
     agentic exploration → reporting pass → print findings, send notifications,
     rewrite the wiki atomically, commit it to the wiki repo, push if
-    `PATROL_WIKI_REMOTE` is set [PLANNED: #3].
+    `PATROL_WIKI_REMOTE` is set [DONE: #3].
 15. If the reporting pass fails entirely, the patrol ends with a warning and the wiki
     is left unchanged.
 
@@ -67,18 +67,18 @@ Environment variables:
 - `PATROL_INTERVAL` — seconds between patrols in `--loop` mode (default `900`)
 - `PATROL_TOOL_TIMEOUT` — per-command timeout in seconds (default `60`)
 - `PATROL_CLUSTER_ID` — cluster identity for wiki commit emails (default `local`)
-  [PLANNED: #3]
+  [DONE: #3]
 - `PATROL_WIKI_REMOTE` — if set, wiki commits are pushed to this git remote
-  (best-effort, bounded; the local commit is the source of truth) [PLANNED: #3]
+  (best-effort, bounded; the local commit is the source of truth) [DONE: #3]
 
 CLI flags: `--once` (default), `--loop`, `--interval`, `--dry-cluster`, `--wiki`
-(default `wiki/cluster-wiki.md` next to `patrol.py` [PLANNED: #3; was
+(default `wiki/cluster-wiki.md` next to `patrol.py` [DONE: #3; was
 `cluster-wiki.md`]), `--max-steps`, `-v/--verbose`.
 
 Hard-coded constants (not env-configurable): `OUT_CAP` = 15,000 chars of tool output
 fed back to the model; model temperature 0.3, `max_tokens` 16000, request timeout
 300 s; wiki push bounds — 3 attempts, 30 s per attempt, 5 s backoff between
-attempts [PLANNED: #3].
+attempts [DONE: #3].
 
 ## Constraints
 

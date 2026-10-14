@@ -178,7 +178,7 @@ def test_push_wiki_success(tmp_path):
     wiki_dir = tmp_path / "wiki"
     remote = tmp_path / "remote.git"
     patrol.ensure_wiki_repo(wiki_dir)
-    git("init", "--bare", "-b", "main", str(remote))
+    git("init", "--bare", "-b", "main", str(remote), cwd=tmp_path)
     wiki = wiki_dir / "cluster-wiki.md"
     patrol.write_wiki_atomic(wiki, "# wiki\n")
     patrol.commit_wiki(wiki, [], "c")
