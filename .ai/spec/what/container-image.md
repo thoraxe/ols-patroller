@@ -3,7 +3,9 @@
 The ubi9-minimal image that runs `patrol.py` in-cluster, built from the repo-root
 `Containerfile` (#1). The image is what makes the patroller deployable; the
 Kubernetes wiring around it (ServiceAccount, cluster-reader RBAC, PVC, Deployment)
-is #2 and makes `safety-model.md` layer 3 real.
+is #2 and makes `safety-model.md` layer 3 real. Merges to `main` also publish the
+image to GHCR from CI (rules 13–16, #2) — that published image is what the
+manifests deploy by default.
 
 ## Behavioral Rules
 
@@ -94,6 +96,32 @@ is #2 and makes `safety-model.md` layer 3 real.
     A patrol inside the container against a real dev cluster — through the #2
     manifests — is #2's done-when, not this spec's.
 
+### Continuous Build & Publication (CI)
+
+13. Merges to `main` publish the image: the GitHub Actions workflow
+    `.github/workflows/image.yml` triggers **only** on `push` to `main` — no
+    `pull_request` trigger, no other branches or tags (post-merge artifact
+    pipeline, not a merge gate; PR-time builds are deliberately excluded — CI
+    stays free on draft/spec work). No path filter: every merge republishes
+    `:main`, keeping the tag equal to "latest main" (accepted slack)
+    [DONE: #2].
+14. The workflow builds with `docker/build-push-action` from the repo root:
+    build context `.`, file `./Containerfile` (the action's default
+    `Dockerfile` name is wrong for this repo — the workflow must name the
+    file), platform `linux/amd64` only, `push: true` [DONE: #2].
+15. Publication target is GHCR: `ghcr.io/thoraxe/ols-patroller`, tagged `main`
+    (rolling, latest merged state) and `sha-<full commit SHA>` (per-merge,
+    traceable pin). Login is `docker/login-action` with the built-in
+    `GITHUB_TOKEN`; workflow permissions are exactly `contents: read` +
+    `packages: write` — no personal access tokens, no registry credentials
+    stored anywhere [DONE: #2].
+16. The CI-published image is the deployment artifact: the #2 manifests
+    reference `ghcr.io/thoraxe/ols-patroller:main` by default (kustomize
+    `images` override — `in-cluster-deployment.md` rule 8). The first publish
+    requires flipping the GHCR package to public once (the repo is public), or
+    the deploying cluster uses an image pull secret / an overridden ref
+    (ADR `decisions/0008-ci-published-image.md`) [DONE: #2].
+
 ## Constraints
 
 - Same code path as dev: the image runs the same single-file `patrol.py`; only
@@ -103,10 +131,17 @@ is #2 and makes `safety-model.md` layer 3 real.
   layer 3, #2) remain the enforcement layers — the image adds none.
 - PoC grade applies (constraints.md rule 6): base-image digest pinning,
   layer-size tuning, and multi-arch builds are explicitly out of scope.
+- **CI is delivery, not verification**: post-merge means a broken build cannot
+  block the merge that broke it (the gate is human review), and the workflow
+  does not re-run rule 12's acceptance checks — automating them inside the
+  workflow is a possible follow-up, not planned.
+- Rolling `:main` caveat: a Deployment consuming it does not restart when the
+  tag's digest changes — updating the running patroller is apply + rollout
+  restart (`in-cluster-deployment.md` rule 17).
 
 ## Planned Changes
 
 | Ticket | Summary |
 |---|---|
 | ~~#1~~ | This file's own contract: Containerfile + `requirements.txt` (rules 1–12) |
-| #2 | Manifests consuming this image: SA + cluster-reader ClusterRoleBinding + RWO PVC at `/wiki` + single-replica non-root Deployment running `--loop --interval 900` |
+| ~~#2~~ | Manifests consuming this image (`in-cluster-deployment.md`) + the post-merge CI that publishes it to GHCR (rules 13–16) |

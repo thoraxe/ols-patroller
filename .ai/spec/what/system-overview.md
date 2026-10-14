@@ -46,6 +46,12 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
      version-pinned OpenShift client, build-time pip install from
      `requirements.txt`, non-root random-UID, default command `--loop --interval
      900 --wiki /wiki/cluster-wiki.md` [DONE: #1] (`container-image.md`).
+12b. **In-cluster deployment** — kustomize manifests (`manifests/`):
+     ServiceAccount bound to the built-in `cluster-reader`, RWO PVC at `/wiki`,
+     single-replica non-root Deployment running `--loop --interval 900`,
+     Secret-sourced env; merges to `main` build and publish the image to GHCR
+     (`container-image.md` rules 13–16) [DONE: #2]
+     (`in-cluster-deployment.md`).
 
 ### Lifecycle
 
@@ -85,6 +91,10 @@ Hard-coded constants (not env-configurable): `OUT_CAP` = 15,000 chars of tool ou
 fed back to the model; model temperature 0.3, `max_tokens` 16000, request timeout
 300 s; wiki push bounds — 3 attempts, 30 s per attempt, 5 s backoff between
 attempts [DONE: #3].
+
+In-cluster wiring (Secret keys, the `PATROL_CLUSTER_ID` literal, kustomize image
+override, the CI workflow) is deployment surface, not patrol surface —
+`in-cluster-deployment.md` + `container-image.md` rules 13–16.
 
 ## Constraints
 

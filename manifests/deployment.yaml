@@ -1,0 +1,83 @@
+# In-cluster deployment (#2) — the patrol pod.
+# Contract: .ai/spec/what/in-cluster-deployment.md rules 7-13.
+
+# Rule 7: single replica + Recreate — a RollingUpdate surge pod can never
+# mount the RWO volume, and Recreate guarantees no two-writer window on the
+# single-writer wiki.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ols-patroller
+  namespace: ols-patroller
+  # Rule 13: the label the acceptance procedure's `delete pod -l` keys on.
+  labels:
+    app: ols-patroller
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: ols-patroller
+  template:
+    metadata:
+      labels:
+        app: ols-patroller
+    spec:
+      # Rule 3: the patrol identity (token automounts — k8s default).
+      serviceAccountName: ols-patroller
+      # Rules 6 + 11: runAsNonRoot and NOTHING else — admission under the
+      # cluster-default restricted SCC supplies the fsGroup that makes the
+      # RWO volume group-writable at /wiki (ADR 0007). Setting runAsUser /
+      # runAsGroup / fsGroup here would break that.
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ols-patroller
+          # Rule 8: literal key, no registry, no tag — the kustomization's
+          # images override maps it to the CI-published GHCR image.
+          image: ols-patroller
+          # Rule 9: identical to the image's default CMD — stated explicitly
+          # so the manifests are self-describing.
+          args:
+            - --loop
+            - --interval
+            - "900"
+            - --wiki
+            - /wiki/cluster-wiki.md
+          # Rule 10: all secret material arrives via the patrol Secret —
+          # nothing sensitive is ever literal in a committed manifest.
+          envFrom:
+            - secretRef:
+                name: ols-patroller
+          env:
+            # Rule 10: NOT secret material — the wiki commit identity.
+            # Placeholder: edit to the real cluster name before applying.
+            - name: PATROL_CLUSTER_ID
+              value: my-cluster
+          # Rule 11: admits under the restricted SCC with no SCC grant —
+          # no privilege escalation, all capabilities dropped.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          # Rule 12: defaults — the contract is that requests and limits are
+          # both set for CPU and memory.
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          # Rule 5: the wiki directory is the PVC mount.
+          volumeMounts:
+            - name: wiki
+              mountPath: /wiki
+      volumes:
+        - name: wiki
+          persistentVolumeClaim:
+            claimName: ols-patroller-wiki

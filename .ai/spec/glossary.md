@@ -38,6 +38,9 @@ redefined here.
 - **Container image** — the ubi9-minimal image built from the repo-root
   `Containerfile` that runs `patrol.py` in-cluster (#1); dev mode stays
   `uv run patrol.py` via the PEP 723 header.
+- **GHCR** — GitHub Container Registry (`ghcr.io`); merges to `main` publish
+  the patrol image there (`main` rolling tag + `sha-<SHA>` pins) and the
+  in-cluster manifests deploy it (#2).
 - **cluster-reader** — built-in OpenShift ClusterRole (94 rules, zero Secret access)
   planned as the patrol pod's RBAC boundary in-cluster (#2).
 - **Severity** — finding vocabulary: `info` (note/baseline/expected), `warn`

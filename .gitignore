@@ -10,3 +10,6 @@ __pycache__/
 # wiki git runtime artifact dir (#3) and pytest cache
 wiki/
 .pytest_cache/
+
+# in-cluster patrol Secret (#2) — real credentials are never committed
+manifests/secret.yaml

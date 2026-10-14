@@ -1,0 +1,7 @@
+# In-cluster deployment (#2).
+# Contract: .ai/spec/what/in-cluster-deployment.md rule 2 — the namespace is a
+# per-file literal; changing it is an edit across the files, not one field.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ols-patroller

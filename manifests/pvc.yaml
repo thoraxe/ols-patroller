@@ -1,0 +1,16 @@
+# In-cluster deployment (#2) — the wiki volume.
+# Contract: .ai/spec/what/in-cluster-deployment.md rule 5: RWO, 1Gi, NO
+# storageClassName (the cluster's default storage class applies — most
+# portable for a dev cluster; override by patch when the default is wrong).
+# The wiki directory is this PVC mount (wiki-memory.md rule 4a).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ols-patroller-wiki
+  namespace: ols-patroller
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi

@@ -1,0 +1,53 @@
+# Post-merge image CI (#2) — builds and publishes the patrol image to GHCR.
+# Contract: .ai/spec/what/container-image.md rules 13-16
+# (ADR decisions/0008-ci-published-image.md).
+#
+# Rule 13: push to main ONLY — a post-merge artifact pipeline, not a merge
+# gate; PR-time builds are deliberately excluded. No path filter: every merge
+# republishes :main (accepted slack). No verification runs here: CI is
+# delivery, not verification — the gate is human review.
+
+name: image
+
+on:
+  push:
+    branches:
+      - main
+
+# Rule 15: exactly contents: read + packages: write — the built-in
+# GITHUB_TOKEN publishes; no personal access tokens, no stored credentials.
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Rule 14: build from the repo root, naming the Containerfile (the
+      # action's default 'Dockerfile' name is wrong for this repo);
+      # linux/amd64 only — multi-arch is out of scope (PoC grade).
+      # Rule 15: rolling :main tag + per-merge sha-<full SHA> pin.
+      - name: Build and publish the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Containerfile
+          platforms: linux/amd64
+          push: true
+          tags:
+            - ghcr.io/thoraxe/ols-patroller:main
+            - ghcr.io/thoraxe/ols-patroller:sha-${{ github.sha }}
