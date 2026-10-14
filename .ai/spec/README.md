@@ -66,8 +66,11 @@ AI agents. Content is optimized for precision and machine consumption.
   (issue comments, PR descriptions) valid.
 - **Planned changes lifecycle:** unimplemented behavior is marked `[PLANNED]` or
   `[PLANNED: #N]` inline next to the rule it affects (tickets are GitHub issues).
-  When implemented: update the rule text to describe actual behavior and change the
-  marker to `[DONE: #N]`. `[DONE]` markers are cleanup candidates — remove them in a
+  Under the spec-first PR workflow (`AGENTS.md`), planned behavior is **fully
+  specified before implementation**: `/skill:spec-first` expands the marker into
+  complete, testable contract rules plus failing tests; a human approves the spec;
+  a context-clear agent (`/skill:spec-implement`) implements and flips the marker to
+  `[DONE: #N]`. `[DONE]` markers are cleanup candidates — remove them in a
   subsequent pass once the rule text fully reflects the shipped behavior. In Planned
   Changes tables, strike through completed entries (`~~#N~~`) rather than deleting
   them, so readers can see what changed recently.

@@ -8,6 +8,26 @@ engine, persistent wiki memory). Hacky single-file PoC: `patrol.py`.
 All specifications live in `.ai/spec/`. Start with `.ai/spec/README.md` for project
 overview, reading order, and structure guide.
 
+## Workflow — spec-first PRs
+
+All feature work follows the spec-first loop. Specs are the implementation
+contract, written so a context-clear agent can implement from them alone; GitHub
+issues inform the specs.
+
+| Phase | Command | Gate |
+|---|---|---|
+| 1. Spec PR — contract rules + failing tests, fresh-AI review loop until clean | `/skill:spec-first <issue or feature>` | **Human approves the spec** |
+| 2. Implementation — context-clear agent makes the tests pass, fresh-AI review loop | `/skill:spec-implement <PR>` (fresh session) | **Human approves and merges** |
+
+- Every feature PR has exactly **two commits**: (1) specs + failing tests,
+  (2) implementation.
+- Review loops dispatch an independent reviewer — a separate `pi` process with no
+  session context; reports land in `.ai/spec/verification/` (gitignored).
+- Implementation never changes contract rules — only `[PLANNED: #N]` → `[DONE: #N]`
+  flips. If the spec turns out wrong, stop and surface it; spec changes need their
+  own review loop.
+- Never merge without human approval.
+
 ## Development
 
 - Run (no cluster needed): `uv run patrol.py --once --dry-cluster -v` — requires

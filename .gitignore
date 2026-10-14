@@ -3,3 +3,6 @@ cluster-wiki.md
 *.log
 __pycache__/
 .venv/
+
+# spec-first review-loop reports (session artifacts)
+.ai/spec/verification/

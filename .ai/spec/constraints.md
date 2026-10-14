@@ -17,9 +17,12 @@ what/ file.
 4. **Investigation stays pluggable.** Don't grow bespoke RCA/diagnosis — the
    prior-art survey (`docs/prior-art.md`) positions this project on continuity +
    proactivity + memory, with HolmesGPT/AgenticRun as candidate engines (#15).
-5. **Plans live in GitHub issues + milestones**, not in documents (planning docs
-   were retired in db5344b). Spec files mark planned behavior `[PLANNED: #N]` and
-   never duplicate issue bodies wholesale.
+5. **Issues inform; specs are the contract.** Work is tracked in GitHub issues +
+   milestones (planning docs were retired in db5344b), but a feature's behavioral
+   contract is fully specified in spec files before implementation
+   (`/skill:spec-first`) so a context-clear agent can implement from the spec alone
+   (`/skill:spec-implement`). Write the contract — don't paste issue bodies, and
+   don't leave the plan only in the issue.
 6. **Hacky everywhere except safety.** The single-file PoC roughness is accepted and
    intentional; the read-only safety model is the part held to production standards
    (documented, unit-checked, e2e-verified, tests landing in-repo via #4).
