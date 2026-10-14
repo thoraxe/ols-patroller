@@ -48,6 +48,6 @@ jobs:
           file: ./Containerfile
           platforms: linux/amd64
           push: true
-          tags:
-            - ghcr.io/thoraxe/ols-patroller:main
-            - ghcr.io/thoraxe/ols-patroller:sha-${{ github.sha }}
+          tags: |
+            ghcr.io/thoraxe/ols-patroller:main
+            ghcr.io/thoraxe/ols-patroller:sha-${{ github.sha }}
