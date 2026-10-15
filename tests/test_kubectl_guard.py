@@ -3,10 +3,8 @@
 Direct calls to `kubectl_readonly` — no engine, no model. Dry-cluster mode
 answers allowed commands from fixtures; real-mode execution semantics (missing
 binary, timeout, stderr, empty output) are exercised with a throwaway CLI
-script. The `--raw` refusal is specced for #11 and carried here as a strict
-expected-failure tripwire: it must keep failing until #11's implementation
-lands, and start failing loudly (XPASS) if the refusal appears without the
-spec flip.
+script. The raw-path (`--raw`) refusal is specced for #11 (rule 6a): its tests
+land with #11's spec PR and fail until #11's implementation makes them pass.
 
 Contract: .ai/spec/what/kubectl-guard.md rules 1-13 (safety-model.md rule 6a).
 
@@ -203,16 +201,73 @@ def test_dry_mode_no_fixture_message_lists_available():
     assert "do not retry" in out or "not retry" in out
 
 
-# ------------------------------------------------------------- planned: #11 (--raw)
+# ------------------------------------------------------- raw-path refusal (rule 6a)
 
-@pytest.mark.xfail(strict=True, reason="--raw refusal is specced for #11, not yet implemented")
-def test_raw_refusal_planned_11():
-    """[PLANNED: #11] --raw proxy/stats endpoints must be refused. Strict xfail:
-    fails today (the guard does not refuse --raw yet); once #11 lands, the
-    xfail marker is removed by #11's spec PR — an XPASS here means the refusal
-    appeared without its spec cycle."""
-    out = guard("get --raw /apis/metrics.k8s.io/v1beta1")
-    assert out.startswith("REFUSED:"), (
-        "--raw must be refused once #11 lands; until then this test is an "
-        "expected failure"
-    )
+RAW_COMMANDS = [
+    "get --raw /api/v1/nodes/master-0/proxy/stats/summary",  # the patrol-6 burner
+    "get --raw /apis/metrics.k8s.io/v1beta1",
+    "get --raw=/api/v1/nodes/master-0/proxy/stats/summary",  # = form
+    "describe --raw /api/v1/nodes/master-0/proxy/stats/summary",
+    "top --raw /api/v1/nodes",                               # any whitelisted verb
+    "get --RAW /api/v1/nodes/master-0/proxy/stats/summary",  # case-insensitive
+]
+
+
+@pytest.mark.parametrize("command", RAW_COMMANDS)
+def test_raw_refused_across_flag_forms(command):
+    """Rule 6a: any command containing --raw is refused, whatever the flag
+    form, verb, or case. These run in dry mode (the guard default), pinning the
+    refusal there; test_raw_refusal_preempts_execution pins real mode."""
+    out = guard(command)
+    assert out.startswith("REFUSED:"), f"{command!r} must be refused, got {out!r}"
+    assert "--raw" in out.lower()
+    assert "truncat" in out.lower()  # says raw dumps truncate at the cap
+    assert "typed" in out.lower()  # steers recovery to typed read commands
+
+
+def test_raw_check_runs_after_the_verb_whitelist():
+    """Rule 6a: the raw check sits after the verb whitelist — a mutation verb
+    with --raw keeps its verb refusal (the allowed-verb list is the recovery
+    info the model needs there)."""
+    out = guard("apply --raw /api/v1/nodes/master-0/proxy/stats/summary")
+    assert out.startswith("REFUSED:")
+    assert "not a read-only verb" in out
+
+
+def test_secret_and_raw_double_match_still_refused():
+    """Rule 6a: a command matching both a secret-value pattern and --raw is
+    refused — either refusal message is conformant."""
+    out = guard("get secret demo-secret --raw -o yaml")
+    assert out.startswith("REFUSED:")
+
+
+@pytest.mark.parametrize("command", [
+    "get pods -A",
+    "describe node raw-worker-1",  # bare 'raw' without the flag
+    "get events -A",
+])
+def test_bare_raw_still_allowed(command):
+    """Rule 6a: the match is on '--raw', not the bare word 'raw' — resource
+    names and ordinary commands stay allowed."""
+    out = guard(command)
+    assert not out.startswith("REFUSED:"), (
+        f"{command!r} contains no --raw flag, got {out!r}")
+
+
+def test_raw_refusal_preempts_execution(tmp_path):
+    """Rule 6a: the refusal fires before any subprocess runs — the CLI is
+    never invoked for a --raw command."""
+    cli = _fake_cli(tmp_path, "echo SHOULD-NOT-RUN")
+    out = guard("get --raw /api/v1/nodes/master-0/proxy/stats/summary",
+                kubectl=cli, dry=False)
+    assert out.startswith("REFUSED:")
+    assert "SHOULD-NOT-RUN" not in out
+
+
+def test_raw_refusal_preempts_dry_fixtures(monkeypatch):
+    """Rule 6a: in dry mode the refusal fires before fixture lookup — even a
+    fixture that would match the command never answers it."""
+    monkeypatch.setattr(patrol, "FIXTURES", [("--raw", "SHOULD-NOT-SERVE")])
+    out = guard("get --raw /api/v1/nodes/master-0/proxy/stats/summary")
+    assert out.startswith("REFUSED:")
+    assert "SHOULD-NOT-SERVE" not in out

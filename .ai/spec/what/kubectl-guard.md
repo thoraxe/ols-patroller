@@ -28,6 +28,27 @@ sees these messages and recovers based on them.
    resource. Observed in a real patrol — the model recovered via a plain
    `get -o yaml`. Strict by design; do not narrow without updating `safety-model.md`.
 
+### Raw-Path Refusal
+
+6a. A command is refused if, case-insensitively, the substring `--raw` appears
+    anywhere in the whitespace-joined parsed arguments — the same deliberately
+    over-broad substring style as rule 5, so `--raw <path>`, `--raw=<path>`, and
+    case variants are all caught. The verb is legal; the endpoint shape is not:
+    raw proxy/stats paths (e.g.
+    `get --raw /api/v1/nodes/<node>/proxy/stats/summary`) return multi-hundred-KB
+    JSON dumps that truncate at `OUT_CAP` and get retried — a real patrol burned
+    three turns in exactly that loop. The match is on `--raw`, not the bare word
+    `raw`: names like `raw-worker-1` stay allowed. The check runs with the other
+    pre-execution refusals — after the verb whitelist, before dry-mode fixture
+    lookup and subprocess execution — in both dry and real mode; a command
+    matching both a secret-value pattern (rules 5–6) and `--raw` is conformant
+    with either refusal message. The message names `--raw`, says raw paths dump
+    high-volume output that truncates, and steers recovery to typed read commands
+    (`get`/`describe`/`logs`/`top`) instead of retrying raw paths. This rule only
+    refuses more than before — a strictness increase, not a guard weakening; any
+    future carve-out (an explicit raw-path allowlist) is a weakening and needs an
+    ADR in `decisions/` [PLANNED: #11].
+
 ### Execution
 
 7. Real commands run via a subprocess argument list (`[kubectl, *args]`) — never
@@ -66,12 +87,12 @@ sees these messages and recovers based on them.
   in-cluster, the pod ServiceAccount's RBAC is the server-side enforcement boundary
   [DONE: #2] (see `safety-model.md`).
 - Guard behavior is unit-checked in-repo (`tests/test_kubectl_guard.py`): refusal
-  rules 3–6, execution rules 8–11, CLI resolution rule 12, dry-mode rule 13 — see
-  `safety-model.md` rule 6a [DONE: #4]. The `--raw` refusal joins them with
-  #11 [PLANNED: #11].
+  rules 3–6 and 6a, execution rules 8–11, CLI resolution rule 12, dry-mode rule 13
+  — see `safety-model.md` rule 6a [DONE: #4]. Rule 6a's tests land with its spec
+  PR and pass with its implementation [PLANNED: #11].
 
 ## Planned Changes
 
 | Ticket | Summary |
 |---|---|
-| #11 | Refuse any command containing `--raw` (proxy/stats endpoints dump multi-hundred-KB JSON that truncates and gets retried — burned patrol turns in a real run) |
+| #11 | Refuse any command containing `--raw` (rule 6a) — proxy/stats endpoints dump multi-hundred-KB JSON that truncates and gets retried, burning patrol turns |
