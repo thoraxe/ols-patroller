@@ -65,8 +65,10 @@ sees these messages and recovers based on them.
 - The guard is **defense-in-depth**, not the boundary itself: when deployed
   in-cluster, the pod ServiceAccount's RBAC is the server-side enforcement boundary
   [DONE: #2] (see `safety-model.md`).
-- Guard refusals were unit-checked for mutation verbs and secret-value reads; those
-  tests are slated to land in-repo [PLANNED: #4].
+- Guard behavior is unit-checked in-repo (`tests/test_kubectl_guard.py`): refusal
+  rules 3–6, execution rules 8–11, CLI resolution rule 12, dry-mode rule 13 — see
+  `safety-model.md` rule 6a [PLANNED: #4]. The `--raw` refusal joins them with
+  #11 [PLANNED: #11].
 
 ## Planned Changes
 

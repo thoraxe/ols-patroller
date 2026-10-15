@@ -25,9 +25,45 @@ held to production standards: documented, unit-checked, and verified end-to-end.
    remediation becomes a governed AgenticRun (sandbox + approval + derived RBAC +
    audit) [PLANNED: #12]. The patrol itself stays read-only forever — it is the eyes
    and memory; the AgenticRun is the hands.
-6. Guard behavior is unit-checked: mutation verbs and secret-value reads are refused;
-   e2e asserts `execute`/`task` are rejected as invalid tools. Those tests are slated
-   to land in-repo [PLANNED: #4].
+6. The read-only layers are test-enforced in-repo: the guard is unit-checked
+   (`tests/test_kubectl_guard.py`) and the engine tool surface plus both termination
+   paths are verified end-to-end by a scripted fake-model e2e
+   (`tests/test_patrol_deepagents.py`) [PLANNED: #4].
+6a. **Guard unit tests** pin `kubectl-guard.md` behavior directly against
+    `kubectl_readonly` — no engine, no model: non-whitelisted and mutation verbs
+    are refused with the allowed-verb list (rule 3); unparseable and empty
+    commands are refused (rule 4); secret-value reads are refused across every
+    output format, including the deliberately over-broad jsonpath match, while
+    `get secrets` (names/metadata) and `describe secret` stay allowed (rules
+    5–6); a missing CLI binary (rule 9), a timed-out command (rule 8), the
+    stderr header and empty-output marker (rule 10), the `OUT_CAP` truncation
+    marker (rule 11), the CLI resolution order (rule 12), and dry-mode fixture
+    substitution with the no-fixture message (rule 13). The `--raw` refusal is
+    carried as a strict expected-failure tripwire; the refusal itself lands
+    with #11 [PLANNED: #11].
+6b. **Fake-model e2e** drives complete patrols through the real engine — real
+    `ChatOpenAI` + openai SDK + `create_deep_agent` + guard + shape pass + wiki
+    git tail — with only the HTTP endpoint scripted and the cluster answered by
+    dry-cluster fixtures. It asserts:
+    - every agent-turn request offers exactly the tools `[read_file,
+      kubectl_readonly]`, and `execute`/`task` calls are rejected as invalid
+      tools whose error lists that exact surface;
+    - guard refusals (a mutation verb, a secret-value read) reach the model as
+      `REFUSED:` tool results in the next request, so the model can recover;
+    - natural-termination and budget-cut patrols both flow through the same
+      shape pass: the reporting request binds only the `PatrolReport` schema
+      with forced tool choice, carries the report contract, and differs only
+      in the completion vs cut-off prefix; a budget-cut conversation marks
+      never-executed commands as such;
+    - the wiki wiring deferred from #3 (`wiki-memory.md` rule 4f): repo ensured
+      at startup via `main()`, one commit per wiki-changing patrol, no commit
+      on a byte-identical rewrite, push only when a remote is configured, and
+      a failed reporting pass leaves the wiki untouched.
+6c. The e2e is hermetic and deterministic: no network, no cluster, no
+    `PATROL_*` environment, no real model endpoint — the scripted endpoint is
+    an in-process OpenAI-compatible fake behind the `make_model` seam, and the
+    wiki, its repo, and any remote are test-local temporaries. It runs as part
+    of the default test invocation and finishes in seconds.
 
 ## Constraints
 
@@ -35,6 +71,10 @@ held to production standards: documented, unit-checked, and verified end-to-end.
   agenticrun`), no OLS code imports — see `constraints.md`.
 - Weakening any layer (narrowing the guard, re-enabling filesystem tools, granting
   write RBAC) requires an ADR in `decisions/`.
+- The e2e pins observable wire behavior — the tool surface offered to the model,
+  invalid-tool rejection, guard refusals as the model sees them, shape-pass
+  mechanics — not deepagents/langchain internals. It is the tripwire that catches
+  engine drift on upgrades (`decisions/0009-wire-level-fake-endpoint-e2e.md`).
 
 ## Planned Changes
 
