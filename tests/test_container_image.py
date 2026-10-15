@@ -267,9 +267,10 @@ def test_default_command_loop_wiki():
         f"got: {eptext!r}"
     )
     cmdtext = " ".join(cmd)
-    for token in ("--loop", "--interval", "900", "--wiki", "/wiki/cluster-wiki.md"):
+    for token in ("--loop", "--interval", "21600", "--wiki", "/wiki/cluster-wiki.md"):
         assert token in cmdtext, (
-            f"CMD default args must include {token!r} (rule 9), got: {cmdtext!r}"
+            f"CMD default args must include {token!r} — 6h cadence, identical "
+            f"to the Deployment args (rule 9, #25), got: {cmdtext!r}"
         )
 
 

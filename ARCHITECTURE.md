@@ -93,7 +93,7 @@ Secret-sourced env) plus post-merge CI publishing the image to GHCR
 ```mermaid
 flowchart TD
     subgraph cluster["OpenShift cluster (the one being watched)"]
-        POD["Deployment (single replica, non-root)<br/>patrol.py --loop --interval 900"]
+        POD["Deployment (single replica, non-root)<br/>patrol.py --loop --interval 21600"]
         SA["ServiceAccount<br/>ClusterRoleBinding → cluster-reader"]
         PVC["RWO PVC /wiki<br/>(git repo: one patrol, one commit)"]
         SEC["Secret: PATROL_* env<br/>(+ optional wiki remote deploy key)"]

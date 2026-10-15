@@ -33,8 +33,17 @@ in `how/reporting-pipeline.md`.
 
 ### Delivery
 
-9. Findings print to the console with a severity column; evidence prints in verbose
-   mode.
+9. Findings print to the console with a severity column; each finding's evidence
+   prints with them unless suppressed by `--quiet` [DONE: #27 — evidence used
+   to print only in verbose mode].
+9a. The patrol's per-turn output — model reasoning previews, tool invocations,
+    the guard's expanded command line, tool-result previews, agent messages —
+    prints to **stderr** as it happens, **on by default**; `-q/--quiet`
+    suppresses it (findings and notifications always print). In a container,
+    pod logs are the human surface and stderr is line-buffered, so the stream
+    lands in `oc logs` line-by-line with no buffering workaround — a healthy
+    patrol is never silent between its start banner and its findings block
+    [DONE: #27].
 10. Each notification prints with a `🔔 NOTIFY:` prefix; if `SLACK_WEBHOOK_URL` is
     set, it is also posted to Slack (with a `:rotating_light:` prefix, 15 s timeout);
     a Slack failure is logged to stderr and never fatal.
@@ -55,3 +64,4 @@ in `how/reporting-pipeline.md`.
 | Ticket | Summary |
 |---|---|
 | #9 | Notification dedup: notify on state change, not every patrol — new entry, severity change/escalation, or resolution notify; standing unchanged entries stay wiki-only; optional periodic digest for long-unfixed entries |
+| ~~#27~~ | Per-turn output stream on by default (`-q/--quiet` opts out); evidence prints with findings (rule 9a) |

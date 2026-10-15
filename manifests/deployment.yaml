@@ -44,7 +44,7 @@ spec:
           args:
             - --loop
             - --interval
-            - "900"
+            - "21600"
             - --wiki
             - /wiki/cluster-wiki.md
           # Rule 10: all secret material arrives via the patrol Secret —
@@ -57,6 +57,24 @@ spec:
             # Placeholder: edit to the real cluster name before applying.
             - name: PATROL_CLUSTER_ID
               value: my-cluster
+            # Rule 10a (#24): stdout is a pipe in a container (no TTY), so
+            # Python block-buffers it — pod logs would stay empty mid-patrol.
+            # Literal 1 keeps output appearing as it prints.
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            # Rule 10b (#28): /wiki is root-owned (kubelet-created; the
+            # SCC-supplied fsGroup is what makes it writable), so git's
+            # CVE-2022-24765 ownership check rejects the repo for every
+            # non-root caller. This trio sets safe.directory=/wiki for ANY
+            # in-container git, including the human `oc exec` procedure
+            # (rule 17 step 4). The patrol itself passes -c safe.directory
+            # per command; this covers every other caller.
+            - name: GIT_CONFIG_COUNT
+              value: "1"
+            - name: GIT_CONFIG_KEY_0
+              value: safe.directory
+            - name: GIT_CONFIG_VALUE_0
+              value: /wiki
           # Rule 11: admits under the restricted SCC with no SCC grant —
           # no privilege escalation, all capabilities dropped.
           securityContext:

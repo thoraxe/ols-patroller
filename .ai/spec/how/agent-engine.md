@@ -18,8 +18,9 @@ gotchas an agent must know before touching this code.
 `run_patrol` → `create_deep_agent(model, tools=[kubectl_readonly], system_prompt,
 middleware=[FilesystemMiddleware(tools=["read_file"])])` → `agent.astream({messages},
 config={"recursion_limit": max_steps * 2 + 12}, stream_mode="values")` → per-state
-iteration over new messages (token accounting from `AIMessage.usage_metadata`; verbose
-previews of reasoning/tool calls/results) → natural end or `GraphRecursionError` →
+iteration over new messages (token accounting from `AIMessage.usage_metadata`; per-turn
+previews of reasoning/tool calls/results — on by default, `--quiet` suppresses
+[DONE: #27]) → natural end or `GraphRecursionError` →
 shape pass over the accumulated message list.
 
 ## Key Abstractions

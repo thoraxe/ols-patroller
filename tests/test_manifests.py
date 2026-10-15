@@ -284,10 +284,10 @@ def test_image_key_and_kustomize_override():
 
 def test_args_loop_interval_wiki():
     args = [str(a) for a in _container().get("args", [])]
-    assert args == ["--loop", "--interval", "900",
+    assert args == ["--loop", "--interval", "21600",
                     "--wiki", "/wiki/cluster-wiki.md"], (
-        f"args must be exactly --loop --interval 900 --wiki "
-        f"/wiki/cluster-wiki.md (rule 9), got: {args}"
+        f"args must be exactly --loop --interval 21600 --wiki "
+        f"/wiki/cluster-wiki.md — 6h cadence (rule 9, #25), got: {args}"
     )
 
 
@@ -307,6 +307,35 @@ def test_env_from_secret_no_literal_secrets():
     assert cid and cid.get("value") and cid["value"] != "local", (
         "PATROL_CLUSTER_ID must be a literal env the operator edits to the "
         "real cluster name — never left at the 'local' default (rule 10)"
+    )
+
+
+def test_unbuffered_stdout_env():
+    # Rule 10a (#24): stdout is block-buffered in a container (no TTY) —
+    # without PYTHONUNBUFFERED the findings/notification block can sit in
+    # the stdio buffer while `oc logs` shows nothing mid-patrol.
+    e = next((e for e in _container().get("env", [])
+              if e.get("name") == "PYTHONUNBUFFERED"), None)
+    assert e is not None and e.get("value") == "1", (
+        "PYTHONUNBUFFERED must be a literal env entry with value '1' "
+        "(rule 10a, #24) — pod logs otherwise stay empty mid-patrol"
+    )
+
+
+def test_wiki_git_safe_directory_env():
+    # Rule 10b (#28): the PVC mount point is root-owned, so git's
+    # CVE-2022-24765 ownership check rejects /wiki for every non-root
+    # caller — the GIT_CONFIG_* trio makes the repo safe for any
+    # in-container git (rule 17 step 4's `oc exec` procedure included).
+    env = {e.get("name"): e.get("value") for e in _container().get("env", [])}
+    assert env.get("GIT_CONFIG_COUNT") == "1", (
+        "GIT_CONFIG_COUNT must be the literal '1' (rule 10b, #28)"
+    )
+    assert env.get("GIT_CONFIG_KEY_0") == "safe.directory", (
+        "GIT_CONFIG_KEY_0 must be 'safe.directory' (rule 10b, #28)"
+    )
+    assert env.get("GIT_CONFIG_VALUE_0") == "/wiki", (
+        "GIT_CONFIG_VALUE_0 must be '/wiki' (rule 10b, #28)"
     )
 
 

@@ -82,9 +82,11 @@ layer 3 (RBAC boundary) real, and what the CI-published image
    That entry is the single override point for clusters that must pull from
    elsewhere (private registry, the cluster's internal registry) [DONE:
    #2].
-9. The container args are exactly `--loop --interval 900 --wiki
+9. The container args are exactly `--loop --interval 21600 --wiki
    /wiki/cluster-wiki.md` (identical to the image's default CMD; stated
-   explicitly so the manifests are self-describing) [DONE: #2].
+   explicitly so the manifests are self-describing) [DONE: #2] [DONE:
+   #25 — cadence 900 s → 6 h, the resident-SRE posture; the fast demo loop
+   stays available via an explicit `--interval`].
 10. **Env wiring.** `PATROL_API_KEY`, `PATROL_BASE_URL`, `PATROL_MODEL` (and
     `SLACK_WEBHOOK_URL` / `PATROL_WIKI_REMOTE` when present in the Secret)
     arrive **only** via `envFrom` → `secretRef` on the Secret named
@@ -93,6 +95,24 @@ layer 3 (RBAC boundary) real, and what the CI-published image
     a plain literal `env` entry (not secret material): a placeholder the
     operator edits to the real cluster name for wiki commit identity
     (`wiki-memory.md`), never left at the `local` default [DONE: #2].
+10a. `PYTHONUNBUFFERED=1` is a literal `env` entry (rule 10's non-secret
+    pattern). Python block-buffers stdout when it is not a TTY — in a
+    container stdout is a pipe — so without it the patrol's stdout lines
+    (findings block, notifications) can sit in the stdio buffer across
+    patrols while `oc logs` stays empty even though the patrol is healthy
+    (observed in the rule-17 acceptance run); the env entry makes stdout
+    unbuffered so pod output appears as it prints [DONE: #24].
+10b. The wiki repo is git-safe for **any** in-container invocation via the
+    literal env trio `GIT_CONFIG_COUNT=1`, `GIT_CONFIG_KEY_0=safe.directory`,
+    `GIT_CONFIG_VALUE_0=/wiki`. The PVC mount point `/wiki` is root-owned
+    (the kubelet creates it; rule 6's SCC-supplied fsGroup is what makes it
+    writable), so git's CVE-2022-24765 ownership check rejects the repo for
+    every non-root caller — including the human `oc exec … git -C /wiki
+    log` that rule 17 step 4's procedure documents. The patrol itself already
+    passes `-c safe.directory` per command (`wiki-memory.md` rule 4d); this
+    trio covers every other caller. Env, not an image-baked
+    `/etc/gitconfig`: `/wiki` is pinned at this deployment surface, not in
+    the image [DONE: #28].
 11. **Security context.** Pod: `runAsNonRoot: true`, `seccompProfile:
     RuntimeDefault`, nothing else (rule 6 forbids the identity fields).
     Container: `allowPrivilegeEscalation: false`, `capabilities: drop:
@@ -165,6 +185,10 @@ layer 3 (RBAC boundary) real, and what the CI-published image
 - kustomization `images:` entry — the image override point (rule 8)
 - `PATROL_CLUSTER_ID` — literal env in the Deployment, edit to the real
   cluster name (rule 10)
+- `PYTHONUNBUFFERED` — literal env `1`; unbuffered stdout so pod logs show
+  patrol output as it prints (rule 10a)
+- `GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_0` / `GIT_CONFIG_VALUE_0` — literal
+  env trio setting `safe.directory=/wiki` for in-container git (rule 10b)
 - Secret keys — required `PATROL_API_KEY`, `PATROL_BASE_URL`,
   `PATROL_MODEL`; optional `SLACK_WEBHOOK_URL`, `PATROL_WIKI_REMOTE` (rule 14)
 - `.github/workflows/image.yml` — the CI that publishes the deployed image
@@ -199,3 +223,6 @@ layer 3 (RBAC boundary) real, and what the CI-published image
 | Ticket | Summary |
 |---|---|
 | ~~#2~~ | This file's contract: manifests (rules 1–17) + the CI workflow that publishes the deployed image (`container-image.md` rules 13–16) |
+| ~~#24~~ | `PYTHONUNBUFFERED=1` literal env — unbuffered stdout for pod-log visibility (rule 10a) |
+| ~~#25~~ | Default cadence 6 h: args `--interval 21600` (rule 9), with the image CMD (`container-image.md` rule 9) and the `patrol.py` env default kept identical |
+| ~~#28~~ | `GIT_CONFIG_*` safe.directory trio — `oc exec` git access to `/wiki` works un-flagged (rule 10b) |
