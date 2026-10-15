@@ -41,11 +41,11 @@ and ready states; humans own the gate transitions (`spec-approved`, merging):
 
 ## Development
 
-- Run (no cluster needed): `uv run patrol.py --once --dry-cluster -v` — requires
+- Run (no cluster needed): `uv run patrol.py --once --dry-cluster` — requires
   `PATROL_API_KEY`, `PATROL_BASE_URL`, `PATROL_MODEL` (any OpenAI-compatible
   endpoint). Run it **twice** to see the memory loop.
-- Real cluster: `uv run patrol.py --once -v` (needs `oc`/`kubectl` + kubeconfig).
-- Loop mode: `uv run patrol.py --loop --interval 900`.
+- Real cluster: `uv run patrol.py --once` (needs `oc`/`kubectl` + kubeconfig).
+- Loop mode: `uv run patrol.py --loop --interval 21600`.
 - Dependencies are PEP 723 inline metadata in `patrol.py`; `uv` resolves them — no
   separate install step. `pyproject.toml` mirrors them for the test environment
   only (`uv run patrol.py` still uses the PEP 723 script mode).

@@ -27,7 +27,7 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
    it now." and retry once. Two failures → `None`.
 4. `report_fields` normalizes (pydantic → `model_dump`; dict → `.get()` with falsy
    notifications filtered).
-5. Consumers: findings printed (severity column; evidence by default — `--quiet` suppresses [PLANNED: #27]), `notify`
+5. Consumers: findings printed (severity column; evidence by default — `--quiet` suppresses [DONE: #27]), `notify`
    called per notification, wiki written atomically and committed to the wiki repo
    if `updated_wiki` non-empty (push when `PATROL_WIKI_REMOTE` is set) [DONE: #3],
    token totals printed.

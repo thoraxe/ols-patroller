@@ -68,7 +68,7 @@ manifests deploy by default.
    command is `patrol.py --loop --interval 21600 --wiki /wiki/cluster-wiki.md` —
    `ENTRYPOINT` invokes the script via the image's `python3.12`; runtime wiring
    (Deployment args, Secret-sourced env) belongs to the #2 manifests and may
-   override the default command [DONE: #1] [PLANNED: #25 — cadence 900 s →
+   override the default command [DONE: #1] [DONE: #25 — cadence 900 s →
    6 h, kept identical to the Deployment args].
 10. The image bakes **no configuration and no secrets**: no `ENV` instruction
     sets any `PATROL_*` or `SLACK_*` variable. `PATROL_API_KEY` /
@@ -146,4 +146,4 @@ manifests deploy by default.
 |---|---|
 | ~~#1~~ | This file's own contract: Containerfile + `requirements.txt` (rules 1–12) |
 | ~~#2~~ | Manifests consuming this image (`in-cluster-deployment.md`) + the post-merge CI that publishes it to GHCR (rules 13–16) |
-| #25 | Default cadence 6 h: CMD `--interval 21600` (rule 9), kept identical to the Deployment args and the `patrol.py` env default |
+| ~~#25~~ | Default cadence 6 h: CMD `--interval 21600` (rule 9), kept identical to the Deployment args and the `patrol.py` env default |

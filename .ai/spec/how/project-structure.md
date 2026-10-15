@@ -27,11 +27,11 @@ Other paths:
 |---|---|
 | `docs/prior-art.md` | Landscape survey + positioning (drives roadmap #12, #15) |
 | `wiki/` | Runtime artifact — the wiki directory: `cluster-wiki.md` + its git repo; **gitignored**, never commit [DONE: #3 — was a bare `cluster-wiki.md` beside `patrol.py`] |
-| `tests/` | `conftest.py` (repo-root import path) + `test_wiki_git.py` — wiki git persistence unit tests (#3 spec PR) + `test_container_image.py` — Containerfile/`requirements.txt` static contract tests [DONE: #1]. `test_manifests.py` (kustomize manifest contract) + `test_image_ci.py` (post-merge workflow contract) [DONE: #2]. `test_cli_defaults.py` — patrol.py default-surface contract (interval default, `--quiet` flag) [PLANNED: #25, #27]. Fake-model e2e still planned for `tests/test_patrol_deepagents.py` [PLANNED: #4] |
+| `tests/` | `conftest.py` (repo-root import path) + `test_wiki_git.py` — wiki git persistence unit tests (#3 spec PR) + `test_container_image.py` — Containerfile/`requirements.txt` static contract tests [DONE: #1]. `test_manifests.py` (kustomize manifest contract) + `test_image_ci.py` (post-merge workflow contract) [DONE: #2]. `test_cli_defaults.py` — patrol.py default-surface contract (interval default, `--quiet` flag) [DONE: #25, #27]. Fake-model e2e still planned for `tests/test_patrol_deepagents.py` [PLANNED: #4] |
 | `pyproject.toml`, `uv.lock` | Project + dev dependency groups for the test environment (`uv run --group dev pytest tests/`); mirrors `patrol.py`'s PEP 723 inline metadata (range constraints) — the image instead installs the exactly-pinned `requirements.txt` [DONE: #1] |
-| `Containerfile` | In-cluster image build recipe: ubi9-minimal base, version-pinned + checksum-verified `oc`/`kubectl` client, pip install from `requirements.txt`, non-root random-UID, default command `--loop --interval 21600 --wiki /wiki/cluster-wiki.md` [DONE: #1] [PLANNED: #25] (`what/container-image.md`) |
+| `Containerfile` | In-cluster image build recipe: ubi9-minimal base, version-pinned + checksum-verified `oc`/`kubectl` client, pip install from `requirements.txt`, non-root random-UID, default command `--loop --interval 21600 --wiki /wiki/cluster-wiki.md` [DONE: #1] [DONE: #25] (`what/container-image.md`) |
 | `requirements.txt` | Exact pins (`name==version`) of the PEP 723 top-level runtime set; installed into the image at build time [DONE: #1] |
-| `manifests/` | In-cluster deployment kustomize root (#2): namespace, ServiceAccount, ClusterRoleBinding to the built-in `cluster-reader`, RWO PVC `ols-patroller-wiki` (1Gi, default storage class, mounted at `/wiki`), gitignored `secret.yaml` (+ committed `secret.yaml.example` template), single-replica `Recreate` Deployment running `--loop --interval 21600 --wiki /wiki/cluster-wiki.md` with literal env for unbuffered stdout and a git-safe `/wiki` (`PYTHONUNBUFFERED`, `GIT_CONFIG_*`), kustomization with the `images:` override to the CI-published image [DONE: #2] [PLANNED: #24, #25, #28] (`what/in-cluster-deployment.md`) |
+| `manifests/` | In-cluster deployment kustomize root (#2): namespace, ServiceAccount, ClusterRoleBinding to the built-in `cluster-reader`, RWO PVC `ols-patroller-wiki` (1Gi, default storage class, mounted at `/wiki`), gitignored `secret.yaml` (+ committed `secret.yaml.example` template), single-replica `Recreate` Deployment running `--loop --interval 21600 --wiki /wiki/cluster-wiki.md` with literal env for unbuffered stdout and a git-safe `/wiki` (`PYTHONUNBUFFERED`, `GIT_CONFIG_*`), kustomization with the `images:` override to the CI-published image [DONE: #2] [DONE: #24, #25, #28] (`what/in-cluster-deployment.md`) |
 | `.github/workflows/image.yml` | Post-merge image CI (#2): on `push` to `main` only, builds from the repo-root `Containerfile` (`file: ./Containerfile`, `linux/amd64`) and publishes `ghcr.io/thoraxe/ols-patroller` with `main` + `sha-<SHA>` tags via the built-in `GITHUB_TOKEN` [DONE: #2] (`what/container-image.md` rules 13–16) |
 
 ## Key Entry Points
@@ -45,7 +45,7 @@ Other paths:
 - Container: `ENTRYPOINT ["python3.12", "patrol.py"]` with default
   `CMD ["--loop", "--interval", "21600", "--wiki", "/wiki/cluster-wiki.md"]`;
   dependencies were pip-installed from `requirements.txt` at build — nothing
-  resolves or installs at container start [DONE: #1] [PLANNED: #25].
+  resolves or installs at container start [DONE: #1] [DONE: #25].
 - `run_patrol()` is the whole patrol lifecycle: load wiki → in-flight AgenticRuns →
   build agent → stream exploration → shape pass → findings/notify/wiki write.
 

@@ -31,7 +31,7 @@ Run:
     export PATROL_MODEL=...          # model id on that endpoint
     uv run patrol.py --once
     uv run patrol.py --once --dry-cluster     # no cluster needed; uses canned fixtures
-    uv run patrol.py --loop --interval 900    # every 15 min
+    uv run patrol.py --loop --interval 21600   # every 6 h (the default cadence)
 
 Point it at any OpenAI-compatible chat-completions endpoint via env (see below).
 """
@@ -685,8 +685,8 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Cluster Sentinel hacky PoC (deepagents engine)")
     ap.add_argument("--once", action="store_true", help="run a single patrol (default)")
     ap.add_argument("--loop", action="store_true", help="patrol repeatedly")
-    ap.add_argument("--interval", type=int, default=int(os.environ.get("PATROL_INTERVAL", "900")),
-                    help="seconds between patrols in --loop mode (default 900)")
+    ap.add_argument("--interval", type=int, default=int(os.environ.get("PATROL_INTERVAL", "21600")),
+                    help="seconds between patrols in --loop mode (default 21600, six hours)")
     ap.add_argument("--dry-cluster", action="store_true",
                     help="use canned fixtures instead of a real cluster")
     ap.add_argument("--wiki", default=str(Path(__file__).parent / "wiki" / "cluster-wiki.md"),
@@ -694,7 +694,10 @@ def main() -> None:
                          "its parent directory is the wiki git repo)")
     ap.add_argument("--max-steps", type=int, default=MAX_STEPS,
                     help="max LLM turns per patrol")
-    ap.add_argument("-v", "--verbose", action="store_true")
+    ap.add_argument("-q", "--quiet", action="store_true",
+                    help="suppress the per-turn output stream (reasoning previews, tool "
+                         "calls, results — on by default; findings and notifications "
+                         "always print)")
     args = ap.parse_args()
 
     if not API_KEY or not BASE_URL or not MODEL:
@@ -709,10 +712,14 @@ def main() -> None:
     if ensure_wiki_repo(wiki_path.parent):
         print(f"[patrol] wiki repo: {wiki_path.parent}")
 
+    # #27: the per-turn output stream is on by default — verbose is derived
+    # from the --quiet opt-out, never a standalone opt-in flag.
+    verbose = not args.quiet
+
     def one(fatal: bool) -> None:
         try:
             asyncio.run(run_patrol(kubectl=kubectl, wiki_path=wiki_path, dry=args.dry_cluster,
-                                   verbose=args.verbose, max_steps=args.max_steps))
+                                   verbose=verbose, max_steps=args.max_steps))
         except Exception as e:  # noqa: BLE001
             if fatal:
                 raise

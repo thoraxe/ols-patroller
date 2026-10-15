@@ -37,7 +37,7 @@ RUN mkdir -p /wiki && chgrp 0 /wiki && chmod g=u /wiki
 # git needs no HOME — patrol.py passes user identity per command.
 USER 1001:0
 
-# Rule 9: default patrol — loop every 900 s, wiki on the /wiki volume.
+# Rule 9: default patrol — loop every 6 h (21600 s), wiki on the /wiki volume.
 # Rule 10: no ENV — PATROL_* / SLACK_* arrive at runtime from the #2 Secret.
 ENTRYPOINT ["python3.12", "patrol.py"]
-CMD ["--loop", "--interval", "900", "--wiki", "/wiki/cluster-wiki.md"]
+CMD ["--loop", "--interval", "21600", "--wiki", "/wiki/cluster-wiki.md"]

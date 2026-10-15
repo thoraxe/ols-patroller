@@ -20,7 +20,7 @@ middleware=[FilesystemMiddleware(tools=["read_file"])])` → `agent.astream({mes
 config={"recursion_limit": max_steps * 2 + 12}, stream_mode="values")` → per-state
 iteration over new messages (token accounting from `AIMessage.usage_metadata`; per-turn
 previews of reasoning/tool calls/results — on by default, `--quiet` suppresses
-[PLANNED: #27]) → natural end or `GraphRecursionError` →
+[DONE: #27]) → natural end or `GraphRecursionError` →
 shape pass over the accumulated message list.
 
 ## Key Abstractions

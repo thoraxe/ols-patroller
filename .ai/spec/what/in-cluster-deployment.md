@@ -84,7 +84,7 @@ layer 3 (RBAC boundary) real, and what the CI-published image
    #2].
 9. The container args are exactly `--loop --interval 21600 --wiki
    /wiki/cluster-wiki.md` (identical to the image's default CMD; stated
-   explicitly so the manifests are self-describing) [DONE: #2] [PLANNED:
+   explicitly so the manifests are self-describing) [DONE: #2] [DONE:
    #25 — cadence 900 s → 6 h, the resident-SRE posture; the fast demo loop
    stays available via an explicit `--interval`].
 10. **Env wiring.** `PATROL_API_KEY`, `PATROL_BASE_URL`, `PATROL_MODEL` (and
@@ -101,7 +101,7 @@ layer 3 (RBAC boundary) real, and what the CI-published image
     (findings block, notifications) can sit in the stdio buffer across
     patrols while `oc logs` stays empty even though the patrol is healthy
     (observed in the rule-17 acceptance run); the env entry makes stdout
-    unbuffered so pod output appears as it prints [PLANNED: #24].
+    unbuffered so pod output appears as it prints [DONE: #24].
 10b. The wiki repo is git-safe for **any** in-container invocation via the
     literal env trio `GIT_CONFIG_COUNT=1`, `GIT_CONFIG_KEY_0=safe.directory`,
     `GIT_CONFIG_VALUE_0=/wiki`. The PVC mount point `/wiki` is root-owned
@@ -112,7 +112,7 @@ layer 3 (RBAC boundary) real, and what the CI-published image
     passes `-c safe.directory` per command (`wiki-memory.md` rule 4d); this
     trio covers every other caller. Env, not an image-baked
     `/etc/gitconfig`: `/wiki` is pinned at this deployment surface, not in
-    the image [PLANNED: #28].
+    the image [DONE: #28].
 11. **Security context.** Pod: `runAsNonRoot: true`, `seccompProfile:
     RuntimeDefault`, nothing else (rule 6 forbids the identity fields).
     Container: `allowPrivilegeEscalation: false`, `capabilities: drop:
@@ -223,6 +223,6 @@ layer 3 (RBAC boundary) real, and what the CI-published image
 | Ticket | Summary |
 |---|---|
 | ~~#2~~ | This file's contract: manifests (rules 1–17) + the CI workflow that publishes the deployed image (`container-image.md` rules 13–16) |
-| #24 | `PYTHONUNBUFFERED=1` literal env — unbuffered stdout for pod-log visibility (rule 10a) |
-| #25 | Default cadence 6 h: args `--interval 21600` (rule 9), with the image CMD (`container-image.md` rule 9) and the `patrol.py` env default kept identical |
-| #28 | `GIT_CONFIG_*` safe.directory trio — `oc exec` git access to `/wiki` works un-flagged (rule 10b) |
+| ~~#24~~ | `PYTHONUNBUFFERED=1` literal env — unbuffered stdout for pod-log visibility (rule 10a) |
+| ~~#25~~ | Default cadence 6 h: args `--interval 21600` (rule 9), with the image CMD (`container-image.md` rule 9) and the `patrol.py` env default kept identical |
+| ~~#28~~ | `GIT_CONFIG_*` safe.directory trio — `oc exec` git access to `/wiki` works un-flagged (rule 10b) |

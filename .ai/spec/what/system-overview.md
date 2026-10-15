@@ -45,13 +45,13 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
 12a. **Container image** — ubi9-minimal image that runs `patrol.py` in-cluster:
      version-pinned OpenShift client, build-time pip install from
      `requirements.txt`, non-root random-UID, default command `--loop --interval
-     21600 --wiki /wiki/cluster-wiki.md` [DONE: #1] [PLANNED: #25]
+     21600 --wiki /wiki/cluster-wiki.md` [DONE: #1] [DONE: #25]
      (`container-image.md`).
 12b. **In-cluster deployment** — kustomize manifests (`manifests/`):
      ServiceAccount bound to the built-in `cluster-reader`, RWO PVC at `/wiki`,
      single-replica non-root Deployment running `--loop --interval 21600`,
      Secret-sourced env; merges to `main` build and publish the image to GHCR
-     (`container-image.md` rules 13–16) [DONE: #2] [PLANNED: #25]
+     (`container-image.md` rules 13–16) [DONE: #2] [DONE: #25]
      (`in-cluster-deployment.md`).
 
 ### Lifecycle
@@ -72,7 +72,7 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
     committed surface may carry a stale form: `--interval 900`, "every 15 min"
     or "every 900 s" prose, a `(default 900)` help text, a `PATROL_INTERVAL`
     default of `900` — or a `-v` flag on a `patrol.py` command line (verbose is
-    the default now; `-q` suppresses) [PLANNED: #25, #27].
+    the default now; `-q` suppresses) [DONE: #25, #27].
 
 ## Configuration Surface
 
@@ -85,7 +85,7 @@ Environment variables:
 - `SLACK_WEBHOOK_URL` — if set, notifications are also posted to Slack
 - `PATROL_MAX_STEPS` — LLM-turn exploration budget per patrol (default `30`)
 - `PATROL_INTERVAL` — seconds between patrols in `--loop` mode (default
-  `21600`, six hours) [PLANNED: #25 — was `900`]
+  `21600`, six hours) [DONE: #25 — was `900`]
 - `PATROL_TOOL_TIMEOUT` — per-command timeout in seconds (default `60`)
 - `PATROL_CLUSTER_ID` — cluster identity for wiki commit emails (default `local`)
   [DONE: #3]
@@ -95,9 +95,9 @@ Environment variables:
 CLI flags: `--once` (default), `--loop`, `--interval`, `--dry-cluster`, `--wiki`
 (default `wiki/cluster-wiki.md` next to `patrol.py` [DONE: #3; was
 `cluster-wiki.md`]), `--max-steps`, `-q/--quiet` (suppress the per-turn output
-stream, on by default [PLANNED: #27 — was the opt-in `-v/--verbose`]).
+stream, on by default [DONE: #27 — was the opt-in `-v/--verbose`]).
 In-cluster, the image's default command is `--loop --interval 21600 --wiki
-/wiki/cluster-wiki.md` [DONE: #1] [PLANNED: #25] (`container-image.md`).
+/wiki/cluster-wiki.md` [DONE: #1] [DONE: #25] (`container-image.md`).
 
 Hard-coded constants (not env-configurable): `OUT_CAP` = 15,000 chars of tool output
 fed back to the model; model temperature 0.3, `max_tokens` 16000, request timeout

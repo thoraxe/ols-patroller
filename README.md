@@ -21,10 +21,15 @@ export PATROL_API_KEY=<your API key>
 export PATROL_BASE_URL=<endpoint>      # e.g. https://api.example.com/v1
 export PATROL_MODEL=<model id>
 
-uv run patrol.py --once --dry-cluster -v     # no cluster needed; canned fixtures
-uv run patrol.py --once -v                   # real cluster (needs oc/kubectl + kubeconfig)
-uv run patrol.py --loop --interval 900       # patrol every 15 min
+uv run patrol.py --once --dry-cluster     # no cluster needed; canned fixtures
+uv run patrol.py --once                   # real cluster (needs oc/kubectl + kubeconfig)
+uv run patrol.py --loop --interval 21600  # patrol every 6 h (the default cadence)
 ```
+
+Per-turn output — model reasoning previews, tool invocations, the guard's expanded
+command line, tool-result previews — streams to **stderr** as it happens, **on by
+default**; add `-q`/`--quiet` to suppress it (findings and notifications always
+print).
 
 Run `--once --dry-cluster` **twice** to see the memory loop: patrol #1 maps the
 cluster + writes the wiki; patrol #2 consults the watch-list, tracks persistence
@@ -111,7 +116,7 @@ truth). If git is unavailable, the patroller degrades to file-only.
 | `KUBECTL` | `oc`→`kubectl` | cluster CLI |
 | `SLACK_WEBHOOK_URL` | — | if set, notifications also go to Slack |
 | `PATROL_MAX_STEPS` | `30` | LLM-turn exploration budget per patrol (raised from 15 after real-cluster runs; GLM needs >15 turns even single-node — if exhausted, the reporting pass reports from observations so far) |
-| `PATROL_INTERVAL` | `900` | seconds (`--loop`) |
+| `PATROL_INTERVAL` | `21600` | seconds (`--loop`, 6 h) |
 | `PATROL_TOOL_TIMEOUT` | `60` | per-command timeout |
 | `PATROL_CLUSTER_ID` | `local` | cluster identity for wiki commit emails (`patrol@<id>`) |
 | `PATROL_WIKI_REMOTE` | — | if set, wiki commits are pushed there (best-effort replication) |
