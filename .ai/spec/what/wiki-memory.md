@@ -65,6 +65,12 @@ knowledge base of the observed cluster.
     attempts; any failure is logged and never fails the patrol or blocks the loop
     indefinitely — the local commit is the source of truth (local-first)
     [DONE: #3].
+4f. The wiring of rules 4a–4e into the process is verified end-to-end by the
+    fake-model e2e: the repo is ensured at startup via `main()` before the first
+    patrol, the patrol tail runs write → commit → push in that order, a
+    byte-identical rewrite creates no commit, the push runs only when
+    `PATROL_WIKI_REMOTE` is set, and a failed reporting pass leaves the wiki
+    untouched [DONE: #4].
 
 ### Format Contract
 

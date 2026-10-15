@@ -26,7 +26,8 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
 
 5. The model's effective tool surface is exactly `[read_file, kubectl_readonly]`.
    Shell, filesystem writes, `execute`, and the default `task` subagent are removed;
-   `execute`/`task` calls are rejected as invalid tools (verified in e2e).
+   `execute`/`task` calls are rejected as invalid tools (asserted by the in-repo
+   fake-model e2e [DONE: #4]).
 6. The patrol is single-threaded: no subagents are spawned.
 
 ### Exploration & Termination
@@ -36,7 +37,7 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
    `--max-steps`); a soft target ("~N turns") is communicated in the user prompt.
 9. A patrol ends either naturally (the model's plain-text summary) or by exhausting
    the step budget; **both paths flow through the same reporting pass** — there is no
-   salvage special-case.
+   salvage special-case (asserted by the in-repo fake-model e2e [DONE: #4]).
 10. A budget-cut report covers only what was actually observed; tool calls that never
     executed are marked "not executed" in the conversation fed to the reporting pass.
 

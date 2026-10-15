@@ -33,3 +33,4 @@ Date: YYYY-MM-DD · Status: proposed | accepted | superseded by NNNN
 | [0006](0006-cluster-reader-binding.md) | Bind to the built-in cluster-reader, not a bespoke read-only role |
 | [0007](0007-scc-fsgroup-writable-wiki.md) | /wiki writability via the SCC-assigned fsGroup |
 | [0008](0008-ci-published-image.md) | Post-merge CI publishes the image; the manifests deploy it |
+| [0009](0009-wire-level-fake-endpoint-e2e.md) | Wire-level fake endpoint for the e2e, not a class-level fake model |

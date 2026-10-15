@@ -73,3 +73,8 @@ shape pass over the accumulated message list.
 - **OUT_CAP fights:** hard truncation at 15k chars can burn turns when the model
   retries truncated dumps (patrol #6 fought node proxy stats) — motivates #10
   (smarter truncation) and #11 (refuse `--raw`).
+- **E2E verification:** the engine wiring — exact tool surface, subagent disable,
+  budget-cut salvage, shape-pass handoff — is pinned by `tests/test_patrol_deepagents.py`,
+  a scripted wire-level endpoint behind the `make_model` seam (see
+  `project-structure.md` and `decisions/0009-wire-level-fake-endpoint-e2e.md`); it
+  exists to catch deepagents/langchain drift on upgrades [DONE: #4].
