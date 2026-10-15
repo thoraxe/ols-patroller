@@ -23,5 +23,5 @@ read-file-only FilesystemMiddleware, default `task` subagent disabled.
   must be actively dismantled; the safety story depends on that wiring
   (see `how/agent-engine.md`).
 - Exposure to upstream drift, including private `_models` helpers used to disable
-  the default subagent — guarded by graceful degradation and (planned) in-repo e2e
-  tests (#4).
+  the default subagent — guarded by graceful degradation and in-repo e2e tests
+  (#4).

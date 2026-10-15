@@ -77,4 +77,4 @@ shape pass over the accumulated message list.
   budget-cut salvage, shape-pass handoff — is pinned by `tests/test_patrol_deepagents.py`,
   a scripted wire-level endpoint behind the `make_model` seam (see
   `project-structure.md` and `decisions/0009-wire-level-fake-endpoint-e2e.md`); it
-  exists to catch deepagents/langchain drift on upgrades [PLANNED: #4].
+  exists to catch deepagents/langchain drift on upgrades [DONE: #4].

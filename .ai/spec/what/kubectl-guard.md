@@ -67,7 +67,7 @@ sees these messages and recovers based on them.
   [DONE: #2] (see `safety-model.md`).
 - Guard behavior is unit-checked in-repo (`tests/test_kubectl_guard.py`): refusal
   rules 3–6, execution rules 8–11, CLI resolution rule 12, dry-mode rule 13 — see
-  `safety-model.md` rule 6a [PLANNED: #4]. The `--raw` refusal joins them with
+  `safety-model.md` rule 6a [DONE: #4]. The `--raw` refusal joins them with
   #11 [PLANNED: #11].
 
 ## Planned Changes

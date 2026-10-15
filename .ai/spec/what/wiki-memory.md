@@ -70,7 +70,7 @@ knowledge base of the observed cluster.
     patrol, the patrol tail runs write → commit → push in that order, a
     byte-identical rewrite creates no commit, the push runs only when
     `PATROL_WIKI_REMOTE` is set, and a failed reporting pass leaves the wiki
-    untouched [PLANNED: #4].
+    untouched [DONE: #4].
 
 ### Format Contract
 
