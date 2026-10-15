@@ -23,8 +23,8 @@ Covers (safety-model.md rules 6b-6c, wiki-memory.md rule 4f):
   per wiki-changing patrol, no commit on a byte-identical rewrite, push only
   when a remote is configured, failed reporting pass leaves the wiki untouched
 
-The `--raw` guard refusal is NOT here: it lands with #11
-(kubectl-guard.md Planned Changes; guard unit tests carry the tripwire).
+The `--raw` guard refusal is not e2e-covered: it is unit-checked in
+test_kubectl_guard.py (kubectl-guard.md rule 6a, #11).
 
 Run: uv run --group dev pytest tests/ -q
 """

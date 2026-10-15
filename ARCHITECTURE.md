@@ -20,7 +20,7 @@ flowchart TD
     A["Load wiki<br/>(seeded on first run)"] --> B["In-flight AgenticRuns check<br/>(best-effort dedup context)"]
     B --> C["User prompt:<br/>timestamp + dedup context + wiki"]
     C --> D["deepagents agent loop<br/>auto tool choice · ~30-turn budget"]
-    D -->|"kubectl_readonly"| E["Read-only guard<br/>verb whitelist · secret refusal · 15k cap"]
+    D -->|"kubectl_readonly"| E["Read-only guard<br/>verb whitelist · secret refusal · raw-path refusal · 15k cap"]
     E -->|"--dry-cluster"| F["Canned fixtures"]
     E -->|"real"| G["oc / kubectl → cluster"]
     G --> D
@@ -47,7 +47,7 @@ stopping signal (GLM never self-terminated under it — see
 
 ```mermaid
 flowchart LR
-    M["LLM"] -->|"only tools:<br/>read_file + kubectl_readonly"| G["Layer 1 · Tool guard<br/>verb whitelist<br/>secret-value refusal"]
+    M["LLM"] -->|"only tools:<br/>read_file + kubectl_readonly"| G["Layer 1 · Tool guard<br/>verb whitelist<br/>secret-value refusal<br/>raw-path (--raw) refusal"]
     G --> CLI["oc/kubectl subprocess<br/>(arg list, no shell)"]
     CLI --> R["Layer 3 · RBAC boundary<br/>SA bound to cluster-reader<br/>— the real enforcement edge"]
     subgraph E["Layer 2 · Engine surface"]

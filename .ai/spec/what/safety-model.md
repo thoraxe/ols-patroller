@@ -8,7 +8,8 @@ held to production standards: documented, unit-checked, and verified end-to-end.
 1. The patrol **never mutates the observed cluster**. Observation is the only cluster
    interaction; nothing in the codebase writes to the cluster.
 2. **Layer 1 — tool guard:** the only cluster tool is `kubectl_readonly` with its
-   verb whitelist and secret-value refusal (`kubectl-guard.md`).
+   verb whitelist, secret-value refusal, and raw-path (`--raw`) refusal
+   (`kubectl-guard.md`).
 3. **Layer 2 — engine tool surface:** the agent is built with `create_deep_agent`
    and **no backend**, so it has no shell and no filesystem tools; deepagents'
    default `FilesystemMiddleware` (ls/write_file/edit_file/delete/glob/grep/execute)
@@ -38,9 +39,10 @@ held to production standards: documented, unit-checked, and verified end-to-end.
     5–6); a missing CLI binary (rule 9), a timed-out command (rule 8), the
     stderr header and empty-output marker (rule 10), the `OUT_CAP` truncation
     marker (rule 11), the CLI resolution order (rule 12), and dry-mode fixture
-    substitution with the no-fixture message (rule 13). The `--raw` refusal is
-    carried as a strict expected-failure tripwire; the refusal itself lands
-    with #11 [PLANNED: #11].
+    substitution with the no-fixture message (rule 13); the raw-path refusal
+    joins these checks — every `--raw` flag form refused across verbs, bare-`raw`
+    names allowed, the refusal ahead of subprocess execution and dry-mode
+    fixture lookup (rule 6a) [DONE: #11].
 6b. **Fake-model e2e** drives complete patrols through the real engine — real
     `ChatOpenAI` + openai SDK + `create_deep_agent` + guard + shape pass + wiki
     git tail — with only the HTTP endpoint scripted and the cluster answered by
@@ -82,5 +84,5 @@ held to production standards: documented, unit-checked, and verified end-to-end.
 |---|---|
 | ~~#2~~ | In-cluster manifests: SA + `cluster-reader` ClusterRoleBinding + RWO PVC at `/wiki` + single-replica non-root Deployment — makes Layer 3 real (`in-cluster-deployment.md`; ADR 0006) |
 | #12 | Remediation handoff: dispatch governed AgenticRuns for actionable findings; harvest their result CRs back into the wiki |
-| #11 | Guard hardening: refuse `--raw` proxy/stats endpoints |
+| ~~#11~~ | Guard hardening: refuse `--raw` proxy/stats endpoints (`kubectl-guard.md` rule 6a) |
 | ~~#4~~ | Commit guard unit tests + fake-model e2e into the repo |

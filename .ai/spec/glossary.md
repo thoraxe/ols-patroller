@@ -22,7 +22,7 @@ redefined here.
 - **Dry-cluster** — demo mode (`--dry-cluster`) where cluster commands are answered
   from canned fixtures instead of a real cluster.
 - **Guard** (`kubectl_readonly`) — the single cluster tool: verb whitelist,
-  secret-value refusal, timeout, output cap.
+  secret-value refusal, raw-path (`--raw`) refusal, timeout, output cap.
 - **`OUT_CAP`** — hard-coded 15,000-char cap on tool output fed back to the model.
 - **AgenticRun** — OLS-side governed execution CR (sandbox + approval + derived RBAC
   + audit). The patrol reads in-flight runs for dedup [today: best-effort] and is

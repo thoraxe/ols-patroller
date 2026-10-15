@@ -32,7 +32,8 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
 7. **Patrol engine** — deepagents agent loop, tool surface, step budget, termination,
    dry-cluster mode (`patrol-engine.md`).
 8. **Read-only guard** — the single cluster tool `kubectl_readonly`: verb whitelist,
-   secret-value refusal, timeouts, output cap (`kubectl-guard.md`).
+   secret-value refusal, raw-path (`--raw`) refusal, timeouts, output cap
+   (`kubectl-guard.md`).
 9. **Wiki memory** — persistent markdown memory, seeded on first run, wholly
    rewritten each patrol, git-backed: one wiki-changing patrol, one commit
    [DONE: #3] (`wiki-memory.md`).
