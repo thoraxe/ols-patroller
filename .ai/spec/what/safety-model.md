@@ -42,7 +42,7 @@ held to production standards: documented, unit-checked, and verified end-to-end.
     substitution with the no-fixture message (rule 13); the raw-path refusal
     joins these checks — every `--raw` flag form refused across verbs, bare-`raw`
     names allowed, the refusal ahead of subprocess execution and dry-mode
-    fixture lookup (rule 6a) [PLANNED: #11].
+    fixture lookup (rule 6a) [DONE: #11].
 6b. **Fake-model e2e** drives complete patrols through the real engine — real
     `ChatOpenAI` + openai SDK + `create_deep_agent` + guard + shape pass + wiki
     git tail — with only the HTTP endpoint scripted and the cluster answered by
@@ -84,5 +84,5 @@ held to production standards: documented, unit-checked, and verified end-to-end.
 |---|---|
 | ~~#2~~ | In-cluster manifests: SA + `cluster-reader` ClusterRoleBinding + RWO PVC at `/wiki` + single-replica non-root Deployment — makes Layer 3 real (`in-cluster-deployment.md`; ADR 0006) |
 | #12 | Remediation handoff: dispatch governed AgenticRuns for actionable findings; harvest their result CRs back into the wiki |
-| #11 | Guard hardening: refuse `--raw` proxy/stats endpoints (`kubectl-guard.md` rule 6a) |
+| ~~#11~~ | Guard hardening: refuse `--raw` proxy/stats endpoints (`kubectl-guard.md` rule 6a) |
 | ~~#4~~ | Commit guard unit tests + fake-model e2e into the repo |

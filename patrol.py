@@ -240,6 +240,14 @@ def kubectl_readonly(arg_string: str, *, kubectl: str, dry: bool, verbose: bool)
     if "secret" in lower and any(f in lower for f in ("-o yaml", "-o json", "jsonpath", "-o go-template")):
         return "REFUSED: reading Secret values is off-limits. Use `get secrets` (names/metadata) only."
 
+    # Never serve raw proxy/stats paths: they dump multi-hundred-KB output that
+    # truncates at OUT_CAP and gets retried (a real patrol burned three turns in
+    # exactly that loop).
+    if "--raw" in lower:
+        return ("REFUSED: --raw paths are off-limits. They dump high-volume output "
+                "that truncates. Use typed read commands (get/describe/logs/top) "
+                "instead of retrying raw paths.")
+
     if verbose:
         print(f"[patrol]   tool: {kubectl} {' '.join(args)}", file=sys.stderr)
 

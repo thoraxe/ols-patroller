@@ -47,7 +47,7 @@ sees these messages and recovers based on them.
     (`get`/`describe`/`logs`/`top`) instead of retrying raw paths. This rule only
     refuses more than before — a strictness increase, not a guard weakening; any
     future carve-out (an explicit raw-path allowlist) is a weakening and needs an
-    ADR in `decisions/` [PLANNED: #11].
+    ADR in `decisions/` [DONE: #11].
 
 ### Execution
 
@@ -89,10 +89,10 @@ sees these messages and recovers based on them.
 - Guard behavior is unit-checked in-repo (`tests/test_kubectl_guard.py`): refusal
   rules 3–6 and 6a, execution rules 8–11, CLI resolution rule 12, dry-mode rule 13
   — see `safety-model.md` rule 6a [DONE: #4]. Rule 6a's tests land with its spec
-  PR and pass with its implementation [PLANNED: #11].
+  PR and pass with its implementation [DONE: #11].
 
 ## Planned Changes
 
 | Ticket | Summary |
 |---|---|
-| #11 | Refuse any command containing `--raw` (rule 6a) — proxy/stats endpoints dump multi-hundred-KB JSON that truncates and gets retried, burning patrol turns |
+| ~~#11~~ | Refuse any command containing `--raw` (rule 6a) — proxy/stats endpoints dump multi-hundred-KB JSON that truncates and gets retried, burning patrol turns |

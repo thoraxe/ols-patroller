@@ -97,14 +97,15 @@ truth). If git is unavailable, the patroller degrades to file-only.
 - **Read-only by construction**: the only cluster tool is `kubectl_readonly`, which
   whitelist-checks the first verb (`get/describe/logs/top/version/api-resources/
   api-versions/explain/status/cluster-info/whoami`), runs via `subprocess` list
-  (no shell), and refuses Secret value reads (`-o yaml/json/jsonpath` on secrets).
+  (no shell), refuses Secret value reads (`-o yaml/json/jsonpath` on secrets), and
+  refuses `--raw` proxy/stats paths (multi-hundred-KB dumps that would truncate).
   The deepagents engine adds **no shell/filesystem/execute tools** on top (see
   Engine above), and when deployed in-cluster the pod SA's RBAC (e.g.
   `cluster-reader`, which grants no Secret access) is the server-side enforcement
   boundary — the tool guard is defense-in-depth, not the boundary itself.
 - The patrol **never mutates the cluster**. Remediation would be delegated to a
   governed AgenticRun (not implemented in the PoC).
-- Guard was unit-checked (mutation verbs + secret reads → all refused).
+- Guard is unit-checked (mutation verbs + secret reads + `--raw` paths → all refused).
 
 ## Config (env)
 
