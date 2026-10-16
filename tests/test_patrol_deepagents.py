@@ -9,7 +9,7 @@ assert on the wire behavior the model actually sees. The cluster is answered by
 a ChatOpenAI pointed at the fake endpoint). No network, no PATROL_* env, no
 cluster; the wiki, its repo, and any remote are test-local temporaries.
 
-Covers (safety-model.md rules 6b-6c, wiki-memory.md rule 4f):
+Covers (safety-model.md rules 6b-6c, wiki-memory.md rules 4f and 15-19):
 
 - tool surface exactly [read_file, kubectl_readonly]; execute/task rejected
   as invalid tools listing that surface
@@ -20,8 +20,15 @@ Covers (safety-model.md rules 6b-6c, wiki-memory.md rule 4f):
   contract present, completion vs cut-off prefix); budget-cut conversations
   mark never-executed commands
 - wiki wiring deferred from #3: repo ensured at startup via main(), one commit
-  per wiki-changing patrol, no commit on a byte-identical rewrite, push only
-  when a remote is configured, failed reporting pass leaves the wiki untouched
+  per accepted wiki write (a byte-identical model rewrite still commits under
+  #5 — the stamp advances patrol_count), push only when a remote is
+  configured, failed reporting pass leaves the wiki untouched
+- wiki skeleton wiring of #5: an invalid updated_wiki triggers exactly one
+  repair pass carrying the validation errors and the rejected wiki, the
+  repaired wiki is written with process-stamped frontmatter (patrol_count
+  derived from the on-disk wiki, legacy wikis counting 0), and a twice-invalid
+  wiki leaves the old wiki byte-for-byte intact with the patrol's findings
+  still delivered
 
 The `--raw` guard refusal is not e2e-covered: it is unit-checked in
 test_kubectl_guard.py (kubectl-guard.md rule 6a, #11).
@@ -32,9 +39,11 @@ import json
 import re
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import httpx
+import yaml
 from langchain_openai import ChatOpenAI
 
 import patrol
@@ -62,15 +71,20 @@ class ScriptedEndpoint:
     "toolcall" = keep calling kubectl_readonly forever, driving the budget cut).
     A request that forces tool_choice on PatrolReport is the shape pass: it is
     answered with the scripted report tool call ("ok") or with unusable plain
-    text ("fail" — exercises the retry-then-give-up contract). Every request
-    body is recorded in `requests`.
+    text ("fail" — exercises the retry-then-give-up contract). `reports` (a
+    list) serves sequential shape requests in order — report first, then the
+    #5 repair pass — so a patrol can be scripted to emit an invalid wiki and
+    then a corrected one. Every request body is recorded in `requests`.
     """
 
-    def __init__(self, turns=(), report=None, on_empty="summary", report_mode="ok"):
+    def __init__(self, turns=(), report=None, on_empty="summary", report_mode="ok",
+                 reports=None):
         self.turns = list(turns)
         self.report = report
         self.on_empty = on_empty
         self.report_mode = report_mode
+        self.reports = list(reports) if reports is not None else None
+        self._shape_seen = 0
         self.requests: list[dict] = []
 
     # -- wire plumbing -----------------------------------------------------
@@ -79,10 +93,15 @@ class ScriptedEndpoint:
         self.requests.append(body)
         choice = body.get("tool_choice")
         if isinstance(choice, dict) and choice.get("function", {}).get("name") == "PatrolReport":
+            self._shape_seen += 1
             if self.report_mode == "fail":
                 msg = _assistant_text("I would rather not produce a report.")
             else:
-                msg = _assistant_tool_call("PatrolReport", self.report, "call_report")
+                if self.reports is not None:
+                    served = self.reports[min(self._shape_seen - 1, len(self.reports) - 1)]
+                else:
+                    served = self.report
+                msg = _assistant_tool_call("PatrolReport", served, "call_report")
             return self._completion(msg, "tool_calls" if self.report_mode != "fail" else "stop",
                                     stream=bool(body.get("stream")))
         if self.turns:
@@ -164,6 +183,46 @@ class ScriptedEndpoint:
 
 # --------------------------------------------------------------- shared fixtures
 
+def wiki_text(marker="e2e wiki marker", patrol_count=9):
+    """A skeleton-valid updated_wiki (wiki-memory.md rules 10-12). The
+    frontmatter values are deliberately the model's own guesses (patrol_count
+    9, a bogus cluster id) so tests can prove the process stamp overrides
+    them on write."""
+    return (
+        "---\n"
+        "wiki_version: 1\n"
+        "cluster_id: model-guess\n"
+        f"patrol_count: {patrol_count}\n"
+        'last_patrol: "2026-10-16T00:00:00+00:00"\n'
+        "---\n"
+        "# Cluster Wiki\n"
+        "\n"
+        "## Topology\n"
+        f"- {marker} (kubectl get nodes, 2026-10-16, high)\n"
+        "\n"
+        "## Baselines\n"
+        "_(none)_\n"
+        "\n"
+        "## Watch-list\n"
+        "- id: W-1 · status: watching · first_seen: 2026-10-15 · last_verified: 2026-10-16 · source: kubectl get nodes · confidence: high\n"
+        "  worker-1 has been NotReady for 40 days.\n"
+        "\n"
+        "## Open questions\n"
+        "- (none yet)\n"
+        "\n"
+        "## Anomaly log\n"
+        "- id: A-1 · status: watching · first_seen: 2026-10-15 · last_verified: 2026-10-16 · source: kubectl get pods -A · confidence: medium\n"
+        "  demo-app crashlooping.\n"
+    )
+
+
+def frontmatter(text):
+    """The parsed YAML frontmatter of a wiki document."""
+    lines = text.split("\n")
+    assert lines[0] == "---", "not a frontmatter document"
+    return yaml.safe_load("\n".join(lines[1:lines.index("---", 1)]))
+
+
 REPORT = {
     "findings": [
         {"severity": "warn", "summary": "worker-1 NotReady for 40d",
@@ -172,7 +231,7 @@ REPORT = {
          "evidence": "get pods -A: CrashLoopBackOff 128 restarts"},
     ],
     "notifications": ["worker-1 has been NotReady for 40 days"],
-    "updated_wiki": "# Cluster Wiki\n\n## Topology\n- e2e wiki marker\n",
+    "updated_wiki": wiki_text(),
 }
 
 # A patrol that explores, trips both guard refusals and both absent-tool calls,
@@ -198,11 +257,6 @@ def git(*args, cwd):
     """Run git in cwd, raising on failure — tests assert on real git state."""
     return subprocess.run(["git", *args], cwd=cwd, capture_output=True,
                           text=True, check=True)
-
-
-def git_try(*args, cwd):
-    """Run git without raising — for negative assertions (missing refs)."""
-    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
 
 
 def commit_count(cwd) -> int:
@@ -246,6 +300,14 @@ def test_natural_termination_full_patrol(tmp_path, monkeypatch, capsys):
     assert "e2e wiki marker" in wiki.read_text()
     log = git("log", "-1", "--format=%ae|%s", cwd=wiki.parent).stdout.strip()
     assert log == "patrol@e2e-cluster|patrol 1: 2 findings, 1 warn"
+
+    # #5: written in the skeleton, with process-stamped frontmatter — the
+    # model's guesses (patrol_count 9, cluster_id model-guess) were overridden
+    fm = frontmatter(wiki.read_text())
+    assert fm["wiki_version"] == 1
+    assert fm["cluster_id"] == "e2e-cluster"
+    assert fm["patrol_count"] == 1
+    datetime.fromisoformat(fm["last_patrol"])  # the patrol-start timestamp
 
     # every agent-turn request offers exactly the two allowed tools
     assert endpoint.agent_requests, "no agent requests recorded"
@@ -313,9 +375,11 @@ def test_budget_cut_flows_through_same_shape_pass(tmp_path, monkeypatch, capsys)
     assert "CUT OFF" in prompt and "not executed" in prompt
     assert "step budget exhausted; command not executed." in endpoint.tool_results(s)
 
-    # the report still landed: wiki written, committed once
+    # the report still landed: wiki written, committed once, stamped
     assert "e2e wiki marker" in wiki.read_text()
     assert commit_count(wiki.parent) == 1
+    fm = frontmatter(wiki.read_text())
+    assert fm["patrol_count"] == 1 and fm["cluster_id"] == "e2e-cluster"
 
     # and the model genuinely never wrote a final summary: no assistant text
     # in the conversation the shape pass received (it was cut mid-tool-loop)
@@ -342,9 +406,10 @@ def test_failed_reporting_pass_leaves_wiki_untouched(tmp_path, monkeypatch, caps
 # --------------------------------------------------------------- wiki wiring (#3)
 
 def test_wiki_git_wiring_end_to_end(tmp_path, monkeypatch, capsys):
-    """The wiring deferred from #3's unit tests, driven through main():
-    startup repo ensure, one commit per wiki-changing patrol, no commit on a
-    byte-identical rewrite, push only when a remote is configured."""
+    """The wiring deferred from #3's unit tests, driven through main(), with
+    the #5 skeleton semantics: startup repo ensure, one commit per accepted
+    wiki write (the stamp advances patrol_count, so even a byte-identical
+    model rewrite writes and commits), push only when a remote is configured."""
     wiki = tmp_path / "wiki" / "cluster-wiki.md"      # directory does not exist yet
     remote_a = tmp_path / "remote-a.git"
     remote_b = tmp_path / "remote-b.git"
@@ -352,37 +417,137 @@ def test_wiki_git_wiring_end_to_end(tmp_path, monkeypatch, capsys):
         git("init", "--bare", "-b", "main", str(r), cwd=tmp_path)
 
     def report_with(wiki_body):
-        return dict(REPORT, updated_wiki=f"# Cluster Wiki\n\n## Topology\n- {wiki_body}\n")
+        return dict(REPORT, updated_wiki=wiki_text(wiki_body))
 
-    # patrol 1: wiki v1 -> written, committed, pushed to the configured remote
+    # patrol 1: wiki v1 -> written (stamped), committed, pushed to remote_a
     run_patrol_cli(monkeypatch, ScriptedEndpoint(turns=NATURAL_TURNS[:1],
                                                  report=report_with("v1")), wiki,
                    "--max-steps", "8", wiki_remote=str(remote_a))
     assert (wiki.parent / ".git").is_dir(), "main() must ensure the wiki repo at startup"
     head1 = git("rev-parse", "HEAD", cwd=wiki.parent).stdout.strip()
     assert commit_count(wiki.parent) == 1
+    assert frontmatter(wiki.read_text())["patrol_count"] == 1
     assert git("rev-parse", "--verify", "refs/heads/main",
                cwd=remote_a).stdout.strip() == head1, "commit must be pushed to the remote"
 
-    # patrol 2: byte-identical rewrite -> no commit, and (a different remote
-    # being configured) no push happens — remote-b stays empty
+    capsys.readouterr()  # scope the no-push assertion below to patrol 2 alone
+
+    # patrol 2: byte-identical MODEL rewrite -> the stamp advances
+    # patrol_count (1 -> 2), so the file changes and it commits; no remote
+    # configured -> no push happens
     run_patrol_cli(monkeypatch, ScriptedEndpoint(turns=NATURAL_TURNS[:1],
                                                  report=report_with("v1")), wiki,
-                   "--max-steps", "8", wiki_remote=str(remote_b))
-    assert commit_count(wiki.parent) == 1
-    assert git_try("rev-parse", "--verify", "refs/heads/main",
-                   cwd=remote_b).returncode != 0, "no commit means no push"
-
-    # patrol 3: changed wiki, NO remote configured -> commit lands, no push
-    capsys.readouterr()  # scope the no-push assertion to this patrol alone
-    run_patrol_cli(monkeypatch, ScriptedEndpoint(turns=NATURAL_TURNS[:1],
-                                                 report=report_with("v2")), wiki,
                    "--max-steps", "8")
     assert commit_count(wiki.parent) == 2
+    assert frontmatter(wiki.read_text())["patrol_count"] == 2
     out = capsys.readouterr().out
     assert "wiki push" not in out, "no push may be attempted without PATROL_WIKI_REMOTE"
-    assert git_try("rev-parse", "--verify", "refs/heads/main",
-                   cwd=remote_b).returncode != 0
+
+    # patrol 3: changed wiki + a different remote -> commit lands, pushed there
+    run_patrol_cli(monkeypatch, ScriptedEndpoint(turns=NATURAL_TURNS[:1],
+                                                 report=report_with("v2")), wiki,
+                   "--max-steps", "8", wiki_remote=str(remote_b))
+    assert commit_count(wiki.parent) == 3
+    head3 = git("rev-parse", "HEAD", cwd=wiki.parent).stdout.strip()
+    assert git("rev-parse", "--verify", "refs/heads/main",
+               cwd=remote_b).stdout.strip() == head3
+
+
+# --------------------------------------------------------------- wiki skeleton (#5)
+
+def test_invalid_wiki_triggers_one_repair_pass(tmp_path, monkeypatch, capsys):
+    """A report whose updated_wiki fails skeleton validation gets exactly one
+    repair pass — a second shape request carrying the validation errors and
+    the rejected wiki — and the repaired report is the final one: its wiki is
+    written (stamped) and its findings/notifications are delivered, not the
+    first report's."""
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    rejected = wiki_text("REJECTED-WIKI-MARKER").replace(
+        "patrol_count: 9\n", "patrol_count: 9\nbogus_key: 1\n")
+    repaired = dict(REPORT,
+                    updated_wiki=wiki_text("repaired marker"),
+                    findings=[{"severity": "warn", "summary": "repaired finding",
+                               "evidence": "e2e"}],
+                    notifications=["repaired notification"])
+    endpoint = ScriptedEndpoint(turns=NATURAL_TURNS[:1],
+                                reports=[dict(REPORT, updated_wiki=rejected),
+                                         repaired])
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
+
+    # exactly two shape requests: the report, then the single repair pass
+    shapes = endpoint.shape_requests
+    assert len(shapes) == 2, f"expected report + repair, got {len(shapes)}"
+    repair_text = endpoint.conversation_text(shapes[1])
+    assert "Produce the final PatrolReport" in repair_text  # a shape-pass call
+    assert "bogus_key" in repair_text                       # the validation errors
+    assert "REJECTED-WIKI-MARKER" in repair_text            # the rejected wiki
+
+    # the repaired report won: its wiki on disk (stamped), its findings delivered
+    assert "repaired marker" in wiki.read_text()
+    fm = frontmatter(wiki.read_text())
+    assert fm["patrol_count"] == 1 and fm["cluster_id"] == "e2e-cluster"
+    out = capsys.readouterr().out
+    assert "repaired finding" in out
+    assert "🔔 NOTIFY: repaired notification" in out
+    assert "[warn] worker-1 NotReady for 40d" not in out  # wholesale replacement
+    assert "🔔 NOTIFY: worker-1 has been NotReady" not in out
+    assert commit_count(wiki.parent) == 1
+
+
+def test_twice_invalid_wiki_keeps_old_wiki(tmp_path, monkeypatch, capsys):
+    """Both the report's wiki and the repair's wiki fail validation -> the old
+    wiki stands byte-for-byte, nothing is committed, a warning is logged, and
+    the patrol's findings and notifications still deliver (rule 19)."""
+    wiki_dir = tmp_path / "wiki"
+    wiki_dir.mkdir()
+    wiki = wiki_dir / "cluster-wiki.md"
+    old_wiki = wiki_text("old world", patrol_count=5)
+    wiki.write_text(old_wiki)
+
+    rejected = wiki_text("REJECTED-WIKI-MARKER").replace(
+        "patrol_count: 9\n", "patrol_count: 9\nbogus_key: 1\n")
+    endpoint = ScriptedEndpoint(turns=NATURAL_TURNS[:1],
+                                reports=[dict(REPORT, updated_wiki=rejected),
+                                         dict(REPORT, updated_wiki=rejected)])
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
+
+    assert len(endpoint.shape_requests) == 2   # report + the one repair pass
+    assert wiki.read_text() == old_wiki        # byte-for-byte
+    assert commit_count(wiki_dir) == 0         # startup-ensured repo, no commits
+
+    # the patrol's observations survived the wiki rejection
+    captured = capsys.readouterr()
+    assert "[warn] worker-1 NotReady for 40d" in captured.out
+    assert "🔔 NOTIFY: worker-1 has been NotReady for 40 days" in captured.out
+    # and the rejection was warned about, not silent
+    assert re.search(r"(?i)wiki", captured.err)
+    assert re.search(r"(?i)valid|reject|keep", captured.err)
+
+
+def test_stamp_derives_patrol_count_from_disk(tmp_path, monkeypatch):
+    """Rule 17: patrol_count = the on-disk wiki's value + 1 (never the model's
+    guess), and a legacy pre-#5 wiki without frontmatter counts as 0 — the
+    first skeleton write stamps 1."""
+    wiki_dir = tmp_path / "wiki"
+    wiki_dir.mkdir()
+    wiki = wiki_dir / "cluster-wiki.md"
+
+    # on-disk wiki at patrol_count 5 -> next write stamps 6
+    wiki.write_text(wiki_text("v0", patrol_count=5))
+    run_patrol_cli(monkeypatch, ScriptedEndpoint(
+        turns=NATURAL_TURNS[:1],
+        report=dict(REPORT, updated_wiki=wiki_text("v1", patrol_count=99))), wiki,
+        "--max-steps", "8")
+    assert frontmatter(wiki.read_text())["patrol_count"] == 6
+
+    # legacy pre-#5 wiki (no frontmatter at all) counts as 0 -> stamps 1
+    wiki.write_text("# Cluster Wiki\n\n## Topology\n- legacy prose-only wiki\n")
+    run_patrol_cli(monkeypatch, ScriptedEndpoint(
+        turns=NATURAL_TURNS[:1],
+        report=dict(REPORT, updated_wiki=wiki_text("v2", patrol_count=99))), wiki,
+        "--max-steps", "8")
+    assert frontmatter(wiki.read_text())["patrol_count"] == 1
+    assert "v2" in wiki.read_text()
 
 
 def test_wiki_flag_default_is_the_wiki_directory():

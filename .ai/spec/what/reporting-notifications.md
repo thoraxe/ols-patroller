@@ -17,8 +17,12 @@ in `how/reporting-pipeline.md`.
    drift / degradation / something suspicious; **crit** = broken, needs a human now.
 4. `notifications` contains **only** the warn/crit items a human should actually see
    (don't cry wolf), as human-readable messages.
-5. `updated_wiki` is the FULL new wiki content, structured per the canonical sections
-   with `(source, timestamp, confidence)` tags and stale entries expired.
+5. `updated_wiki` is the FULL new wiki content in the skeleton format
+   (`wiki-memory.md` rules 10–13): frontmatter with the four keys, the five
+   canonical sections, entry metadata lines in Watch-list and Anomaly log, free
+   prose inside entries, stale entries expired. The report contract
+   (`REPORT_CONTRACT`) instructs the model in this format — the frontmatter keys,
+   the section set, and the entry metadata line [PLANNED: #5].
 
 ### Reporting Pass
 
@@ -28,6 +32,14 @@ in `how/reporting-pipeline.md`.
 7. The pass retries once on an invalid or empty result (a corrective user message is
    appended); total failure means no report, a warning is logged, and the wiki is
    left unchanged.
+7a. A report whose `updated_wiki` fails skeleton validation triggers **one repair
+    pass**: the shape pass re-invoked with the validation errors and the rejected
+    wiki. The repaired report replaces the first wholesale when its wiki
+    validates; otherwise the first report's findings and notifications stand and
+    the wiki is left unchanged (`wiki-memory.md` rules 15–19). Delivery — findings
+    printing, notification — runs after the validation/repair decision resolves
+    and before the physical wiki write, so exactly one report, the final one, is
+    delivered [PLANNED: #5].
 8. A budget-cut report must cover only what was actually observed; the pass is told
    which commands never executed.
 
@@ -65,3 +77,4 @@ in `how/reporting-pipeline.md`.
 |---|---|
 | #9 | Notification dedup: notify on state change, not every patrol — new entry, severity change/escalation, or resolution notify; standing unchanged entries stay wiki-only; optional periodic digest for long-unfixed entries |
 | ~~#27~~ | Per-turn output stream on by default (`-q/--quiet` opts out); evidence prints with findings (rule 9a) |
+| #5 | Wiki-skeleton validation on `updated_wiki` with one shape-pass repair retry; final-report delivery ordering (rule 7a; contract in `wiki-memory.md` rules 15–19) |
