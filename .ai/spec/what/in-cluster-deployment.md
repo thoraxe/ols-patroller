@@ -21,7 +21,7 @@ layer 3 (RBAC boundary) real, and what the CI-published image
    rule 14, the gitignored `secret.yaml` itself, plus, once the operator
    follows rule 16c, the gitignored `deploy-key-patch.yaml` copy and the
    matching `patches:` entry in the operator's `kustomization.yaml`;
-   nothing else [DONE: #2] [example templates + opt-in copy: PLANNED: #39].
+   nothing else [DONE: #2] [example templates + opt-in copy: DONE: #39].
 2. Every namespaced object carries the literal `metadata.namespace:
    ols-patroller`, the `ClusterRoleBinding`'s subject namespace is the same,
    and the `kustomization.yaml` sets **no** `namespace:` field — the kustomize
@@ -142,13 +142,13 @@ layer 3 (RBAC boundary) real, and what the CI-published image
     the optional keys (`SLACK_WEBHOOK_URL`, `PATROL_WIKI_REMOTE`) present as
     commented-out lines — the `PATROL_WIKI_REMOTE` placeholder shows the
     SSH-remote form and points at the deploy-key wiring (rules 16a–16c)
-    [PLANNED: #39]. Procedure: `cp secret.yaml.example secret.yaml`,
+    [DONE: #39]. Procedure: `cp secret.yaml.example secret.yaml`,
     fill in, apply [DONE: #2].
 15. No committed manifest contains a real or plausible value for any secret
     env key: those key names appear in committed manifests only inside the
     `.example` templates (`secret.yaml.example` placeholder values,
     `deploy-key-patch.yaml.example` comments), never with real or plausible
-    values [DONE: #2] [template scope: PLANNED: #39].
+    values [DONE: #2] [template scope: DONE: #39].
 
 ### Optional remote-push wiring (deploy key)
 
@@ -159,7 +159,7 @@ layer 3 (RBAC boundary) real, and what the CI-published image
     (`wiki-memory.md` rule 4e) is opt-in, never required for a patrol
     (local-first): a committed example patch (rule 16a) plus the documented
     procedure (rules 16c–16d) [DONE: #2] [example + procedure:
-    PLANNED: #39].
+    DONE: #39].
 16a. `manifests/deploy-key-patch.yaml.example` is a committed template (the
     same pattern as rule 14's `secret.yaml.example`) holding a
     strategic-merge patch over the base Deployment: `apiVersion: apps/v1`,
@@ -181,13 +181,13 @@ layer 3 (RBAC boundary) real, and what the CI-published image
     exactly what makes the key readable — `0400` would be root-only,
     `0644` needlessly world-readable — and OpenSSH's too-open check fires
     only for files owned by the calling uid, so the root-owned key passes
-    it [PLANNED: #39].
+    it [DONE: #39].
 16b. The same template documents the fully pinned variant as commented
     lines: a `known_hosts` entry added to the deploy-key Secret and the
     `GIT_SSH_COMMAND` form with `StrictHostKeyChecking=yes -o
     UserKnownHostsFile=/wiki-deploy-key/known_hosts`. TOFU (`accept-new`)
     is the committed default posture; pinning is the hardened alternative
-    [PLANNED: #39].
+    [DONE: #39].
 16c. **The opt-in procedure** (ADR
     `decisions/0012-opt-in-deploy-key-wiring.md`):
     1. generate an ed25519 key pair for the wiki remote;
@@ -204,12 +204,12 @@ layer 3 (RBAC boundary) real, and what the CI-published image
        deploy-key-patch.yaml}]`;
     5. set `PATROL_WIKI_REMOTE` to the SSH remote (e.g.
        `git@github.com:you/cluster-wiki.git`) in the patrol Secret;
-    6. `oc apply -k manifests/` [PLANNED: #39].
+    6. `oc apply -k manifests/` [DONE: #39].
 16d. `README.md`'s in-cluster deployment section (a `## Deploy in-cluster`
     heading with a `### Remote wiki replication (optional)` subsection)
     documents the procedure end-to-end and self-sufficiently — an operator
     can enable replication from the README plus the committed templates
-    alone, with no reference to `.ai/spec/` [PLANNED: #39].
+    alone, with no reference to `.ai/spec/` [DONE: #39].
 
 ### Acceptance (done-when)
 
@@ -240,7 +240,7 @@ layer 3 (RBAC boundary) real, and what the CI-published image
        raw `PATROL_WIKI_REMOTE` URL — no `origin` remote is configured in
        the wiki repo — so there is no remote-tracking ref to `git log` in
        the pod; `git ls-remote <remote-url>` from anywhere shows the remote
-       head) [PLANNED: #39].
+       head) [DONE: #39].
 
 ## Configuration Surface
 
@@ -258,9 +258,9 @@ layer 3 (RBAC boundary) real, and what the CI-published image
 - `manifests/deploy-key-patch.yaml.example` — committed template for the
   optional remote-push patch; the operator's gitignored
   `deploy-key-patch.yaml` copy + the `patches:` entry in their
-  `kustomization.yaml` are the opt-in (rules 16a, 16c) [PLANNED: #39]
+  `kustomization.yaml` are the opt-in (rules 16a, 16c) [DONE: #39]
 - `GIT_SSH_COMMAND` — literal env added by the opt-in patch; consumed by
-  git's ssh, not by `patrol.py` (rule 16a) [PLANNED: #39]
+  git's ssh, not by `patrol.py` (rule 16a) [DONE: #39]
 - `.github/workflows/image.yml` — the CI that publishes the deployed image
   and retags published `v*` releases onto the matching `sha-<SHA>` image
   (`container-image.md` rules 13–18)
@@ -284,7 +284,7 @@ layer 3 (RBAC boundary) real, and what the CI-published image
   never reference it; enabling it is a copy-and-edit procedure. The push
   itself remains best-effort and local-first (`wiki-memory.md` rule 4e) —
   the wiring changes where commits replicate, never whether a patrol
-  succeeds [PLANNED: #39].
+  succeeds [DONE: #39].
 - PoC grade applies (`constraints.md` rule 6): no NetworkPolicy, no probes
   (no HTTP surface; the loop self-heals via Deployment restarts), no
   monitoring/telemetry wiring, no priority class. The human surface
@@ -302,4 +302,4 @@ layer 3 (RBAC boundary) real, and what the CI-published image
 | ~~#24~~ | `PYTHONUNBUFFERED=1` literal env — unbuffered stdout for pod-log visibility (rule 10a) |
 | ~~#25~~ | Default cadence 6 h: args `--interval 21600` (rule 9), with the image CMD (`container-image.md` rule 9) and the `patrol.py` env default kept identical |
 | ~~#28~~ | `GIT_CONFIG_*` safe.directory trio — `oc exec` git access to `/wiki` works un-flagged (rule 10b) |
-| #39 | Deploy-key wiring: committed `deploy-key-patch.yaml.example` (rules 16a–16b), gitignored copy + `patches:` opt-in (rule 16c), README in-cluster deployment section (rule 16d) |
+| ~~#39~~ | Deploy-key wiring: committed `deploy-key-patch.yaml.example` (rules 16a–16b), gitignored copy + `patches:` opt-in (rule 16c), README in-cluster deployment section (rule 16d) |

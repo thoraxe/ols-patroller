@@ -54,7 +54,7 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
      ServiceAccount bound to the built-in `cluster-reader`, RWO PVC at `/wiki`,
      single-replica non-root Deployment running `--loop --interval 21600`,
      Secret-sourced env, optional deploy-key remote-push wiring (committed
-     example patch, opt-in copy) [PLANNED: #39]; merges to `main` build and
+     example patch, opt-in copy) [DONE: #39]; merges to `main` build and
      publish the image to GHCR,
      and published `v*` releases retag the matching `sha-<SHA>` image with the
      release tag
@@ -104,7 +104,7 @@ Environment variables:
 - `PATROL_WIKI_REMOTE` — if set, wiki commits are pushed to this git remote
   (best-effort, bounded; the local commit is the source of truth) [DONE: #3];
   in-cluster, the SSH form rides the optional deploy-key wiring
-  (`in-cluster-deployment.md` rules 16a–16d [PLANNED: #39])
+  (`in-cluster-deployment.md` rules 16a–16d [DONE: #39])
 
 CLI flags: `--once` (default), `--loop`, `--interval`, `--dry-cluster`, `--wiki`
 (default `wiki/cluster-wiki.md` next to `patrol.py` [DONE: #3; was
