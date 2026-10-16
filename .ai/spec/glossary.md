@@ -40,7 +40,9 @@ redefined here.
   `uv run patrol.py` via the PEP 723 header.
 - **GHCR** — GitHub Container Registry (`ghcr.io`); merges to `main` publish
   the patrol image there (`main` rolling tag + `sha-<SHA>` pins) and the
-  in-cluster manifests deploy it (#2).
+  in-cluster manifests deploy it (#2); published `v*` releases retag the
+  matching `sha-<SHA>` image with the release tag — a pointer, not a rebuild
+  (#36).
 - **cluster-reader** — built-in OpenShift ClusterRole (94 rules, zero Secret access)
   planned as the patrol pod's RBAC boundary in-cluster (#2).
 - **Severity** — finding vocabulary: `info` (note/baseline/expected), `warn`

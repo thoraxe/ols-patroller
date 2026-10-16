@@ -88,7 +88,8 @@ version-pinned OpenShift client, build-time pip install from a pinned
 as of #2: the `manifests/` kustomize root (ServiceAccount bound to the built-in
 `cluster-reader`, RWO PVC at `/wiki`, single-replica Recreate Deployment,
 Secret-sourced env) plus post-merge CI publishing the image to GHCR
-(`ghcr.io/thoraxe/ols-patroller`, rolling `main` + `sha-<SHA>` tags — ADR 0008):
+(`ghcr.io/thoraxe/ols-patroller`, rolling `main` + `sha-<SHA>` tags, with published
+`v*` releases retagged onto the matching `sha-<SHA>` image — ADRs 0008, 0010):
 
 ```mermaid
 flowchart TD
@@ -120,6 +121,7 @@ A `PatrolSchedule` CRD is planned to replace the `--loop` process eventually
 | Built-in `cluster-reader` binding, not a bespoke role | Platform-maintained read semantics across OCP upgrades; the repo defines no RBAC of its own | `.ai/spec/decisions/0006` |
 | `/wiki` writability via the SCC-assigned fsGroup | No privileged SCC, no init-container chmod; fails loudly where the storage ignores fsGroup | `.ai/spec/decisions/0007` |
 | Post-merge CI publishes the image to GHCR | Shared pullable artifact, merge to `main` is the release event, `sha-<SHA>` tags pin exact merges | `.ai/spec/decisions/0008` |
+| Release tags are registry-side retags of the `sha-<SHA>` image | A release tag points at the exact digest CI built; a rebuild could drift (base image, transitive resolution) between merge and release | `.ai/spec/decisions/0010` |
 
 Agent-facing specs (numbered behavioral rules, module maps, guard contract) live in
 `.ai/spec/` — start at `.ai/spec/README.md`.

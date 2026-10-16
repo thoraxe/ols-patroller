@@ -192,7 +192,8 @@ layer 3 (RBAC boundary) real, and what the CI-published image
 - Secret keys — required `PATROL_API_KEY`, `PATROL_BASE_URL`,
   `PATROL_MODEL`; optional `SLACK_WEBHOOK_URL`, `PATROL_WIKI_REMOTE` (rule 14)
 - `.github/workflows/image.yml` — the CI that publishes the deployed image
-  (`container-image.md` rules 13–16)
+  and retags published `v*` releases onto the matching `sha-<SHA>` image
+  (`container-image.md` rules 13–18)
 
 ## Constraints
 

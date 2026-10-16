@@ -4,7 +4,8 @@ The ubi9-minimal image that runs `patrol.py` in-cluster, built from the repo-roo
 `Containerfile` (#1). The image is what makes the patroller deployable; the
 Kubernetes wiring around it (ServiceAccount, cluster-reader RBAC, PVC, Deployment)
 is #2 and makes `safety-model.md` layer 3 real. Merges to `main` also publish the
-image to GHCR from CI (rules 13–16, #2) — that published image is what the
+image to GHCR from CI (rules 13–16, #2), and published `v*` releases retag it
+(rules 17–18, #36) — that published image is what the
 manifests deploy by default.
 
 ## Behavioral Rules
@@ -100,12 +101,15 @@ manifests deploy by default.
 ### Continuous Build & Publication (CI)
 
 13. Merges to `main` publish the image: the GitHub Actions workflow
-    `.github/workflows/image.yml` triggers **only** on `push` to `main` — no
-    `pull_request` trigger, no other branches or tags (post-merge artifact
-    pipeline, not a merge gate; PR-time builds are deliberately excluded — CI
-    stays free on draft/spec work). No path filter: every merge republishes
-    `:main`, keeping the tag equal to "latest main" (accepted slack)
-    [DONE: #2].
+    `.github/workflows/image.yml` builds and publishes on `push` to `main`
+    only — no `pull_request` trigger, no other branches, no `push` tag
+    triggers (post-merge artifact pipeline, not a merge gate; PR-time builds
+    are deliberately excluded — CI stays free on draft/spec work). No path
+    filter: every merge republishes `:main`, keeping the tag equal to "latest
+    main" (accepted slack). The workflow's only other triggers are the
+    retag-only release paths (rules 17–18), and the build job is
+    event-guarded so that only a `push` event ever builds [DONE: #2]
+    [build-job guard: DONE: #36].
 14. The workflow builds with `docker/build-push-action` from the repo root:
     build context `.`, file `./Containerfile` (the action's default
     `Dockerfile` name is wrong for this repo — the workflow must name the
@@ -122,6 +126,51 @@ manifests deploy by default.
     requires flipping the GHCR package to public once (the repo is public), or
     the deploying cluster uses an image pull secret / an overridden ref
     (ADR `decisions/0008-ci-published-image.md`) [DONE: #2].
+17. Published GitHub releases tag the image — **retagged, never rebuilt**
+    [DONE: #36]. The workflow also triggers on published releases
+    (`release: types: [published]`); a dedicated release job applies the
+    release's tag name (e.g. `v0.1`) to the container image by copying the
+    registry manifest of the already-published `sha-<full commit SHA>` tag for
+    the release's tagged commit to the release tag name: a registry-side
+    manifest copy (`docker buildx imagetools create`), no pull, no build. The
+    source SHA is the commit the release tag points at, resolved from the tag
+    itself — never from `github.sha`, which on `release` events is the
+    release's target-commitish HEAD (usually the default-branch tip) and on
+    `workflow_dispatch` the dispatched ref's HEAD, neither of which is
+    guaranteed to be the tagged commit, and which no step can mutate.
+    Accepted resolution forms: checking out the tag (`actions/checkout` with
+    `ref:` the tag) and reading the checked-out commit (`git rev-parse HEAD`
+    or the checkout action's `commit` output), or `git ls-remote` against the
+    tag ref (with the `^{}` dereference for annotated tags — a lightweight
+    release tag resolves directly); the retag step then names its source
+    `sha-<resolved SHA>` — literally in its `run:` or via a step `env:`
+    variable, the accepted forms — and its target tag name and image
+    reference appear in the retag step's `run:` or `env:` the same way. The
+    release tag therefore carries the exact digest of the image the main-push
+    build (rule 14) produced for that commit: a rebuild could drift (base
+    image, transitive resolution) between merge and release, and the release
+    must point at the bits CI built and published (ADR
+    `decisions/0010-release-retag-not-rebuild.md`). The source `sha-<SHA>`
+    tag must exist — a release of a commit whose main build failed or never
+    ran fails the job loudly (no `continue-on-error` on the retag); it is an
+    error, not a silently missing tag. The release job runs only for tags
+    starting with `v` — an `if:` guard, because the `release` trigger has no
+    tag filter; non-`v` published releases leave the job skipped. The release
+    job never runs `docker/build-push-action`, never writes the `main` or
+    `sha-*` tags (it necessarily reads the `sha-<SHA>` source), publishes no
+    `latest` tag (`main` stays the rolling tag),
+    and authenticates exactly per rule 15.
+18. `workflow_dispatch` is the manual retag path [DONE: #36]: a required
+    input `tag` (the release tag to apply). The release job (or a dedicated
+    dispatch sibling) resolves the commit the input tag points at — per
+    rule 17's tag resolution, never `github.sha` — then applies rule 17's
+    retag: source `sha-<SHA>` of the tagged commit, target the input tag, no
+    build, no `main`/`sha-*` writes, fail-loud on a missing source. The
+    `v`-prefix guard applies to the input
+    exactly as to release events, so a non-conforming input leaves the job
+    skipped with no registry write. This is the retro path for releases that
+    predate the trigger (v0.1) and the recovery path when the release job
+    failed.
 
 ## Constraints
 
@@ -139,6 +188,15 @@ manifests deploy by default.
 - Rolling `:main` caveat: a Deployment consuming it does not restart when the
   tag's digest changes — updating the running patroller is apply + rollout
   restart (`in-cluster-deployment.md` rule 17).
+- Release tags are pointers, not artifacts: a release tag is a manifest copy
+  of that commit's `sha-<SHA>` image, so it depends on the main-push pipeline
+  having succeeded for that commit — releasing an unbuilt commit fails loudly
+  instead of publishing (ADR `decisions/0010-release-retag-not-rebuild.md`)
+  [DONE: #36].
+- The CI contract (rules 13–18) is unit-checked statically in
+  `tests/test_image_ci.py`, which parses `.github/workflows/image.yml` and
+  fails on a missing or non-conforming workflow — no workflow run needed
+  [rules 13–16: DONE: #2] [rules 17–18: DONE: #36].
 
 ## Planned Changes
 
@@ -147,3 +205,4 @@ manifests deploy by default.
 | ~~#1~~ | This file's own contract: Containerfile + `requirements.txt` (rules 1–12) |
 | ~~#2~~ | Manifests consuming this image (`in-cluster-deployment.md`) + the post-merge CI that publishes it to GHCR (rules 13–16) |
 | ~~#25~~ | Default cadence 6 h: CMD `--interval 21600` (rule 9), kept identical to the Deployment args and the `patrol.py` env default |
+| ~~#36~~ | Release image tags: published `v*` releases retag the matching `sha-<SHA>` image — no rebuild — plus a `workflow_dispatch` manual retag path (rules 17–18; ADR 0010). Impl commit also syncs the image-CI entries in `how/project-structure.md`, `ARCHITECTURE.md`, and the `image.yml` pointer in `in-cluster-deployment.md`'s Configuration Surface |
