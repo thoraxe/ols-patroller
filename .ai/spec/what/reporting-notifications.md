@@ -22,7 +22,7 @@ in `how/reporting-pipeline.md`.
    canonical sections, entry metadata lines in Watch-list and Anomaly log, free
    prose inside entries, stale entries expired. The report contract
    (`REPORT_CONTRACT`) instructs the model in this format — the frontmatter keys,
-   the section set, and the entry metadata line [PLANNED: #5].
+   the section set, and the entry metadata line [DONE: #5].
 
 ### Reporting Pass
 
@@ -39,7 +39,7 @@ in `how/reporting-pipeline.md`.
     the wiki is left unchanged (`wiki-memory.md` rules 15–19). Delivery — findings
     printing, notification — runs after the validation/repair decision resolves
     and before the physical wiki write, so exactly one report, the final one, is
-    delivered [PLANNED: #5].
+    delivered [DONE: #5].
 8. A budget-cut report must cover only what was actually observed; the pass is told
    which commands never executed.
 
@@ -77,4 +77,4 @@ in `how/reporting-pipeline.md`.
 |---|---|
 | #9 | Notification dedup: notify on state change, not every patrol — new entry, severity change/escalation, or resolution notify; standing unchanged entries stay wiki-only; optional periodic digest for long-unfixed entries |
 | ~~#27~~ | Per-turn output stream on by default (`-q/--quiet` opts out); evidence prints with findings (rule 9a) |
-| #5 | Wiki-skeleton validation on `updated_wiki` with one shape-pass repair retry; final-report delivery ordering (rule 7a; contract in `wiki-memory.md` rules 15–19) |
+| ~~#5~~ | Wiki-skeleton validation on `updated_wiki` with one shape-pass repair retry; final-report delivery ordering (rule 7a; contract in `wiki-memory.md` rules 15–19) |

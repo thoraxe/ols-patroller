@@ -884,6 +884,7 @@ dependencies = [
     { name = "deepagents" },
     { name = "langchain-openai" },
     { name = "pydantic" },
+    { name = "pyyaml" },
     { name = "requests" },
 ]
 
@@ -891,7 +892,6 @@ dependencies = [
 dev = [
     { name = "httpx" },
     { name = "pytest" },
-    { name = "pyyaml" },
 ]
 
 [package.metadata]
@@ -899,6 +899,7 @@ requires-dist = [
     { name = "deepagents", specifier = ">=0.7" },
     { name = "langchain-openai", specifier = ">=1.0" },
     { name = "pydantic", specifier = ">=2" },
+    { name = "pyyaml", specifier = ">=6" },
     { name = "requests", specifier = ">=2.31" },
 ]
 
@@ -906,7 +907,6 @@ requires-dist = [
 dev = [
     { name = "httpx", specifier = ">=0.27" },
     { name = "pytest", specifier = ">=8" },
-    { name = "pyyaml", specifier = ">=6" },
 ]
 
 [[package]]

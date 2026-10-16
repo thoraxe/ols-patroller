@@ -19,7 +19,7 @@ knowledge base of the observed cluster.
    INCOMPLETE.
 4. After a successful report, the wiki is wholly replaced by
    `report.updated_wiki` (only if non-empty); if the reporting pass fails, the wiki
-   is left untouched. [PLANNED: #5 — the replacement is additionally conditioned
+   is left untouched. [DONE: #5 — the replacement is additionally conditioned
    on skeleton validity: validate → one repair pass → else keep the old wiki
    (rules 15–19).]
 
@@ -72,7 +72,7 @@ knowledge base of the observed cluster.
     patrol, the patrol tail runs write → commit → push in that order, a
     byte-identical rewrite creates no commit, the push runs only when
     `PATROL_WIKI_REMOTE` is set, and a failed reporting pass leaves the wiki
-    untouched [DONE: #4]. [PLANNED: #5 — the tail becomes validate → repair once →
+    untouched [DONE: #4]. [DONE: #5 — the tail becomes validate → repair once →
     stamp → write → commit → push (rule 16); the stamp advances `patrol_count` on
     every accepted write, so the byte-identical case is superseded (rule 17), and
     the e2e gains the repair and keep-old-wiki paths (rules 15–19).]
@@ -82,9 +82,9 @@ knowledge base of the observed cluster.
 5. Canonical sections (from seed and report contract): **Topology**, **Baselines**,
    **Watch-list**, **Open questions**, **Anomaly log**. With the skeleton schema the
    set is enforced on write — all five sections required, each exactly once, no
-   others [PLANNED: #5 — rule 11].
+   others [DONE: #5 — rule 11].
 6. Entries are tagged inline with `(source, timestamp, confidence)` — citing what was
-   observed, when, and how sure the agent is. [PLANNED: #5 — in Watch-list and
+   observed, when, and how sure the agent is. [DONE: #5 — in Watch-list and
    Anomaly log the tag is formalized as the entry metadata line (rule 12); in the
    prose sections it stays an unvalidated convention (rule 13).]
 7. The watch-list is the refinement loop: patrol N writes the rules patrol N+1
@@ -101,7 +101,7 @@ knowledge base of the observed cluster.
 
 ### Skeleton Schema
 
-The machine-checkable structure wrapped around the free prose [PLANNED: #5]. The
+The machine-checkable structure wrapped around the free prose [DONE: #5]. The
 file's Constraints section is load-bearing here: structure frames entries, prose
 lives inside them — the wiki stays a document, not a database. Only the two
 hypothesis-tracking sections (Watch-list, Anomaly log — the refinement loop and
@@ -169,7 +169,7 @@ the history #7 expires into) carry per-entry structure; everything else is prose
 
 ### Validation-on-Write
 
-The write path gains a structural gate [PLANNED: #5]: the wiki the model produced
+The write path gains a structural gate [DONE: #5]: the wiki the model produced
 is checked before it may replace memory, gets exactly one model-facing repair
 attempt, and then the old wiki wins. Persistence problems degrade, never block.
 
@@ -245,7 +245,7 @@ attempt, and then the old wiki wins. Persistence problems degrade, never block.
   [DONE: #3]
 - `WIKI_VERSION` — hard-coded skeleton schema version (1), checked against the
   wiki frontmatter's `wiki_version` (rule 10); not env-configurable
-  [PLANNED: #5]
+  [DONE: #5]
 
 ## Constraints
 
@@ -271,7 +271,7 @@ attempt, and then the old wiki wins. Persistence problems degrade, never block.
 | Ticket | Summary |
 |---|---|
 | ~~#3~~ | ~~Git-backed wiki: wiki directory is a git repo (init at startup, file-only fallback), atomic write (temp + rename), one commit per wiki-changing patrol (`patrol N: X findings, Y warn`), optional `PATROL_WIKI_REMOTE` push — bounded, best-effort, local-first~~ |
-| #5 | Skeleton schema + validation-on-write (rules 10–19): YAML frontmatter (`wiki_version` == 1, `cluster_id`, `patrol_count`, `last_patrol` — the last three process-stamped on write), fixed section set enforced exactly-once, entry metadata line (`id`, `status` watching/resolved/expired, `first_seen`, `last_verified`, `source`, `confidence` high/medium/low) in Watch-list + Anomaly log, `validate_wiki` gate with one shape-pass repair retry else keep-old-wiki; PyYAML joins the runtime deps (ADR 0011). Impl commit also syncs `ARCHITECTURE.md`'s wiki prose ("Planned next" paragraph) and `AGENTS.md`'s test list |
+| ~~#5~~ | Skeleton schema + validation-on-write (rules 10–19): YAML frontmatter (`wiki_version` == 1, `cluster_id`, `patrol_count`, `last_patrol` — the last three process-stamped on write), fixed section set enforced exactly-once, entry metadata line (`id`, `status` watching/resolved/expired, `first_seen`, `last_verified`, `source`, `confidence` high/medium/low) in Watch-list + Anomaly log, `validate_wiki` gate with one shape-pass repair retry else keep-old-wiki; PyYAML joins the runtime deps (ADR 0011). Impl commit also syncs `ARCHITECTURE.md`'s wiki prose ("Planned next" paragraph) and `AGENTS.md`'s test list |
 | #6 | Per-entry `recheck:` commands — each watch-list entry carries the kubectl invocation that re-verifies it (self-linting wiki) |
 | #7 | `stale_after`: auto-expire watch-list entries not re-verified within N patrols (flip to `expired`, keep in anomaly log) |
 | #8 | `--wiki-stats`: four wiki-health numbers — verification rate, resolution ratio, confidence spread, churn/paraphrase-drift |

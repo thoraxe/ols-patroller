@@ -61,13 +61,13 @@ held to production standards: documented, unit-checked, and verified end-to-end.
       at startup via `main()`, one commit per wiki-changing patrol, no commit
       on a byte-identical rewrite [byte-identical case superseded by #5's
       stamp — every accepted write advances `patrol_count` and changes the
-      file: PLANNED: #5], push only when a remote is configured, and a failed
+      file: DONE: #5], push only when a remote is configured, and a failed
       reporting pass leaves the wiki untouched;
     - the wiki-skeleton wiring of #5 (`wiki-memory.md` rules 15–19): an invalid
       wiki triggers exactly one repair pass whose prompt carries the validation
       errors and the rejected wiki, the repaired wiki is written with stamped
       frontmatter, and a twice-invalid wiki leaves the old wiki byte-for-byte
-      intact with the patrol's findings still delivered [PLANNED: #5].
+      intact with the patrol's findings still delivered [DONE: #5].
 6c. The e2e is hermetic and deterministic: no network, no cluster, no
     `PATROL_*` environment, no real model endpoint — the scripted endpoint is
     an in-process OpenAI-compatible fake behind the `make_model` seam, and the
@@ -93,4 +93,4 @@ held to production standards: documented, unit-checked, and verified end-to-end.
 | #12 | Remediation handoff: dispatch governed AgenticRuns for actionable findings; harvest their result CRs back into the wiki |
 | ~~#11~~ | Guard hardening: refuse `--raw` proxy/stats endpoints (`kubectl-guard.md` rule 6a) |
 | ~~#4~~ | Commit guard unit tests + fake-model e2e into the repo |
-| #5 | The e2e gains the wiki-skeleton wiring (rule 6b): repair-pass flow, stamped writes, keep-old-wiki on double failure |
+| ~~#5~~ | The e2e gains the wiki-skeleton wiring (rule 6b): repair-pass flow, stamped writes, keep-old-wiki on double failure |

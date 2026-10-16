@@ -76,8 +76,14 @@ non-deterministic, the wiki plus logs are the audit trail.
 The wiki directory is a git repo (#3, `.ai/spec/decisions/0003`): one wiki-changing
 patrol, one commit (`patrol N: X findings, Y warn`), atomic writes (temp + rename),
 optional `PATROL_WIKI_REMOTE` replication that never blocks the loop — in-cluster it
-lives on the `/wiki` PVC. Planned next (v0.2): a skeleton schema, per-entry
-`recheck:` commands, `stale_after` expiry, and `--wiki-stats` health numbers.
+lives on the `/wiki` PVC. Since #5 the wiki carries a validated skeleton: YAML
+frontmatter whose counters (`patrol_count`, `last_patrol`, `cluster_id`) are
+process-stamped after validation — never model-trusted — plus entry metadata lines
+(`id · status · first_seen · last_verified · source · confidence`) in Watch-list and
+Anomaly log; each patrol's rewrite is checked by `validate_wiki` before it may replace
+memory, gets one model-facing repair pass, and otherwise the old wiki stands while the
+patrol's findings still deliver (`.ai/spec/decisions/0011`). Planned next (v0.2):
+per-entry `recheck:` commands, `stale_after` expiry, and `--wiki-stats` health numbers.
 
 ## Deployment topology (current vs planned)
 
@@ -122,6 +128,7 @@ A `PatrolSchedule` CRD is planned to replace the `--loop` process eventually
 | `/wiki` writability via the SCC-assigned fsGroup | No privileged SCC, no init-container chmod; fails loudly where the storage ignores fsGroup | `.ai/spec/decisions/0007` |
 | Post-merge CI publishes the image to GHCR | Shared pullable artifact, merge to `main` is the release event, `sha-<SHA>` tags pin exact merges | `.ai/spec/decisions/0008` |
 | Release tags are registry-side retags of the `sha-<SHA>` image | A release tag points at the exact digest CI built; a rebuild could drift (base image, transitive resolution) between merge and release | `.ai/spec/decisions/0010` |
+| Wiki skeleton: validated structure, stamped counters, one repair pass | Machine-checkable memory for expiry/stats without parsing prose; models are unreliable counters, so the patroller stamps them; validation degrades (keep old wiki), never blocks | `.ai/spec/decisions/0011` |
 
 Agent-facing specs (numbered behavioral rules, module maps, guard contract) live in
 `.ai/spec/` — start at `.ai/spec/README.md`.

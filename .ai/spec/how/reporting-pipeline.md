@@ -7,11 +7,11 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
 
 | Symbol | Responsibility |
 |---|---|
-| `REPORT_CONTRACT` | Instructions appended for the reporting pass (field semantics, wiki skeleton format: frontmatter keys, section set, entry metadata line [PLANNED: #5]) |
-| `shape_report` | Tool-free structured-output pass with one schema retry; `repair=(rejected_wiki, errors)` re-invokes it as the wiki-validation repair pass [PLANNED: #5] |
+| `REPORT_CONTRACT` | Instructions appended for the reporting pass (field semantics, wiki skeleton format: frontmatter keys, section set, entry metadata line [DONE: #5]) |
+| `shape_report` | Tool-free structured-output pass with one schema retry; `repair=(rejected_wiki, errors)` re-invokes it as the wiki-validation repair pass [DONE: #5] |
 | `report_fields` | Normalizes the result (pydantic model or dict) into plain data |
 | `notify` | Console `🔔 NOTIFY` + optional Slack webhook post |
-| `run_patrol` (tail) | Validates the report's wiki against the skeleton (one repair pass on failure, `validate_wiki`), delivers findings/notifications, stamps the frontmatter (`stamp_wiki`), writes the wiki atomically, commits + pushes it (wiki git persistence — `project-structure.md`) [#3: DONE; validation/repair/stamp: PLANNED: #5] |
+| `run_patrol` (tail) | Validates the report's wiki against the skeleton (one repair pass on failure, `validate_wiki`), delivers findings/notifications, stamps the frontmatter (`stamp_wiki`), writes the wiki atomically, commits + pushes it (wiki git persistence — `project-structure.md`) [#3: DONE; validation/repair/stamp: DONE: #5] |
 
 ## Data Flow
 
@@ -40,7 +40,7 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
 7. Consumers: findings printed (severity column; evidence by default — `--quiet`
    suppresses [DONE: #27]), `notify` called per notification — both delivered
    after the validation/repair decision resolves and before the physical write,
-   so the final report is the one delivered [PLANNED: #5]; wiki written
+   so the final report is the one delivered [DONE: #5]; wiki written
    atomically and committed to the wiki repo if `updated_wiki` non-empty (push
    when `PATROL_WIKI_REMOTE` is set) [DONE: #3], token totals printed.
 
@@ -60,7 +60,7 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
 | `shape_report` | langchain `with_structured_output` | function-calling schema binding to `PatrolReport` |
 | `run_patrol` | `shape_report` | message history + `budget_cut` flag |
 | `notify` | Slack incoming webhook | `requests.post` (15 s timeout, failure logged not raised) |
-| `run_patrol` | wiki file | `write_wiki_atomic` → `commit_wiki` → `push_wiki`, only when `updated_wiki` is non-empty and skeleton-valid (the gate, step 5) [#3: DONE; gate: PLANNED: #5] |
+| `run_patrol` | wiki file | `write_wiki_atomic` → `commit_wiki` → `push_wiki`, only when `updated_wiki` is non-empty and skeleton-valid (the gate, step 5) [#3: DONE; gate: DONE: #5] |
 
 ## Implementation Notes
 
@@ -76,7 +76,7 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
   memory) — and no commit is created: history advances only on wiki writes
   [DONE: #3]. The same degradation applies to a wiki that fails skeleton
   validation and repair: keep the old wiki, warn, deliver the findings
-  [PLANNED: #5].
+  [DONE: #5].
 - The validator is pure and the repair bounded: at most one repair pass per
   patrol (one extra model-call round); the common case (valid first write) adds
-  no model calls [PLANNED: #5].
+  no model calls [DONE: #5].

@@ -42,7 +42,7 @@ manifests deploy by default.
 6. `requirements.txt` pins every requirement exactly (`name==version`, one per
    line, nothing else) and lists exactly the top-level runtime dependencies —
    the same package set as `patrol.py`'s PEP 723 header (`deepagents`,
-   `langchain-openai`, `pydantic`, `requests`, `pyyaml` [PLANNED: #5 — the wiki
+   `langchain-openai`, `pydantic`, `requests`, `pyyaml` [DONE: #5 — the wiki
    skeleton's frontmatter parser]). Transitive dependencies are resolved by pip
    at build time and are not listed; dev-only tools (e.g. pytest) never appear
    [DONE: #1].
@@ -94,7 +94,7 @@ manifests deploy by default.
       `git --version` all succeed;
     - `python3.12 -c "import deepagents, langchain_openai, pydantic, requests, yaml"`
       succeeds inside the container (build-time dependency install; `yaml` is
-      PyYAML, the wiki frontmatter parser [PLANNED: #5]);
+      PyYAML, the wiki frontmatter parser [DONE: #5]);
     - `podman run --rm <image>` with no `PATROL_*` env exits non-zero with the
       standard missing-env error (`system-overview.md` rule 6).
     A patrol inside the container against a real dev cluster — through the #2
@@ -208,4 +208,4 @@ manifests deploy by default.
 | ~~#2~~ | Manifests consuming this image (`in-cluster-deployment.md`) + the post-merge CI that publishes it to GHCR (rules 13–16) |
 | ~~#25~~ | Default cadence 6 h: CMD `--interval 21600` (rule 9), kept identical to the Deployment args and the `patrol.py` env default |
 | ~~#36~~ | Release image tags: published `v*` releases retag the matching `sha-<SHA>` image — no rebuild — plus a `workflow_dispatch` manual retag path (rules 17–18; ADR 0010). Impl commit also syncs the image-CI entries in `how/project-structure.md`, `ARCHITECTURE.md`, and the `image.yml` pointer in `in-cluster-deployment.md`'s Configuration Surface |
-| #5 | `pyyaml` joins the pinned runtime set (rules 6, 12) — the wiki skeleton's frontmatter parser (`wiki-memory.md` rule 15) |
+| ~~#5~~ | `pyyaml` joins the pinned runtime set (rules 6, 12) — the wiki skeleton's frontmatter parser (`wiki-memory.md` rule 15) |

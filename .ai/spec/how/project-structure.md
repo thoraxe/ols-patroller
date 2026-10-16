@@ -2,22 +2,22 @@
 
 ## Module Map
 
-The entire implementation is one file: `patrol.py` (~730 lines), a PEP 723 uv script
+The entire implementation is one file: `patrol.py` (~1100 lines), a PEP 723 uv script
 (`uv run patrol.py` resolves dependencies from inline metadata: `deepagents>=0.7`,
-`langchain-openai>=1.0`, `pydantic>=2`, `requests>=2.31`, `pyyaml>=6` [PLANNED: #5 —
+`langchain-openai>=1.0`, `pydantic>=2`, `requests>=2.31`, `pyyaml>=6` [DONE: #5 —
 frontmatter parsing]; Python ≥ 3.11). Sections are separated by banner comments:
 
 | Region | Key Symbols | Responsibility |
 |---|---|---|
-| config | `BASE_URL`, `MODEL`, `API_KEY`, `KUBECTL`, `SLACK_URL`, `MAX_STEPS`, `TOOL_TIMEOUT`, `OUT_CAP`, `READONLY_VERBS`, `WIKI_REMOTE`, `CLUSTER_ID`, `PUSH_ATTEMPTS`, `PUSH_TIMEOUT`, `PUSH_BACKOFF`, `WIKI_VERSION` (skeleton schema version, 1 [PLANNED: #5]) | Env-derived config + constants, read once at import (exception: the `PUSH_*` wiki-git bounds are read at call time — see Naming Conventions) |
-| prompts | `SYSTEM_PROMPT`, `WIKI_SEED` | Patrol framing; wiki bootstrap content (the seed demonstrates the skeleton: frontmatter placeholders + the five sections [PLANNED: #5]) |
+| config | `BASE_URL`, `MODEL`, `API_KEY`, `KUBECTL`, `SLACK_URL`, `MAX_STEPS`, `TOOL_TIMEOUT`, `OUT_CAP`, `READONLY_VERBS`, `WIKI_REMOTE`, `CLUSTER_ID`, `PUSH_ATTEMPTS`, `PUSH_TIMEOUT`, `PUSH_BACKOFF`, `WIKI_VERSION` (skeleton schema version, 1) + the wiki-schema vocabularies (`WIKI_SECTIONS`, `WIKI_METADATA_SECTIONS`, `WIKI_FRONTMATTER_KEYS`, `WIKI_ENTRY_KEYS`, `WIKI_ENTRY_STATUSES`, `WIKI_ENTRY_CONFIDENCES`) [DONE: #5] | Env-derived config + constants, read once at import (exception: the `PUSH_*` wiki-git bounds are read at call time — see Naming Conventions) |
+| prompts | `SYSTEM_PROMPT`, `WIKI_SEED` | Patrol framing; wiki bootstrap content (the seed demonstrates the skeleton: frontmatter placeholders + the five sections [DONE: #5]) |
 | fixtures | `FIXTURES`, `fixture_for` | Dry-cluster canned outputs (substring match, first wins) |
 | report schema | `Finding`, `PatrolReport` | Pydantic output contract |
 | guard | `kubectl_readonly`, `resolve_kubectl`, `make_kubectl_tool` | Read-only cluster CLI tool + its langchain wrapper |
 | model/engine | `make_model`, `_disable_default_subagent` | `ChatOpenAI` construction; deepagents harness profile to kill the default subagent |
-| output | `preview`, `notify`, `report_fields`, `REPORT_CONTRACT` | Console/Slack output; report normalization; the reporting-pass instructions (incl. the wiki skeleton format: frontmatter keys, section set, entry metadata line [PLANNED: #5]) |
-| shape pass | `shape_report` | Tool-free structured-output pass over the finished conversation; `repair=(rejected_wiki, errors)` triggers the wiki-validation repair-pass prompt [PLANNED: #5] |
-| wiki schema | `validate_wiki(content) -> list[str]` (empty = valid; rules 10–12), `stamp_wiki(content, patrol_count, last_patrol, cluster_id) -> str` (rewrites the process-owned frontmatter fields, preserves `wiki_version` and the body byte-for-byte) | Skeleton validation-on-write + frontmatter stamping [PLANNED: #5]; PyYAML (`pyyaml>=6`) parses the frontmatter (`WIKI_VERSION` itself is a config-region constant) |
+| output | `preview`, `notify`, `report_fields`, `REPORT_CONTRACT` | Console/Slack output; report normalization; the reporting-pass instructions (incl. the wiki skeleton format: frontmatter keys, section set, entry metadata line [DONE: #5]) |
+| shape pass | `shape_report` | Tool-free structured-output pass over the finished conversation; `repair=(rejected_wiki, errors)` triggers the wiki-validation repair-pass prompt [DONE: #5] |
+| wiki schema | `validate_wiki(content) -> list[str]` (empty = valid; rules 10–12), `stamp_wiki(content, patrol_count, last_patrol, cluster_id) -> str` (rewrites the process-owned frontmatter fields, preserves `wiki_version` and the body byte-for-byte), `frontmatter_patrol_count(content) -> int` (the on-disk wiki's patrol_count if a positive integer, else 0) | Skeleton validation-on-write + frontmatter stamping [DONE: #5]; PyYAML (`pyyaml>=6`) parses the frontmatter (`WIKI_VERSION` and the schema vocabularies are config-region constants) |
 | wiki git | `ensure_wiki_repo(wiki_dir) -> bool` (True = git backing on), `write_wiki_atomic(wiki_path, content)` (raises on failure), `commit_wiki(wiki_path, findings, cluster_id) -> bool` (findings = the finding dicts produced by `report_fields`; False = nothing changed or no repo; never inits one), `push_wiki(wiki_dir, remote) -> bool` (False = push gave up) | Wiki durability: repo init at startup (file-only fallback), atomic write, one commit per wiki-changing patrol, bounded best-effort push [DONE: #3] |
 | patrol | `run_patrol` | One patrol end-to-end (async) |
 | main | `main`, `one` | CLI parsing + once/loop scheduling |
@@ -28,7 +28,7 @@ Other paths:
 |---|---|
 | `docs/prior-art.md` | Landscape survey + positioning (drives roadmap #12, #15) |
 | `wiki/` | Runtime artifact — the wiki directory: `cluster-wiki.md` + its git repo; **gitignored**, never commit [DONE: #3 — was a bare `cluster-wiki.md` beside `patrol.py`] |
-| `tests/` | `conftest.py` (repo-root import path) + `test_wiki_git.py` — wiki git persistence unit tests (#3 spec PR) + `test_container_image.py` — Containerfile/`requirements.txt` static contract tests [DONE: #1]. `test_manifests.py` (kustomize manifest contract) + `test_image_ci.py` (post-merge workflow + release-retag contract) [DONE: #2] [DONE: #36]. `test_cli_defaults.py` — patrol.py default-surface contract (interval default, `--quiet` flag) [DONE: #25, #27]. `test_kubectl_guard.py` — guard unit tests: refusals, execution semantics, CLI resolution, dry mode, driven directly against `kubectl_readonly` (safety-model.md rule 6a). `test_patrol_deepagents.py` — scripted fake-model e2e: an in-process OpenAI-compatible endpoint (httpx.MockTransport) serves scripted completions to a real `ChatOpenAI`/deepagents stack (the seam is `make_model`, monkeypatched), complete patrols run via `main()` with `--dry-cluster` and a tmp wiki/repo/remote; asserts the wire tool surface, both termination paths through the shape pass, guard refusals as the model sees them, and the wiki-git wiring (safety-model.md rules 6b–6c, wiki-memory.md rule 4f) [DONE: #4]. `test_wiki_schema.py` — wiki skeleton unit tests (#5 spec PR): `validate_wiki` accept/reject matrix over rules 10–12, `stamp_wiki` field rewrite + body preservation, seed/contract/dependency surfaces [PLANNED: #5] |
+| `tests/` | `conftest.py` (repo-root import path) + `test_wiki_git.py` — wiki git persistence unit tests (#3 spec PR) + `test_container_image.py` — Containerfile/`requirements.txt` static contract tests [DONE: #1]. `test_manifests.py` (kustomize manifest contract) + `test_image_ci.py` (post-merge workflow + release-retag contract) [DONE: #2] [DONE: #36]. `test_cli_defaults.py` — patrol.py default-surface contract (interval default, `--quiet` flag) [DONE: #25, #27]. `test_kubectl_guard.py` — guard unit tests: refusals, execution semantics, CLI resolution, dry mode, driven directly against `kubectl_readonly` (safety-model.md rule 6a). `test_patrol_deepagents.py` — scripted fake-model e2e: an in-process OpenAI-compatible endpoint (httpx.MockTransport) serves scripted completions to a real `ChatOpenAI`/deepagents stack (the seam is `make_model`, monkeypatched), complete patrols run via `main()` with `--dry-cluster` and a tmp wiki/repo/remote; asserts the wire tool surface, both termination paths through the shape pass, guard refusals as the model sees them, and the wiki-git wiring (safety-model.md rules 6b–6c, wiki-memory.md rule 4f) [DONE: #4]. `test_wiki_schema.py` — wiki skeleton unit tests (#5 spec PR): `validate_wiki` accept/reject matrix over rules 10–12, `stamp_wiki` field rewrite + body preservation, seed/contract/dependency surfaces [DONE: #5] |
 | `pyproject.toml`, `uv.lock` | Project + dev dependency groups for the test environment (`uv run --group dev pytest tests/`); mirrors `patrol.py`'s PEP 723 inline metadata (range constraints) — the image instead installs the exactly-pinned `requirements.txt` [DONE: #1] |
 | `Containerfile` | In-cluster image build recipe: ubi9-minimal base, version-pinned + checksum-verified `oc`/`kubectl` client, pip install from `requirements.txt`, non-root random-UID, default command `--loop --interval 21600 --wiki /wiki/cluster-wiki.md` [DONE: #1] [DONE: #25] (`what/container-image.md`) |
 | `requirements.txt` | Exact pins (`name==version`) of the PEP 723 top-level runtime set; installed into the image at build time [DONE: #1] |
@@ -49,8 +49,8 @@ Other paths:
   resolves or installs at container start [DONE: #1] [DONE: #25].
 - `run_patrol()` is the whole patrol lifecycle: load wiki → in-flight AgenticRuns →
   build agent → stream exploration → shape pass → wiki validation (one repair pass
-  on failure) → frontmatter stamping → findings/notify/wiki write → commit/push
-  [wiki gate + stamp: PLANNED: #5].
+  on failure) → findings/notify delivery → frontmatter stamping → wiki write →
+  commit/push [wiki gate + stamp: DONE: #5].
 
 ## Naming Conventions
 

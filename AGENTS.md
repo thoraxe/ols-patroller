@@ -52,8 +52,10 @@ and ready states; humans own the gate transitions (`spec-approved`, merging):
 - Tests: `uv run --group dev pytest tests/ -q` — `tests/test_wiki_git.py` covers
   the wiki git persistence contract (#3); `tests/test_container_image.py` covers
   the image contract (#1); `tests/test_kubectl_guard.py` covers the guard
-  contract, and `tests/test_patrol_deepagents.py` is the fake-model e2e over the
-  real engine stack (#4).
+  contract; `tests/test_patrol_deepagents.py` is the fake-model e2e over the
+  real engine stack (#4, incl. the wiki-skeleton wiring of #5); and
+  `tests/test_wiki_schema.py` covers the wiki skeleton schema +
+  validation-on-write contract (#5).
 - `wiki/` (the wiki directory: `cluster-wiki.md` + its git repo) is a runtime
   artifact (gitignored) — never commit it.
 - Roadmap: GitHub issues + milestones, not documents. Spec files mark planned

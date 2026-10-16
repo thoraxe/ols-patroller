@@ -38,7 +38,7 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
    rewritten each patrol, git-backed: one wiki-changing patrol, one commit
    [DONE: #3]; skeleton-validated on write — frontmatter, fixed section set,
    entry metadata — with one repair pass and process-stamped counters
-   [PLANNED: #5] (`wiki-memory.md`).
+   [DONE: #5] (`wiki-memory.md`).
 10. **Reporting & notifications** — typed report schema, severity vocabulary,
     console/Slack delivery (`reporting-notifications.md`).
 11. **Safety model** — layered read-only enforcement spanning guard, engine, and
@@ -64,16 +64,16 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
 
 13. First run with no wiki file seeds it from `WIKI_SEED` (sections: Topology,
     Baselines, Watch-list, Open questions, Anomaly log; the seed demonstrates the
-    full skeleton — frontmatter + sections [PLANNED: #5]).
+    full skeleton — frontmatter + sections [DONE: #5]).
 14. Each patrol: load wiki → gather in-flight AgenticRuns context (best-effort) →
     agentic exploration → reporting pass → validate the wiki skeleton (one repair
-    pass on failure) [PLANNED: #5] → print findings, send notifications, stamp
-    the frontmatter counters [PLANNED: #5], rewrite the wiki atomically, commit it
+    pass on failure) [DONE: #5] → print findings, send notifications, stamp
+    the frontmatter counters [DONE: #5], rewrite the wiki atomically, commit it
     to the wiki repo, push if `PATROL_WIKI_REMOTE` is set [DONE: #3].
 15. If the reporting pass fails entirely, the patrol ends with a warning and the wiki
     is left unchanged. The same holds when the wiki update fails skeleton
     validation and its repair pass: the old wiki stands and the patrol's findings
-    and notifications still deliver [PLANNED: #5].
+    and notifications still deliver [DONE: #5].
 16. **Doc-surface consistency for the defaults.** Every committed surface that
     names the default cadence or the output flag states the post-#25/#27 truth:
     the `--interval` help text and `patrol.py`'s module docstring, the
@@ -112,7 +112,7 @@ In-cluster, the image's default command is `--loop --interval 21600 --wiki
 Hard-coded constants (not env-configurable): `OUT_CAP` = 15,000 chars of tool output
 fed back to the model; model temperature 0.3, `max_tokens` 16000, request timeout
 300 s; wiki push bounds — 3 attempts, 30 s per attempt, 5 s backoff between
-attempts [DONE: #3]; wiki skeleton schema version `WIKI_VERSION` = 1 [PLANNED: #5].
+attempts [DONE: #3]; wiki skeleton schema version `WIKI_VERSION` = 1 [DONE: #5].
 
 In-cluster wiring (Secret keys, the `PATROL_CLUSTER_ID` literal, kustomize image
 override, the CI workflow) is deployment surface, not patrol surface —

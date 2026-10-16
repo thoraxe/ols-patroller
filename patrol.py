@@ -5,6 +5,7 @@
 #     "deepagents>=0.7",
 #     "langchain-openai>=1.0",
 #     "pydantic>=2",
+#     "pyyaml>=6",
 #     "requests>=2.31",
 # ]
 # ///
@@ -40,14 +41,17 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import re
 import shlex
 import subprocess
 import sys
 import time
+from datetime import date, datetime
 from pathlib import Path
 from typing import Literal
 
 import requests
+import yaml
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
@@ -78,6 +82,17 @@ WIKI_REMOTE = os.environ.get("PATROL_WIKI_REMOTE", "")     # optional wiki repli
 PUSH_ATTEMPTS = 3  # max push attempts
 PUSH_TIMEOUT  = 30 # seconds per push attempt
 PUSH_BACKOFF  = 5  # seconds between push attempts
+
+# Wiki skeleton schema (wiki-memory.md rules 10-12, #5). WIKI_VERSION is the
+# skeleton schema version: bumping it is a deliberate spec migration, never a
+# patrol decision (rule 10). Not env-configurable.
+WIKI_VERSION = 1
+WIKI_SECTIONS = ("Topology", "Baselines", "Watch-list", "Open questions", "Anomaly log")
+WIKI_METADATA_SECTIONS = ("Watch-list", "Anomaly log")  # sections carrying entry metadata
+WIKI_FRONTMATTER_KEYS = ("wiki_version", "cluster_id", "patrol_count", "last_patrol")
+WIKI_ENTRY_KEYS = ("id", "status", "first_seen", "last_verified", "source", "confidence")
+WIKI_ENTRY_STATUSES = ("watching", "resolved", "expired")
+WIKI_ENTRY_CONFIDENCES = ("high", "medium", "low")
 
 READONLY_VERBS = {
     "get", "describe", "logs", "top", "version", "api-resources",
@@ -115,9 +130,17 @@ for that reader: concrete, specific, no filler.
 """
 
 WIKI_SEED = """\
+---
+wiki_version: 1
+cluster_id: local
+patrol_count: 0
+last_patrol: null
+---
+
 # Cluster Wiki
 
-_No patrols have run yet. This file is the sentinel's memory and will be rewritten each patrol._
+_No patrols have run yet. This file is the sentinel's memory and will be wholly rewritten
+each patrol. The frontmatter counters are stamped by the patroller, not the model._
 
 ## Topology
 _(unknown — first patrol will populate)_
@@ -126,13 +149,13 @@ _(unknown — first patrol will populate)_
 _(unknown)_
 
 ## Watch-list
-- (empty)
+_(empty)_
 
 ## Open questions
 - (none yet)
 
 ## Anomaly log
-- (none yet)
+_(empty)_
 """
 
 # ------------------------------------------------------------------- dry-cluster fixtures
@@ -361,13 +384,35 @@ Produce the final PatrolReport for the cluster patrol above:
   actually observed.
 - "notifications": ONLY the warn/crit findings a human should actually see (don't
   cry wolf), as human-readable messages.
-- "updated_wiki": the FULL new markdown content of the cluster wiki, well
-  structured with sections: Topology, Baselines, Watch-list, Open questions,
-  Anomaly log. Tag entries with (source, timestamp, confidence) inline and expire
-  stale ones."""
+- "updated_wiki": the FULL new markdown content of the cluster wiki in the
+  skeleton format. It is validated before it may replace the wiki on disk, and
+  MUST have exactly this structure:
+  1. YAML frontmatter at the very top, between '---' fence lines, with exactly
+     four keys and no others: wiki_version: 1, cluster_id (this cluster's id),
+     patrol_count (a positive integer), last_patrol (an ISO-8601 datetime). The
+     patroller re-stamps cluster_id, patrol_count and last_patrol after
+     validation, so fill them sensibly but do not fuss over exact values.
+  2. The body contains exactly these five level-2 sections, each exactly once,
+     spelled exactly: ## Topology, ## Baselines, ## Watch-list, ## Open
+     questions, ## Anomaly log. No other level-2 headings (a ### heading is
+     prose, not a section). Section order is free; an empty section may carry a
+     non-list placeholder line such as _(empty)_.
+  3. In ## Watch-list and ## Anomaly log, every top-level list item (- or *) is
+     an entry whose first line is a metadata line: exactly six ' · '-separated
+     (space, middle dot, space) key: value pairs in this fixed order —
+     id: <unique non-empty id> · status: watching|resolved|expired ·
+     first_seen: YYYY-MM-DD · last_verified: YYYY-MM-DD · source: <what was
+     observed, typically the command> · confidence: high|medium|low.
+     Further 'key: value' pairs may follow confidence; no other trailing text.
+     The entry's free prose (the natural-language hypothesis) goes on indented
+     continuation lines below the metadata line, never on the line itself.
+  4. Topology, Baselines, and Open questions are free prose — no metadata lines
+     there; keep tagging their entries with (source, timestamp, confidence)
+     inline and expire stale entries rather than deleting history."""
 
 
-async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool):
+async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
+                       repair: tuple[str, list[str]] | None = None):
     """Tool-free structured-output pass over the finished patrol conversation.
 
     Same pattern as the OLS agentic sandbox's "shape pass": the agent explores
@@ -376,14 +421,29 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool):
     one — into the typed PatrolReport. It runs identically whether the patrol
     completed naturally or was cut off by the step budget, so there is one
     reporting code path and no salvage special-case.
+
+    `repair=(rejected_wiki, errors)` re-invokes this pass as the wiki-validation
+    repair pass (wiki-memory.md rule 18): the user message states the previous
+    wiki failed skeleton validation and carries the error list and the rejected
+    wiki, asking for a corrected PatrolReport. At most one repair pass per
+    patrol — the caller owns that bound.
     """
-    prefix = ("You are the REPORTING PASS for the cluster patrol recorded above. "
-              "The patrol completed and wrote its final summary. "
-              if not budget_cut else
-              "You are the REPORTING PASS for the cluster patrol recorded above. "
-              "The patrol was CUT OFF by its step budget mid-exploration; commands "
-              "marked 'not executed' never ran. Report only on what was actually "
-              "observed. ")
+    if repair is None:
+        prefix = ("You are the REPORTING PASS for the cluster patrol recorded above. "
+                  "The patrol completed and wrote its final summary. "
+                  if not budget_cut else
+                  "You are the REPORTING PASS for the cluster patrol recorded above. "
+                  "The patrol was CUT OFF by its step budget mid-exploration; commands "
+                  "marked 'not executed' never ran. Report only on what was actually "
+                  "observed. ")
+    else:
+        rejected_wiki, wiki_errors = repair
+        prefix = ("You are the REPORTING PASS for the cluster patrol recorded above. "
+                  "Your previous updated_wiki FAILED the wiki skeleton validation and "
+                  "was REJECTED — it was not written. Produce a corrected PatrolReport "
+                  "whose updated_wiki fixes EVERY validation error below:\n"
+                  + "\n".join(f"- {e}" for e in wiki_errors)
+                  + "\n\nThe rejected wiki was:\n\n" + rejected_wiki + "\n")
     structured = model.with_structured_output(PatrolReport, method="function_calling")
     msgs: list = [*messages, {"role": "user", "content": prefix + REPORT_CONTRACT}]
     for attempt in (1, 2):
@@ -400,6 +460,256 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool):
         msgs = [*msgs, {"role": "user",
                         "content": "That was not a valid PatrolReport. Produce it now."}]
     return None
+
+
+# --------------------------------------------------------------------------- wiki schema
+# Skeleton validation-on-write (wiki-memory.md rules 10-19, #5; ADR 0011). The
+# wiki stays a document, not a database: the skeleton (frontmatter, the five
+# canonical sections, entry metadata lines in Watch-list and Anomaly log) frames
+# free prose, it never replaces it — prose, section order, heading levels other
+# than 2, prose-section list items, and the values of the process-stamped fields
+# are never judged. Validation is pure (no I/O, no model calls) and gates the
+# write path: a rejected wiki gets one model-facing repair pass (rule 18), then
+# the old wiki wins (rule 19) — persistence problems degrade, never block.
+
+_ENTRY_PAIR_RE = re.compile(r"^([^\s:]+): (.+)$")  # one 'key: value' metadata pair
+_ENTRY_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")  # YYYY-MM-DD, zero-padded
+
+
+def _is_calendar_date(value: object) -> bool:
+    """A valid zero-padded YYYY-MM-DD calendar date (rule 12)."""
+    if not isinstance(value, str) or not _ENTRY_DATE_RE.match(value):
+        return False
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+        return True
+    except ValueError:
+        return False
+
+
+def _is_iso_datetime(value: object) -> bool:
+    """Rule 10: an ISO-8601 datetime string, or a YAML-parsed timestamp."""
+    if isinstance(value, (datetime, date)):  # PyYAML typed an unquoted scalar
+        return True
+    if not isinstance(value, str):
+        return False
+    try:
+        datetime.fromisoformat(value)
+        return True
+    except ValueError:
+        return False
+
+
+def _split_frontmatter(content: str) -> tuple[list[str], list[str]] | None:
+    """(frontmatter-lines, body-lines), or None when no well-formed block.
+
+    A well-formed block: the file opens with a '---' fence line and closes it
+    with another (rule 10). Anything else — including no fences at all — is not
+    a frontmatter document.
+    """
+    lines = content.split("\n")
+    if not lines or lines[0].strip() != "---":
+        return None
+    try:
+        end = next(i for i in range(1, len(lines)) if lines[i].strip() == "---")
+    except StopIteration:
+        return None
+    return lines[1:end], lines[end + 1:]
+
+
+def _frontmatter_errors(fm_text: str) -> tuple[list[str], dict | None]:
+    """Rule 10 checks on one frontmatter block: (errors, parsed-mapping-or-None)."""
+    try:
+        fm = yaml.safe_load(fm_text)
+    except yaml.YAMLError as e:
+        return [f"frontmatter: not parseable YAML ({e})"], None
+    if not isinstance(fm, dict):
+        return [f"frontmatter: not a YAML mapping (got {type(fm).__name__})"], None
+    errors: list[str] = []
+    for key in sorted(set(fm) - set(WIKI_FRONTMATTER_KEYS)):
+        errors.append(f"frontmatter: unknown key '{key}' "
+                      f"(closed set: {', '.join(WIKI_FRONTMATTER_KEYS)})")
+    for key in WIKI_FRONTMATTER_KEYS:
+        if key not in fm:
+            errors.append(f"frontmatter: missing key '{key}'")
+    if "wiki_version" in fm:
+        v = fm["wiki_version"]
+        if isinstance(v, bool) or not isinstance(v, int):
+            errors.append(f"frontmatter: wiki_version must be an integer (got {v!r})")
+        elif v != WIKI_VERSION:
+            errors.append(f"frontmatter: wiki_version must be {WIKI_VERSION} (got {v!r})")
+    if "cluster_id" in fm:
+        v = fm["cluster_id"]
+        if not isinstance(v, str) or not v:
+            errors.append(f"frontmatter: cluster_id must be a non-empty string (got {v!r})")
+    if "patrol_count" in fm:
+        v = fm["patrol_count"]
+        if isinstance(v, bool) or not isinstance(v, int) or v < 1:
+            errors.append(f"frontmatter: patrol_count must be a positive integer (got {v!r})")
+    if "last_patrol" in fm and not _is_iso_datetime(fm["last_patrol"]):
+        errors.append(f"frontmatter: last_patrol must be an ISO-8601 datetime "
+                      f"(got {fm['last_patrol']!r})")
+    return errors, fm
+
+
+def _entry_errors(section: str, line: str, seen_ids: set[str]) -> list[str]:
+    """Rule 12 checks on one metadata-section entry line."""
+    marker = "- " if line.startswith("- ") else "* "
+    parts = line[len(marker):].split(" · ")
+    pairs: list[tuple[str, str]] = []
+    structural: list[str] = []
+    for i, part in enumerate(parts):
+        m = _ENTRY_PAIR_RE.match(part)
+        if m:
+            pairs.append((m.group(1), m.group(2)))
+        else:
+            structural.append(f"part {i + 1} ({part!r}) is not a 'key: value' pair "
+                              f"separated by ' · '")
+    keys = [k for k, _ in pairs]
+    if not structural and keys[:len(WIKI_ENTRY_KEYS)] != list(WIKI_ENTRY_KEYS):
+        structural.append("metadata keys must be " + " · ".join(f"{k}:" for k in WIKI_ENTRY_KEYS)
+                          + " in that fixed order "
+                          + f"(got {' · '.join(f'{k}:' for k in keys) or 'none'})")
+    if structural:
+        return [f"{section}: entry metadata line not well-formed — {p}" for p in structural]
+    values = dict(pairs)
+    errors: list[str] = []
+    entry_id = values.get("id", "")
+    if entry_id in seen_ids:
+        errors.append(f"{section}: duplicate entry id '{entry_id}' "
+                      "(ids are unique across the whole wiki)")
+    else:
+        seen_ids.add(entry_id)
+    if values.get("status") not in WIKI_ENTRY_STATUSES:
+        errors.append(f"{section}: entry '{entry_id}' status must be one of "
+                      f"{', '.join(WIKI_ENTRY_STATUSES)} (got {values.get('status')!r})")
+    if values.get("confidence") not in WIKI_ENTRY_CONFIDENCES:
+        errors.append(f"{section}: entry '{entry_id}' confidence must be one of "
+                      f"{', '.join(WIKI_ENTRY_CONFIDENCES)} "
+                      f"(got {values.get('confidence')!r})")
+    for date_key in ("first_seen", "last_verified"):
+        if not _is_calendar_date(values.get(date_key)):
+            errors.append(f"{section}: entry '{entry_id}' {date_key} must be a valid "
+                          f"YYYY-MM-DD date (got {values.get(date_key)!r})")
+    return errors
+
+
+def validate_wiki(content: str) -> list[str]:
+    """Rule 15: validate a wiki document against the skeleton (rules 10-12).
+
+    Returns human-readable validation errors; an empty list means valid. Pure —
+    no I/O, no model calls. Checks exactly the skeleton: frontmatter block,
+    closed key set, types, wiki_version; the five canonical sections exactly
+    once each and no other level-2 headings; every top-level list item in
+    Watch-list and Anomaly log a well-formed metadata line with valid
+    vocabularies, date formats, and unique ids. Prose, section order, other
+    heading levels, prose-section list items, fenced code blocks, and the
+    values of the process-stamped fields are not judged.
+    """
+    split = _split_frontmatter(content)
+    if split is None:
+        lines = content.split("\n")
+        if lines and lines[0].strip() == "---":
+            return ["frontmatter: unterminated fence (no closing '---' line)"]
+        return ["frontmatter: missing YAML frontmatter block "
+                "(the file must open with a '---' fence line)"]
+    fm_lines, body_lines = split
+    errors, _ = _frontmatter_errors("\n".join(fm_lines))
+
+    # Rule 11: scan the body for level-2 headings and (rule 12) metadata-section
+    # entries, skipping fenced code blocks — fenced lines are prose.
+    headings: list[str] = []
+    entries: list[tuple[str, str]] = []
+    in_fence = False
+    section = None
+    for line in body_lines:
+        if line.strip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        if line.startswith("## "):  # level-2 only: '###' does not start with '## '
+            section = line[3:].rstrip()
+            headings.append(section)
+            continue
+        if (section in WIKI_METADATA_SECTIONS
+                and (line.startswith("- ") or line.startswith("* "))):
+            entries.append((section, line))
+
+    counts: dict[str, int] = {}
+    for name in headings:
+        counts[name] = counts.get(name, 0) + 1
+    for name in WIKI_SECTIONS:
+        if counts.get(name, 0) == 0:
+            errors.append(f"body: missing section '## {name}'")
+        elif counts[name] > 1:
+            errors.append(f"body: section '## {name}' appears {counts[name]} times "
+                          "(exactly once required)")
+    for name in sorted(counts):
+        if name not in WIKI_SECTIONS:
+            errors.append(f"body: unknown level-2 section '## {name}' "
+                          f"(canonical set: {', '.join(WIKI_SECTIONS)})")
+
+    seen_ids: set[str] = set()
+    for section_name, line in entries:
+        errors.extend(_entry_errors(section_name, line, seen_ids))
+    return errors
+
+
+def stamp_wiki(content: str, patrol_count: int, last_patrol: str, cluster_id: str) -> str:
+    """Rule 17: rewrite the process-owned frontmatter fields after validation.
+
+    `patrol_count`, `last_patrol`, and `cluster_id` are process-owned — models
+    are unreliable counters — so the patroller stamps them authoritatively
+    before the atomic write. `wiki_version` and the body are preserved
+    byte-for-byte. Called only on skeleton-valid content (the write-path gate);
+    if the frontmatter block is somehow absent, the content is returned
+    unchanged rather than mangled.
+    """
+    split = _split_frontmatter(content)
+    if split is None:
+        return content
+    fm_lines, body_lines = split
+    owned = {
+        "patrol_count": f"patrol_count: {patrol_count}",
+        "last_patrol": f'last_patrol: "{last_patrol}"',  # quoted: stays a string
+        "cluster_id": f"cluster_id: {cluster_id}",
+    }
+    out: list[str] = []
+    stamped: set[str] = set()
+    for line in fm_lines:
+        key = line.split(":", 1)[0].strip() if ":" in line else ""
+        if key in owned:
+            if key not in stamped:  # first occurrence wins; duplicates drop
+                out.append(owned[key])
+                stamped.add(key)
+        else:
+            out.append(line)
+    for key, line in owned.items():  # defensive: a validated wiki always has them
+        if key not in stamped:
+            out.append(line)
+    return "\n".join(["---", *out, "---", *body_lines])
+
+
+def frontmatter_patrol_count(content: str) -> int:
+    """Rule 17: the on-disk wiki's patrol_count if a positive integer, else 0.
+
+    An absent file, a pre-#5 legacy wiki, or unparseable frontmatter all count
+    as 0 — the first skeleton-compliant write stamps 1.
+    """
+    split = _split_frontmatter(content)
+    if split is None:
+        return 0
+    try:
+        fm = yaml.safe_load("\n".join(split[0]))
+    except yaml.YAMLError:
+        return 0
+    if not isinstance(fm, dict):
+        return 0
+    v = fm.get("patrol_count")
+    if isinstance(v, bool) or not isinstance(v, int) or v < 1:
+        return 0
+    return v
 
 
 # --------------------------------------------------------------------------- wiki git
@@ -671,6 +981,35 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
 
     findings, notifications, new_wiki = report_fields(report)
 
+    # Wiki gate (#5, rules 15-19): the model's wiki is validated before it may
+    # replace memory. Invalid -> exactly one repair pass; a repair whose wiki
+    # validates replaces the report wholesale, otherwise the old wiki stands
+    # and the FIRST report's findings/notifications still deliver (rule 19: a
+    # wiki-format failure never costs the patrol's observations). An empty
+    # updated_wiki skips validation and repair entirely (rule 4 unchanged).
+    if new_wiki:
+        errors = validate_wiki(new_wiki)
+        if errors:
+            print(f"[patrol] WARNING: updated wiki failed skeleton validation "
+                  f"({len(errors)} error(s)); running one repair pass", file=sys.stderr)
+            repaired = await shape_report(model, messages, budget_cut,
+                                          repair=(new_wiki, errors))
+            final = None
+            if repaired is not None:
+                r_findings, r_notifications, r_wiki = report_fields(repaired)
+                if r_wiki and not validate_wiki(r_wiki):
+                    final = (r_findings, r_notifications, r_wiki)
+            if final is not None:
+                findings, notifications, new_wiki = final
+            else:
+                print("[patrol] WARNING: wiki update rejected — the repaired wiki "
+                      "still fails skeleton validation; keeping the previous wiki, "
+                      "writing nothing", file=sys.stderr)
+                new_wiki = ""
+
+    # Delivery (rule 16): findings and notifications are delivered after the
+    # validation/repair decision resolves and before the physical write, so
+    # exactly one report — the final one — is delivered.
     print(f"\n[patrol] findings ({len(findings)}):")
     for f in findings:
         print(f"  [{f.get('severity', '?'):>4}] {f.get('summary', '')}")
@@ -680,7 +1019,15 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
     notify([m for m in notifications if m])
 
     if new_wiki:
-        write_wiki_atomic(wiki_path, new_wiki)
+        # Rule 17: stamp the process-owned frontmatter fields — patrol_count
+        # from the ON-DISK wiki (never the model's guess), last_patrol from this
+        # patrol's start, cluster_id from config. Every accepted write advances
+        # patrol_count, so every accepted write changes the file and commits.
+        stamped = stamp_wiki(new_wiki,
+                             patrol_count=frontmatter_patrol_count(wiki) + 1,
+                             last_patrol=ts,
+                             cluster_id=CLUSTER_ID)
+        write_wiki_atomic(wiki_path, stamped)
         print(f"[patrol] wiki updated → {wiki_path}")
         if commit_wiki(wiki_path, findings, CLUSTER_ID) and WIKI_REMOTE:
             push_wiki(wiki_path.parent, WIKI_REMOTE)
