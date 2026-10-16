@@ -1,11 +1,16 @@
-# Post-merge image CI (#2) — builds and publishes the patrol image to GHCR.
-# Contract: .ai/spec/what/container-image.md rules 13-16
-# (ADR decisions/0008-ci-published-image.md).
+# Post-merge image CI (#2) + release retag (#36) — builds and publishes the
+# patrol image to GHCR, and tags published releases via registry-side retag.
+# Contract: .ai/spec/what/container-image.md rules 13-18
+# (ADR decisions/0008-ci-published-image.md,
+# ADR decisions/0010-release-retag-not-rebuild.md).
 #
-# Rule 13: push to main ONLY — a post-merge artifact pipeline, not a merge
-# gate; PR-time builds are deliberately excluded. No path filter: every merge
-# republishes :main (accepted slack). No verification runs here: CI is
-# delivery, not verification — the gate is human review.
+# Rule 13: push to main is the ONLY build trigger — a post-merge artifact
+# pipeline, not a merge gate; PR-time builds are deliberately excluded. No
+# path filter: every merge republishes :main (accepted slack). The workflow's
+# only other triggers are the retag-only release paths (rules 17-18), and the
+# build job is event-guarded so only a push event ever builds.
+# No verification runs here: CI is delivery, not verification — the gate is
+# human review.
 
 name: image
 
@@ -13,6 +18,17 @@ on:
   push:
     branches:
       - main
+  release:
+    types:
+      - published
+  # Rule 18: the manual retag path — the retro path for releases that predate
+  # the trigger (v0.1) and the recovery path when the release job failed.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The release tag to apply (e.g. v0.1) — must start with v
+        required: true
+        type: string
 
 # Rule 15: exactly contents: read + packages: write — the built-in
 # GITHUB_TOKEN publishes; no personal access tokens, no stored credentials.
@@ -22,6 +38,9 @@ permissions:
 
 jobs:
   build-and-publish:
+    # Rule 13: event guard — release and dispatch events trigger this
+    # workflow too, but must never reach the build path.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Check out the repository
@@ -51,3 +70,54 @@ jobs:
           tags: |
             ghcr.io/thoraxe/ols-patroller:main
             ghcr.io/thoraxe/ols-patroller:sha-${{ github.sha }}
+
+  # Rules 17-18: published v* releases (and the manual dispatch path) apply
+  # the release tag to the image by copying the registry manifest of the
+  # already-published sha-<SHA> image for the tagged commit — retagged,
+  # never rebuilt (ADR decisions/0010-release-retag-not-rebuild.md).
+  release-retag:
+    # The v-prefix gate is the job's if-guard, not a trigger filter: the
+    # release trigger has no tag filter (rule 17), and the dispatch input
+    # gets the same guard (rule 18).
+    if: >-
+      (github.event_name == 'release' && startsWith(github.event.release.tag_name, 'v')) ||
+      (github.event_name == 'workflow_dispatch' && startsWith(github.event.inputs.tag, 'v'))
+    runs-on: ubuntu-latest
+    steps:
+      # Rule 17: the source SHA is the commit the release tag points at,
+      # resolved from the tag itself — never github.sha, which on release
+      # events is the target-commitish HEAD and on dispatch the dispatched
+      # ref's HEAD, neither the tagged commit.
+      - name: Check out the release tag
+        uses: actions/checkout@v4
+        with:
+          # The tag itself: the release's tag_name, or the dispatch input
+          # tag (rule 18).
+          ref: ${{ github.event.release.tag_name || github.event.inputs.tag }}
+
+      - name: Resolve the tagged commit
+        id: resolve
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      # Rule 17 (per rule 15): GHCR login with the built-in GITHUB_TOKEN —
+      # no other credentials.
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Rule 17: registry-side manifest copy — no pull, no build, no
+      # :main/:latest writes. A missing source sha-<SHA> tag (release of a
+      # commit whose main build failed or never ran) fails the job loudly —
+      # an error, not a silently missing tag.
+      - name: Retag the sha image as the release tag
+        env:
+          IMAGE: ghcr.io/thoraxe/ols-patroller
+          SOURCE_TAG: sha-${{ steps.resolve.outputs.sha }}
+          TARGET_TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
+        run: docker buildx imagetools create --tag "${IMAGE}:${TARGET_TAG}" "${IMAGE}:${SOURCE_TAG}"

@@ -109,7 +109,7 @@ manifests deploy by default.
     main" (accepted slack). The workflow's only other triggers are the
     retag-only release paths (rules 17–18), and the build job is
     event-guarded so that only a `push` event ever builds [DONE: #2]
-    [build-job guard: PLANNED: #36].
+    [build-job guard: DONE: #36].
 14. The workflow builds with `docker/build-push-action` from the repo root:
     build context `.`, file `./Containerfile` (the action's default
     `Dockerfile` name is wrong for this repo — the workflow must name the
@@ -127,7 +127,7 @@ manifests deploy by default.
     the deploying cluster uses an image pull secret / an overridden ref
     (ADR `decisions/0008-ci-published-image.md`) [DONE: #2].
 17. Published GitHub releases tag the image — **retagged, never rebuilt**
-    [PLANNED: #36]. The workflow also triggers on published releases
+    [DONE: #36]. The workflow also triggers on published releases
     (`release: types: [published]`); a dedicated release job applies the
     release's tag name (e.g. `v0.1`) to the container image by copying the
     registry manifest of the already-published `sha-<full commit SHA>` tag for
@@ -160,7 +160,7 @@ manifests deploy by default.
     `sha-*` tags (it necessarily reads the `sha-<SHA>` source), publishes no
     `latest` tag (`main` stays the rolling tag),
     and authenticates exactly per rule 15.
-18. `workflow_dispatch` is the manual retag path [PLANNED: #36]: a required
+18. `workflow_dispatch` is the manual retag path [DONE: #36]: a required
     input `tag` (the release tag to apply). The release job (or a dedicated
     dispatch sibling) resolves the commit the input tag points at — per
     rule 17's tag resolution, never `github.sha` — then applies rule 17's
@@ -192,11 +192,11 @@ manifests deploy by default.
   of that commit's `sha-<SHA>` image, so it depends on the main-push pipeline
   having succeeded for that commit — releasing an unbuilt commit fails loudly
   instead of publishing (ADR `decisions/0010-release-retag-not-rebuild.md`)
-  [PLANNED: #36].
+  [DONE: #36].
 - The CI contract (rules 13–18) is unit-checked statically in
   `tests/test_image_ci.py`, which parses `.github/workflows/image.yml` and
   fails on a missing or non-conforming workflow — no workflow run needed
-  [rules 13–16: DONE: #2] [rules 17–18: PLANNED: #36].
+  [rules 13–16: DONE: #2] [rules 17–18: DONE: #36].
 
 ## Planned Changes
 
@@ -205,4 +205,4 @@ manifests deploy by default.
 | ~~#1~~ | This file's own contract: Containerfile + `requirements.txt` (rules 1–12) |
 | ~~#2~~ | Manifests consuming this image (`in-cluster-deployment.md`) + the post-merge CI that publishes it to GHCR (rules 13–16) |
 | ~~#25~~ | Default cadence 6 h: CMD `--interval 21600` (rule 9), kept identical to the Deployment args and the `patrol.py` env default |
-| #36 | Release image tags: published `v*` releases retag the matching `sha-<SHA>` image — no rebuild — plus a `workflow_dispatch` manual retag path (rules 17–18; ADR 0010). Impl commit also syncs the image-CI entries in `how/project-structure.md`, `ARCHITECTURE.md`, and the `image.yml` pointer in `in-cluster-deployment.md`'s Configuration Surface |
+| ~~#36~~ | Release image tags: published `v*` releases retag the matching `sha-<SHA>` image — no rebuild — plus a `workflow_dispatch` manual retag path (rules 17–18; ADR 0010). Impl commit also syncs the image-CI entries in `how/project-structure.md`, `ARCHITECTURE.md`, and the `image.yml` pointer in `in-cluster-deployment.md`'s Configuration Surface |

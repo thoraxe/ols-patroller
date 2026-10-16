@@ -55,7 +55,7 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
      and published `v*` releases retag the matching `sha-<SHA>` image with the
      release tag
      (`container-image.md` rules 13–18) [DONE: #2] [DONE: #25]
-     [release retag: PLANNED: #36]
+     [release retag: DONE: #36]
      (`in-cluster-deployment.md`).
 
 ### Lifecycle
