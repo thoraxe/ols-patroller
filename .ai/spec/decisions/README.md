@@ -35,3 +35,4 @@ Date: YYYY-MM-DD · Status: proposed | accepted | superseded by NNNN
 | [0008](0008-ci-published-image.md) | Post-merge CI publishes the image; the manifests deploy it |
 | [0009](0009-wire-level-fake-endpoint-e2e.md) | Wire-level fake endpoint for the e2e, not a class-level fake model |
 | [0010](0010-release-retag-not-rebuild.md) | Release tags are registry-side retags of the sha image, not rebuilds |
+| [0011](0011-wiki-skeleton-stamped-counters.md) | Wiki skeleton: validated structure, stamped counters, one repair pass |

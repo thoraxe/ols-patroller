@@ -14,6 +14,21 @@ redefined here.
   audit trail (#3).
 - **Watch-list** — wiki section holding the refinement loop: rules patrol N writes
   for patrol N+1 (what to re-check, escalate, or expire).
+- **Skeleton** — the wiki's machine-checkable structure (#5): YAML frontmatter
+  (`wiki_version`, `cluster_id`, `patrol_count`, `last_patrol`), the five canonical
+  sections, and the entry metadata line in Watch-list and Anomaly log. Structure
+  frames free prose; it never replaces it (load-bearing constraint of #5).
+- **Entry metadata line** — the first line of a Watch-list/Anomaly-log entry:
+  `id · status · first_seen · last_verified · source · confidence` as `key: value`
+  pairs separated by ` · ` — the machine-checkable part of an entry; free prose
+  follows as its continuation lines.
+- **Stamp** — the patroller's deterministic post-validation rewrite of the
+  process-owned frontmatter fields (`patrol_count`, `last_patrol`, `cluster_id`)
+  before the atomic write (#5). Models are unreliable counters; the stamp makes
+  the written values authoritative regardless of what the model emitted.
+- **Repair pass** — the single allowed re-invocation of the shape pass when a
+  report's `updated_wiki` fails skeleton validation; it carries the validation
+  errors and the rejected wiki back to the model (#5).
 - **Shape pass** — the tool-free structured-output pass (`shape_report`) that
   converts a finished patrol conversation into the typed `PatrolReport`. Same
   pattern as the OLS agentic sandbox.
