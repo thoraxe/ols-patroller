@@ -16,8 +16,12 @@ layer 3 (RBAC boundary) real, and what the CI-published image
    `namespace.yaml`, `serviceaccount.yaml`, `clusterrolebinding.yaml`,
    `pvc.yaml`, `secret.yaml`, `deployment.yaml`), the committed
    `secret.yaml.example` template — a template, not a resource (rule 14) —
-   and, once the operator follows rule 14, the gitignored `secret.yaml`
-   itself; nothing else [DONE: #2].
+   the committed `deploy-key-patch.yaml.example` template — likewise a
+   template, not a resource (rule 16a) — and, once the operator follows
+   rule 14, the gitignored `secret.yaml` itself, plus, once the operator
+   follows rule 16c, the gitignored `deploy-key-patch.yaml` copy and the
+   matching `patches:` entry in the operator's `kustomization.yaml`;
+   nothing else [DONE: #2] [example templates + opt-in copy: DONE: #39].
 2. Every namespaced object carries the literal `metadata.namespace:
    ols-patroller`, the `ClusterRoleBinding`'s subject namespace is the same,
    and the `kustomization.yaml` sets **no** `namespace:` field — the kustomize
@@ -136,23 +140,76 @@ layer 3 (RBAC boundary) real, and what the CI-published image
     `stringData` holds the three required keys (`PATROL_API_KEY`,
     `PATROL_BASE_URL`, `PATROL_MODEL`) set to obvious placeholder values, with
     the optional keys (`SLACK_WEBHOOK_URL`, `PATROL_WIKI_REMOTE`) present as
-    commented-out lines. Procedure: `cp secret.yaml.example secret.yaml`,
+    commented-out lines — the `PATROL_WIKI_REMOTE` placeholder shows the
+    SSH-remote form and points at the deploy-key wiring (rules 16a–16c)
+    [DONE: #39]. Procedure: `cp secret.yaml.example secret.yaml`,
     fill in, apply [DONE: #2].
 15. No committed manifest contains a real or plausible value for any secret
-    env key: those key names appear only in `secret.yaml.example`, only with
-    placeholder values [DONE: #2].
+    env key: those key names appear in committed manifests only inside the
+    `.example` templates (`secret.yaml.example` placeholder values,
+    `deploy-key-patch.yaml.example` comments), never with real or plausible
+    values [DONE: #2] [template scope: DONE: #39].
 
 ### Optional remote-push wiring (deploy key)
 
 16. The base manifests never reference a deploy-key secret, an SSH key mount,
-    or `GIT_SSH_COMMAND` — `oc apply -k` stays self-contained (a referenced-
+    or `GIT_SSH_COMMAND`, and the committed `kustomization.yaml` carries no
+    `patches:` entry — `oc apply -k` stays self-contained (a referenced-
     but-missing Secret blocks pod creation). Remote-push wiring
-    (`wiki-memory.md` rule 4e) is a documented optional patch, never required
-    for a patrol (local-first): create a Secret holding the SSH private key,
-    patch the Deployment to mount it read-only (e.g. at `/wiki-deploy-key`)
-    and set `GIT_SSH_COMMAND: ssh -i /wiki-deploy-key/<key> -o
-    StrictHostKeyChecking=accept-new`, and set `PATROL_WIKI_REMOTE` in the
-    patrol Secret [DONE: #2].
+    (`wiki-memory.md` rule 4e) is opt-in, never required for a patrol
+    (local-first): a committed example patch (rule 16a) plus the documented
+    procedure (rules 16c–16d) [DONE: #2] [example + procedure:
+    DONE: #39].
+16a. `manifests/deploy-key-patch.yaml.example` is a committed template (the
+    same pattern as rule 14's `secret.yaml.example`) holding a
+    strategic-merge patch over the base Deployment: `apiVersion: apps/v1`,
+    kind `Deployment`, name and namespace `ols-patroller`, carrying only
+    `spec.template.spec` with the base container's merge key
+    (`ols-patroller`) and **no** `image:` — the patch is additive and can
+    never drift the image key. It adds exactly: a `deploy-key` volume —
+    `secretName: ols-patroller-deploy-key`, `defaultMode: 0440`; its
+    read-only mount at `/wiki-deploy-key` on the patrol container; and the
+    one literal env entry `GIT_SSH_COMMAND: ssh -i /wiki-deploy-key/id_ed25519
+    -o StrictHostKeyChecking=accept-new`. `GIT_SSH_COMMAND` is not secret
+    material (rule 10's literal ban covers only the Secret-sourced keys); it
+    is consumed by git's ssh during the push — `patrol.py` passes the process
+    env through to git unchanged, so no patrol code changes. The `0440` is
+    load-bearing under the SCC (stated in the template's comments): secret
+    volume files mount `root:root` with the volume's `defaultMode`, and the
+    pod runs as an arbitrary UID whose primary GID is 0 (the image's
+    `USER 1001:0` stands under the restricted SCC), so group-read `0440` is
+    exactly what makes the key readable — `0400` would be root-only,
+    `0644` needlessly world-readable — and OpenSSH's too-open check fires
+    only for files owned by the calling uid, so the root-owned key passes
+    it [DONE: #39].
+16b. The same template documents the fully pinned variant as commented
+    lines: a `known_hosts` entry added to the deploy-key Secret and the
+    `GIT_SSH_COMMAND` form with `StrictHostKeyChecking=yes -o
+    UserKnownHostsFile=/wiki-deploy-key/known_hosts`. TOFU (`accept-new`)
+    is the committed default posture; pinning is the hardened alternative
+    [DONE: #39].
+16c. **The opt-in procedure** (ADR
+    `decisions/0012-opt-in-deploy-key-wiring.md`):
+    1. generate an ed25519 key pair for the wiki remote;
+    2. register the public key with the git host as a **write** deploy key
+       on the wiki repo;
+    3. create the Secret server-side only — `oc -n ols-patroller create
+       secret generic ols-patroller-deploy-key --from-file=id_ed25519=<path>`
+       — never as a committed or gitignored manifest (the patch references
+       it by name; a missing Secret then blocks pod creation visibly,
+       fail-loudly, rather than silently skipping replication);
+    4. `cp manifests/deploy-key-patch.yaml.example
+       manifests/deploy-key-patch.yaml` (gitignored like `secret.yaml`)
+       and add one entry to `kustomization.yaml`: `patches: [{path:
+       deploy-key-patch.yaml}]`;
+    5. set `PATROL_WIKI_REMOTE` to the SSH remote (e.g.
+       `git@github.com:you/cluster-wiki.git`) in the patrol Secret;
+    6. `oc apply -k manifests/` [DONE: #39].
+16d. `README.md`'s in-cluster deployment section (a `## Deploy in-cluster`
+    heading with a `### Remote wiki replication (optional)` subsection)
+    documents the procedure end-to-end and self-sufficiently — an operator
+    can enable replication from the README plus the committed templates
+    alone, with no reference to `.ai/spec/` [DONE: #39].
 
 ### Acceptance (done-when)
 
@@ -176,7 +233,14 @@ layer 3 (RBAC boundary) real, and what the CI-published image
        across the restart);
     6. updating after a merge: `oc apply -k manifests/ && oc -n ols-patroller
        rollout restart deployment/ols-patroller` (the rolling `:main` tag —
-       an unchanged template alone does not restart the running pod).
+       an unchanged template alone does not restart the running pod);
+    7. optional, with the deploy-key wiring enabled (rule 16c): the next
+       patrol's push lands — the remote's copy of the wiki advances one
+       commit. Verify in the git host's web view (the patrol pushes to the
+       raw `PATROL_WIKI_REMOTE` URL — no `origin` remote is configured in
+       the wiki repo — so there is no remote-tracking ref to `git log` in
+       the pod; `git ls-remote <remote-url>` from anywhere shows the remote
+       head) [DONE: #39].
 
 ## Configuration Surface
 
@@ -191,6 +255,12 @@ layer 3 (RBAC boundary) real, and what the CI-published image
   env trio setting `safe.directory=/wiki` for in-container git (rule 10b)
 - Secret keys — required `PATROL_API_KEY`, `PATROL_BASE_URL`,
   `PATROL_MODEL`; optional `SLACK_WEBHOOK_URL`, `PATROL_WIKI_REMOTE` (rule 14)
+- `manifests/deploy-key-patch.yaml.example` — committed template for the
+  optional remote-push patch; the operator's gitignored
+  `deploy-key-patch.yaml` copy + the `patches:` entry in their
+  `kustomization.yaml` are the opt-in (rules 16a, 16c) [DONE: #39]
+- `GIT_SSH_COMMAND` — literal env added by the opt-in patch; consumed by
+  git's ssh, not by `patrol.py` (rule 16a) [DONE: #39]
 - `.github/workflows/image.yml` — the CI that publishes the deployed image
   and retags published `v*` releases onto the matching `sha-<SHA>` image
   (`container-image.md` rules 13–18)
@@ -210,6 +280,11 @@ layer 3 (RBAC boundary) real, and what the CI-published image
 - Pulling `ghcr.io/thoraxe/ols-patroller` requires the GHCR package public
   (one-time flip) or an image pull secret patched in — the base manifests
   assume public and set no `imagePullSecrets`.
+- Remote-push wiring stays opt-in (rule 16, ADR 0012): the base manifests
+  never reference it; enabling it is a copy-and-edit procedure. The push
+  itself remains best-effort and local-first (`wiki-memory.md` rule 4e) —
+  the wiring changes where commits replicate, never whether a patrol
+  succeeds [DONE: #39].
 - PoC grade applies (`constraints.md` rule 6): no NetworkPolicy, no probes
   (no HTTP surface; the loop self-heals via Deployment restarts), no
   monitoring/telemetry wiring, no priority class. The human surface
@@ -227,3 +302,4 @@ layer 3 (RBAC boundary) real, and what the CI-published image
 | ~~#24~~ | `PYTHONUNBUFFERED=1` literal env — unbuffered stdout for pod-log visibility (rule 10a) |
 | ~~#25~~ | Default cadence 6 h: args `--interval 21600` (rule 9), with the image CMD (`container-image.md` rule 9) and the `patrol.py` env default kept identical |
 | ~~#28~~ | `GIT_CONFIG_*` safe.directory trio — `oc exec` git access to `/wiki` works un-flagged (rule 10b) |
+| ~~#39~~ | Deploy-key wiring: committed `deploy-key-patch.yaml.example` (rules 16a–16b), gitignored copy + `patches:` opt-in (rule 16c), README in-cluster deployment section (rule 16d) |

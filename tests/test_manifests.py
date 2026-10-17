@@ -9,7 +9,8 @@ End-to-end acceptance (``oc apply -k`` on a dev cluster, patrol completes,
 wiki persists across pod restarts) is a documented procedure —
 .ai/spec/what/in-cluster-deployment.md rule 17 — not part of this suite.
 
-Contract: .ai/spec/what/in-cluster-deployment.md [PLANNED: #2].
+Contract: .ai/spec/what/in-cluster-deployment.md [PLANNED: #2]
+[deploy-key wiring: rules 16a-16d, PLANNED: #39].
 
 Run: uv run --group dev pytest tests/ -q
 """
@@ -27,6 +28,8 @@ KUSTOMIZATION = MANIFESTS / "kustomization.yaml"
 NAMESPACE = "ols-patroller"
 PVC_NAME = "ols-patroller-wiki"
 IMAGE_KEY = "ols-patroller"
+DEPLOY_KEY_SECRET = "ols-patroller-deploy-key"
+DEPLOY_KEY_PATCH_EXAMPLE = MANIFESTS / "deploy-key-patch.yaml.example"
 
 # Secret-sourced env keys (rule 10) — never literal in committed manifests.
 SECRET_ENV_KEYS = {
@@ -130,11 +133,20 @@ def test_no_extra_files_in_manifests_dir():
     assert MANIFESTS.exists(), (
         "manifests/ must exist (.ai/spec/what/in-cluster-deployment.md, #2)"
     )
-    allowed = EXPECTED_RESOURCES | {"kustomization.yaml", "secret.yaml.example"}
+    allowed = EXPECTED_RESOURCES | {
+        "kustomization.yaml",
+        "secret.yaml.example",
+        # #39: the deploy-key patch template (committed, rule 16a) and the
+        # operator's gitignored copy (rule 16c) — templates/copies, not
+        # resources.
+        "deploy-key-patch.yaml.example",
+        "deploy-key-patch.yaml",
+    }
     names = {p.name for p in MANIFESTS.glob("*") if p.is_file()}
     assert names <= allowed, (
         f"manifests/ may contain only kustomization.yaml, the six resources "
-        f"and the secret.yaml.example template (rule 1), got extra: "
+        f"and the .example templates, plus the gitignored operator copies "
+        f"(secret.yaml, deploy-key-patch.yaml) (rule 1), got extra: "
         f"{sorted(names - allowed)}"
     )
 
@@ -473,3 +485,253 @@ def test_base_has_no_deploy_key_dependency():
             f"the base Deployment must not reference deploy-key wiring "
             f"({needle!r}) — oc apply -k stays self-contained (rule 16)"
         )
+
+
+# ------------------------------------------------- deploy key wiring (rules 16a-16d) [#39]
+
+
+def _deploy_key_patch() -> dict:
+    assert DEPLOY_KEY_PATCH_EXAMPLE.exists(), (
+        "manifests/deploy-key-patch.yaml.example must be committed as the "
+        "deploy-key patch template (rule 16a, #39)"
+    )
+    return yaml.safe_load(DEPLOY_KEY_PATCH_EXAMPLE.read_text())
+
+
+def _deploy_key_pod_spec() -> dict:
+    return _deploy_key_patch()["spec"]["template"]["spec"]
+
+
+def test_deploy_key_patch_is_additive_partial_deployment():
+    # Rule 16a (#39): a strategic-merge patch over the base Deployment —
+    # additive only, carrying the base container's merge key and no image.
+    doc = _deploy_key_patch()
+    assert doc.get("apiVersion") == "apps/v1", "must target apps/v1 (rule 16a)"
+    assert doc.get("kind") == "Deployment"
+    assert doc["metadata"]["name"] == NAMESPACE, (
+        "the patch must target the base Deployment by name (rule 16a)"
+    )
+    assert doc["metadata"]["namespace"] == NAMESPACE, (
+        "the patch must carry the literal namespace (rule 2)"
+    )
+    assert set(doc["spec"]) == {"template"}, (
+        "the patch must be additive — nothing at spec level beyond template "
+        "(rule 16a)"
+    )
+    assert set(doc["spec"]["template"]) == {"spec"}
+    ps = _deploy_key_pod_spec()
+    assert set(ps) == {"containers", "volumes"}, (
+        "the patch must touch only containers and volumes (rule 16a)"
+    )
+    c = ps["containers"][0]
+    assert c["name"] == "ols-patroller", (
+        "the patch must carry the base container's merge key 'ols-patroller' "
+        "— strategic merge keys on name (rule 16a)"
+    )
+    assert set(c) == {"name", "env", "volumeMounts"}, (
+        "the patch container entry must be name + env + volumeMounts only "
+        "(rule 16a)"
+    )
+    assert "image" not in c, (
+        "the patch must never carry the image key — it can never drift the "
+        "kustomize image override (rule 16a)"
+    )
+
+
+def test_deploy_key_patch_mounts_secret_readonly_0440():
+    # Rule 16a (#39): the deploy-key Secret volume, read-only, mode 0440 —
+    # group-read for the arbitrary-UID GID-0 pod (the rule's rationale).
+    ps = _deploy_key_pod_spec()
+    vols = ps["volumes"]
+    assert len(vols) == 1, "the patch adds exactly one volume (rule 16a)"
+    v = vols[0]
+    assert v["name"] == "deploy-key"
+    assert v["secret"]["secretName"] == DEPLOY_KEY_SECRET, (
+        f"the deploy-key volume must reference the {DEPLOY_KEY_SECRET} "
+        f"Secret (rule 16a)"
+    )
+    assert v["secret"]["defaultMode"] == 0o440, (
+        "defaultMode must be octal 0440 — group-read for the GID-0 pod; "
+        "0400 would be root-only, 0644 needlessly world-readable (rule 16a)"
+    )
+    c = ps["containers"][0]
+    mounts = c["volumeMounts"]
+    assert len(mounts) == 1, "the patch adds exactly one mount (rule 16a)"
+    assert mounts[0] == {
+        "name": "deploy-key",
+        "mountPath": "/wiki-deploy-key",
+        "readOnly": True,
+    }, "the deploy-key mount: /wiki-deploy-key, read-only (rule 16a)"
+
+
+def test_deploy_key_patch_sets_git_ssh_command_tofu():
+    # Rule 16a (#39): the one literal env entry, TOFU host-key posture.
+    env = _deploy_key_pod_spec()["containers"][0]["env"]
+    assert {e["name"] for e in env} == {"GIT_SSH_COMMAND"}, (
+        "the patch's env must be exactly GIT_SSH_COMMAND — additive, never "
+        "redefining base env entries (rule 16a)"
+    )
+    value = env[0]["value"]
+    assert "-i /wiki-deploy-key/id_ed25519" in value, (
+        "GIT_SSH_COMMAND must point at the mounted key (rule 16a)"
+    )
+    assert "StrictHostKeyChecking=accept-new" in value, (
+        "the committed default is TOFU accept-new (rule 16a; the pinned "
+        "variant is rule 16b)"
+    )
+
+
+def test_deploy_key_patch_documents_pinned_host_key_variant():
+    # Rule 16b (#39): the fully pinned variant lives in the template as
+    # commented lines.
+    _deploy_key_patch()  # asserts the template exists with the right message
+    raw = DEPLOY_KEY_PATCH_EXAMPLE.read_text()
+    for needle in (
+        "known_hosts",
+        "StrictHostKeyChecking=yes",
+        "UserKnownHostsFile=/wiki-deploy-key/known_hosts",
+    ):
+        assert needle in raw, (
+            f"the template must document the pinned host-key variant "
+            f"({needle!r}, rule 16b)"
+        )
+
+
+def test_base_kustomization_has_no_patches_or_deploy_key():
+    # Rule 16 (#39): the COMMITTED kustomization carries no patches entry —
+    # the wiring is opt-in; the base apply stays self-contained. Scoped to
+    # the HEAD blob, not the working tree: rule 16c step 4 edits the tracked
+    # kustomization (it cannot be gitignored like secret.yaml / the patch
+    # copy), and an operator who has opted in still sees the suite pass
+    # locally — the contract governs what this repo commits.
+    committed = subprocess.run(
+        ["git", "show", "HEAD:manifests/kustomization.yaml"], cwd=REPO,
+        capture_output=True, text=True, check=True,
+    ).stdout
+    k = yaml.safe_load(committed)
+    assert "patches" not in k, (
+        "the committed kustomization must carry no patches: entry — the "
+        "deploy-key patch is the operator's opt-in (rule 16)"
+    )
+    for needle in ("deploy-key", "GIT_SSH_COMMAND", "id_ed25519"):
+        assert needle not in committed, (
+            f"the base kustomization must not reference deploy-key wiring "
+            f"({needle!r}) — oc apply -k stays self-contained (rule 16)"
+        )
+
+
+def test_deploy_key_patch_copy_is_gitignored():
+    # Rule 16c (#39): the operator's copied-in patch is gitignored like
+    # secret.yaml — real wiring never commits.
+    gitignore = (REPO / ".gitignore").read_text()
+    assert re.search(r"^manifests/deploy-key-patch\.yaml\s*$", gitignore, re.M), (
+        ".gitignore must ignore manifests/deploy-key-patch.yaml — the "
+        "operator's copy is never committed (rule 16c)"
+    )
+    tracked = subprocess.run(
+        ["git", "ls-files", "manifests/"], cwd=REPO,
+        capture_output=True, text=True, check=True,
+    ).stdout.split()
+    assert "manifests/deploy-key-patch.yaml" not in tracked, (
+        "manifests/deploy-key-patch.yaml must never be tracked (rule 16c)"
+    )
+
+
+def test_secret_template_points_at_deploy_key_wiring():
+    # Rule 14 (#39): the PATROL_WIKI_REMOTE placeholder shows the SSH form
+    # and cross-references the patch template.
+    raw = (MANIFESTS / "secret.yaml.example").read_text()
+    line = next(
+        (ln for ln in raw.splitlines()
+         if re.match(r"^\s*#\s*PATROL_WIKI_REMOTE\s*:", ln)),
+        "",
+    )
+    assert line, (
+        "the template must document PATROL_WIKI_REMOTE as a commented-out "
+        "key line (rule 14)"
+    )
+    assert "git@" in line, (
+        "the PATROL_WIKI_REMOTE placeholder must show the SSH-remote form "
+        "(rule 14, #39)"
+    )
+    assert "deploy-key-patch.yaml.example" in raw, (
+        "the Secret template must point at the deploy-key patch template "
+        "(rule 14, #39)"
+    )
+
+
+def test_readme_documents_deploy_key_procedure():
+    # Rule 16d (#39): the README's in-cluster deployment section carries the
+    # procedure end-to-end, self-sufficiently.
+    readme = (REPO / "README.md").read_text()
+    assert re.search(r"^## Deploy in-cluster\s*$", readme, re.M), (
+        "README.md must have a 'Deploy in-cluster' section (rule 16d, #39)"
+    )
+    assert re.search(r"^### Remote wiki replication", readme, re.M), (
+        "the README must carry the optional remote-replication subsection "
+        "(rule 16d, #39)"
+    )
+    for needle in (
+        "ssh-keygen",
+        DEPLOY_KEY_SECRET,
+        "deploy-key-patch.yaml.example",
+        "patches:",
+        "PATROL_WIKI_REMOTE",
+        "git@",
+    ):
+        assert needle in readme, (
+            f"the README deploy-key procedure must mention {needle!r} "
+            f"(rule 16d, #39)"
+        )
+
+
+def test_deploy_key_patch_comments_state_0440_rationale():
+    # Rule 16a (#39): the 0440/SCC rationale is stated in the template's
+    # comments — the example teaches the operator, not just the machine.
+    _deploy_key_patch()  # asserts the template exists with the right message
+    raw = DEPLOY_KEY_PATCH_EXAMPLE.read_text()
+    assert "0440" in raw, (
+        "the template's comments must explain the 0440 mode (rule 16a)"
+    )
+    assert "root:root" in raw, (
+        "the template's comments must state the root:root ownership of "
+        "secret volume files (rule 16a)"
+    )
+    assert re.search(r"(?i)\bgid\b", raw), (
+        "the template's comments must state the GID-0 mechanism (rule 16a)"
+    )
+    assert re.search(r"(?i)\buid\b", raw), (
+        "the template's comments must state the arbitrary-UID mechanism "
+        "(rule 16a)"
+    )
+
+
+def test_readme_deploy_section_is_self_sufficient():
+    # Rule 16d (#39): the README section never references .ai/spec/ — an
+    # operator enables replication from the README plus the committed
+    # templates alone.
+    readme = (REPO / "README.md").read_text()
+    m = re.search(
+        r"^## Deploy in-cluster\s*$\n(.*?)(?=^## |\Z)", readme, re.M | re.S
+    )
+    assert m, (
+        "README.md must have a 'Deploy in-cluster' section (rule 16d, #39)"
+    )
+    assert ".ai/spec" not in m.group(1), (
+        "the README deploy section must not reference .ai/spec/ — "
+        "self-sufficient operator docs (rule 16d, #39)"
+    )
+
+
+def test_secret_env_keys_in_example_templates_are_comments_only():
+    # Rule 15 (#39): secret env key names may appear in the deploy-key
+    # template's comments, never as uncommented assignments with values.
+    _deploy_key_patch()  # asserts the template exists with the right message
+    raw = DEPLOY_KEY_PATCH_EXAMPLE.read_text()
+    for ln in raw.splitlines():
+        hit = next((k for k in SECRET_ENV_KEYS if k in ln), None)
+        if hit:
+            assert ln.lstrip().startswith("#"), (
+                f"{hit} may appear in the .example template only in comments "
+                f"(rule 15), got: {ln.strip()!r}"
+            )

@@ -53,7 +53,9 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
 12b. **In-cluster deployment** — kustomize manifests (`manifests/`):
      ServiceAccount bound to the built-in `cluster-reader`, RWO PVC at `/wiki`,
      single-replica non-root Deployment running `--loop --interval 21600`,
-     Secret-sourced env; merges to `main` build and publish the image to GHCR,
+     Secret-sourced env, optional deploy-key remote-push wiring (committed
+     example patch, opt-in copy) [DONE: #39]; merges to `main` build and
+     publish the image to GHCR,
      and published `v*` releases retag the matching `sha-<SHA>` image with the
      release tag
      (`container-image.md` rules 13–18) [DONE: #2] [DONE: #25]
@@ -100,7 +102,9 @@ Environment variables:
 - `PATROL_CLUSTER_ID` — cluster identity for wiki commit emails (default `local`)
   [DONE: #3]
 - `PATROL_WIKI_REMOTE` — if set, wiki commits are pushed to this git remote
-  (best-effort, bounded; the local commit is the source of truth) [DONE: #3]
+  (best-effort, bounded; the local commit is the source of truth) [DONE: #3];
+  in-cluster, the SSH form rides the optional deploy-key wiring
+  (`in-cluster-deployment.md` rules 16a–16d [DONE: #39])
 
 CLI flags: `--once` (default), `--loop`, `--interval`, `--dry-cluster`, `--wiki`
 (default `wiki/cluster-wiki.md` next to `patrol.py` [DONE: #3; was
@@ -134,6 +138,6 @@ documents). Milestone shape:
 | Ticket | Summary |
 |---|---|
 | v0.1 (#1–#4, #9, #11, #24, #25, #27, #28) | In-cluster: Containerfile, manifests (SA + cluster-reader + PVC + Deployment), git-backed wiki, e2e tests in-repo, deployment defaults & observability (6 h cadence, unbuffered + verbose logs, git-safe `/wiki`), guard `--raw` refusal, notification dedup |
-| v0.2 (#5–#8, #20) | Compounding wiki: skeleton schema + validation-on-write, per-entry recheck commands, `stale_after` expiry, `--wiki-stats`, efficient-sweep guidance |
+| v0.2 (#5–#8, #20, #39, #40) | Compounding wiki: skeleton schema + validation-on-write, per-entry recheck commands, `stale_after` expiry, `--wiki-stats`, efficient-sweep guidance, deploy-key remote-push wiring, wiki length budget |
 | v0.3 (#10, #9 digest) | Operational hardening: cost control, periodic digest reminder for long-unfixed entries |
-| future (#12–#16) | Remediation handoff to AgenticRuns, fleet/multicluster, CRD dispatcher, pluggable investigation engine, MCP-memory decision record |
+| future (#12–#16, #41) | Remediation handoff to AgenticRuns, fleet/multicluster, CRD dispatcher, pluggable investigation engine, MCP-memory decision record, external runbook referencing |
