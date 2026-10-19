@@ -13,3 +13,7 @@ wiki/
 
 # in-cluster patrol Secret (#2) — real credentials are never committed
 manifests/secret.yaml
+
+# operator's copy of the deploy-key patch template (#39) — opt-in wiring,
+# never committed (rule 16c)
+manifests/deploy-key-patch.yaml

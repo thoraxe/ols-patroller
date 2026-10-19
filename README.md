@@ -122,6 +122,87 @@ truth). If git is unavailable, the patroller degrades to file-only.
 | `PATROL_CLUSTER_ID` | `local` | cluster identity for wiki commit emails (`patrol@<id>`) |
 | `PATROL_WIKI_REMOTE` | — | if set, wiki commits are pushed there (best-effort replication) |
 
+## Deploy in-cluster
+
+The manifests in [`manifests/`](manifests/) deploy the patrol as a single-replica
+Deployment on the cluster it watches (OpenShift with `oc`, or any Kubernetes with
+`kubectl`):
+
+```bash
+cp manifests/secret.yaml.example manifests/secret.yaml   # fill in the values
+oc apply -k manifests/
+```
+
+`secret.yaml` is gitignored — real credentials are never committed — and the
+kustomization lists it, so the apply fails loudly until you create it. The pod
+runs read-only (ServiceAccount bound to the built-in `cluster-reader`), keeps
+its wiki on a PVC at `/wiki`, and needs the image pullable from
+`ghcr.io/thoraxe/ols-patroller` (flip the GHCR package to public once, or edit
+the `images:` entry in `kustomization.yaml` to a registry your cluster pulls).
+
+Check it worked:
+
+```bash
+oc auth can-i get pods -A --as=system:serviceaccount:ols-patroller:ols-patroller   # yes
+oc -n ols-patroller logs deploy/ols-patroller                                      # patrol output
+oc -n ols-patroller exec deploy/ols-patroller -- git -C /wiki log --oneline       # wiki commits
+```
+
+### Remote wiki replication (optional)
+
+The wiki replicates off-cluster if `PATROL_WIKI_REMOTE` is set in the patrol
+Secret (best-effort: the push never blocks a patrol; the local repo on the PVC
+is the source of truth). For an SSH remote (e.g.
+`git@github.com:you/cluster-wiki.git`) the push needs a deploy key — wired in
+as an opt-in patch, so the base manifests stay self-contained (`oc apply -k`
+works with zero git wiring):
+
+1. Generate an ed25519 key pair for the wiki remote:
+
+   ```bash
+   ssh-keygen -t ed25519 -f wiki-deploy-key -C ols-patroller-wiki -N ""
+   ```
+
+2. Register the public key (`wiki-deploy-key.pub`) with your git host as a
+   **write** deploy key on the wiki repo.
+
+3. Create the Secret server-side only — never as a committed or gitignored
+   manifest. The patch references it by name, so a missing Secret blocks pod
+   creation visibly rather than silently skipping replication:
+
+   ```bash
+   oc -n ols-patroller create secret generic ols-patroller-deploy-key \
+     --from-file=id_ed25519=wiki-deploy-key
+   ```
+
+4. Copy the committed patch template in and enable it — the copy is gitignored
+   (like `secret.yaml`):
+
+   ```bash
+   cp manifests/deploy-key-patch.yaml.example manifests/deploy-key-patch.yaml
+   ```
+
+   and add one entry to your `manifests/kustomization.yaml`:
+
+   ```yaml
+   patches:
+     - path: deploy-key-patch.yaml
+   ```
+
+5. Set `PATROL_WIKI_REMOTE` to the SSH remote in `manifests/secret.yaml` —
+   uncomment the `PATROL_WIKI_REMOTE` line and point it at your repo, e.g.
+   `git@github.com:you/cluster-wiki.git`.
+
+6. Re-apply: `oc apply -k manifests/`.
+
+The patch mounts the key read-only at `/wiki-deploy-key` (mode `0440` — the
+non-root pod reads it via group-read; the template's comments explain why) and
+sets `GIT_SSH_COMMAND` to use it with `StrictHostKeyChecking=accept-new`
+(trust-on-first-use). To pin the host key instead, see the commented
+`known_hosts` variant in `deploy-key-patch.yaml.example`. Verify replication by
+watching the remote's copy advance one commit per patrol — `git ls-remote
+<remote-url>` from anywhere shows the remote head.
+
 ## Smoke-test results (2026-10-13, dry-cluster)
 
 Raw-requests engine, GLM 5.3:

@@ -1,0 +1,70 @@
+# In-cluster deployment (#39) — TEMPLATE for the optional deploy-key patch.
+# Contract: .ai/spec/what/in-cluster-deployment.md rules 16a-16c.
+#
+# This is a kustomize strategic-merge patch over the base Deployment. It is
+# ADDITIVE: it carries only spec.template.spec, keys the container on the base
+# container's merge key (name: ols-patroller), and never sets `image:` — the
+# kustomization's `images:` override stays the single image override point
+# (rule 8), so the patch can never drift it.
+#
+# Procedure (rule 16c): copy this file to deploy-key-patch.yaml (gitignored,
+# like secret.yaml), add the entry below to your kustomization.yaml:
+#
+#   patches:
+#     - path: deploy-key-patch.yaml
+#
+# then create the Secret server-side (never as a manifest) and re-apply:
+#
+#   oc -n ols-patroller create secret generic ols-patroller-deploy-key \
+#     --from-file=id_ed25519=<path-to-private-key>
+#   oc apply -k manifests/
+#
+# The Secret is referenced here by name only — the base manifests stay
+# self-contained, and a referenced-but-missing Secret blocks pod creation
+# visibly (fail-loudly) rather than silently skipping replication.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ols-patroller
+  namespace: ols-patroller
+spec:
+  template:
+    spec:
+      containers:
+        - name: ols-patroller
+          env:
+            # The one literal env entry this patch adds (rule 16a): git's ssh
+            # picks GIT_SSH_COMMAND out of the process env; patrol.py passes
+            # its env through to git unchanged, so no patrol code changes.
+            # TOFU (`accept-new`) is the committed default host-key posture;
+            # the fully pinned variant is documented below (rule 16b).
+            - name: GIT_SSH_COMMAND
+              value: "ssh -i /wiki-deploy-key/id_ed25519 -o StrictHostKeyChecking=accept-new"
+          volumeMounts:
+            - name: deploy-key
+              mountPath: /wiki-deploy-key
+              readOnly: true
+      volumes:
+        - name: deploy-key
+          secret:
+            secretName: ols-patroller-deploy-key
+            # 0440 is load-bearing under the restricted SCC (rule 16a):
+            # secret volume files mount root:root with the volume's
+            # defaultMode, and the pod runs as an arbitrary UID whose primary
+            # GID is 0 (the image's `USER 1001:0` stands under the SCC), so
+            # group-read 0440 is exactly what makes the key readable —
+            # 0400 would be root-only, 0644 needlessly world-readable.
+            # OpenSSH's too-open check fires only for files owned by the
+            # calling uid, so the root-owned key passes it.
+            defaultMode: 0440
+
+# Fully pinned host-key variant (rule 16b) — the hardened alternative to the
+# TOFU default above. Add a `known_hosts` entry to the deploy-key Secret:
+#
+#   oc -n ols-patroller create secret generic ols-patroller-deploy-key \
+#     --from-file=id_ed25519=<key> --from-file=known_hosts=<known_hosts>
+#
+# and use this GIT_SSH_COMMAND value instead:
+#
+#   - name: GIT_SSH_COMMAND
+#     value: "ssh -i /wiki-deploy-key/id_ed25519 -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/wiki-deploy-key/known_hosts"

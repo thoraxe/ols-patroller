@@ -60,10 +60,16 @@ redefined here.
   (#36).
 - **cluster-reader** — built-in OpenShift ClusterRole (94 rules, zero Secret access)
   planned as the patrol pod's RBAC boundary in-cluster (#2).
+- **Deploy key** — an SSH key pair registered with the git host (write access
+  to one repo) whose private half lives in a server-side cluster Secret; the
+  optional remote-push wiring (#39) mounts it read-only and points
+  `GIT_SSH_COMMAND` at it. Opt-in and local-first: the push stays best-effort
+  either way.
 - **Severity** — finding vocabulary: `info` (note/baseline/expected), `warn`
   (drift/degradation/suspicious), `crit` (broken, needs a human now).
 - **Milestones** — v0.1 in-cluster (#1–#4, #9, #11, #24, #25, #27, #28), v0.2
-  compounding wiki (#5–#8, #20), v0.3 operational hardening (#10 plus #9's
-  digest), future (#12–#16). Plans live in GitHub issues; #9/#11 were promoted
-  into v0.1 and #20 slotted into v0.2 after the first in-cluster acceptance
-  run (PR #29 discussion).
+  compounding wiki (#5–#8, #20, #39, #40), v0.3 operational hardening (#10
+  plus #9's digest), future (#12–#16, #41). Plans live in GitHub issues;
+  #9/#11 were promoted into v0.1 and #20 slotted into v0.2 after the first
+  in-cluster acceptance run (PR #29 discussion); #39–#41 were filed from the
+  #5 spec review (PR #38 discussion).
