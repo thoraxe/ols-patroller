@@ -93,6 +93,7 @@ WIKI_FRONTMATTER_KEYS = ("wiki_version", "cluster_id", "patrol_count", "last_pat
 WIKI_ENTRY_KEYS = ("id", "status", "first_seen", "last_verified", "source", "confidence")
 WIKI_ENTRY_STATUSES = ("watching", "resolved", "expired")
 WIKI_ENTRY_CONFIDENCES = ("high", "medium", "low")
+WIKI_ENTRY_RECHECK = "recheck"  # the recheck metadata key (rule 12a, #6)
 
 READONLY_VERBS = {
     "get", "describe", "logs", "top", "version", "api-resources",
@@ -116,6 +117,9 @@ Your patrol, in order:
 1. Map how the cluster is deployed and wired (topology): operators, key workloads, namespaces,
    how major pieces connect. Prefer a broad sweep first, then drill into anything suspicious.
 2. Compare what you see against the WIKI. Note drift, new/removed components, anomalies.
+   Watch-list entries carry a `recheck:` command — the read-only invocation that
+   re-verifies the entry. Run an entry's recheck FIRST when re-checking it, and
+   rewrite a recheck whose verification path has changed (keep it current).
 3. Decide what a human should actually care about (don't cry wolf).
 4. Produce an UPDATED wiki and a refined watch-list for the next patrol.
 
@@ -244,10 +248,19 @@ def fixture_for(args: list[str]) -> str:
             f"variations of this command.")
 
 
-def kubectl_readonly(arg_string: str, *, kubectl: str, dry: bool, verbose: bool) -> str:
-    """The ONLY tool the model gets. Read-only enforcement is the safety boundary."""
+def guard_refusal(command: str) -> str | None:
+    """The guard's pre-execution refusal grammar (kubectl-guard.md rules 2-6a):
+    parseability, non-empty, verb whitelist, secret-value protection, raw-path
+    refusal. Returns the REFUSED message for a command the guard would refuse,
+    None for one it accepts. Pure — no I/O, nothing executed.
+
+    Single source of truth for "a command kubectl_readonly accepts"
+    (ADR 0013): the wiki validator judges `recheck` citations with this same
+    predicate (wiki-memory.md rule 12a), never by executing them.
+    kubectl_readonly delegates its refusals here; behavior is unchanged.
+    """
     try:
-        args = shlex.split(arg_string)
+        args = shlex.split(command)
     except ValueError as e:
         return f"REFUSED: could not parse command ({e})"
     if not args:
@@ -270,6 +283,15 @@ def kubectl_readonly(arg_string: str, *, kubectl: str, dry: bool, verbose: bool)
         return ("REFUSED: --raw paths are off-limits. They dump high-volume output "
                 "that truncates. Use typed read commands (get/describe/logs/top) "
                 "instead of retrying raw paths.")
+    return None
+
+
+def kubectl_readonly(arg_string: str, *, kubectl: str, dry: bool, verbose: bool) -> str:
+    """The ONLY tool the model gets. Read-only enforcement is the safety boundary."""
+    refusal = guard_refusal(arg_string)
+    if refusal:
+        return refusal
+    args = shlex.split(arg_string)
 
     if verbose:
         print(f"[patrol]   tool: {kubectl} {' '.join(args)}", file=sys.stderr)
@@ -406,6 +428,14 @@ Produce the final PatrolReport for the cluster patrol above:
      Further 'key: value' pairs may follow confidence; no other trailing text.
      The entry's free prose (the natural-language hypothesis) goes on indented
      continuation lines below the metadata line, never on the line itself.
+     Every Watch-list entry's metadata line must also carry a
+     recheck: <command> pair: the exact kubectl_readonly argument string that
+     re-verifies the entry, with no leading kubectl or oc token — the value is
+     everything after the CLI name, e.g. 'recheck: get pods -n demo-app'.
+     The recheck is validated against the guard's refusal grammar (read-only
+     verbs only, no Secret-value reads, no --raw paths), so it must be a
+     command the guard would accept. Anomaly-log entries may carry a recheck
+     too (optional). The recheck lives on the metadata line, never in prose.
   4. Topology, Baselines, and Open questions are free prose — no metadata lines
      there; keep tagging their entries with (source, timestamp, confidence)
      inline and expire stale entries rather than deleting history."""
@@ -591,19 +621,49 @@ def _entry_errors(section: str, line: str, seen_ids: set[str]) -> list[str]:
         if not _is_calendar_date(values.get(date_key)):
             errors.append(f"{section}: entry '{entry_id}' {date_key} must be a valid "
                           f"YYYY-MM-DD date (got {values.get(date_key)!r})")
+    # Rule 12a (#6): the recheck pair. Required (exactly one) on every
+    # Watch-list entry, at most one on an Anomaly-log entry. The prefix check
+    # (tool-argument form) is its own check and runs before the guard-grammar
+    # check so its error names the fix; the grammar itself is the guard's
+    # refusal grammar (guard_refusal, ADR 0013) — judged, never executed.
+    rechecks = [v for k, v in pairs if k == WIKI_ENTRY_RECHECK]
+    if len(rechecks) > 1:
+        errors.append(f"{section}: entry '{entry_id}' carries {len(rechecks)} "
+                      f"{WIKI_ENTRY_RECHECK}: pairs (exactly one allowed)")
+    elif section == "Watch-list" and not rechecks:
+        errors.append(f"{section}: entry '{entry_id}' is missing its "
+                      f"{WIKI_ENTRY_RECHECK}: <command> pair — every Watch-list "
+                      "entry carries the kubectl_readonly argument string that "
+                      "re-verifies it")
+    elif len(rechecks) == 1:
+        value = rechecks[0]
+        first = value.split()
+        if first and first[0] in ("kubectl", "oc"):
+            errors.append(f"{section}: entry '{entry_id}' recheck must be in "
+                          f"tool-argument form — drop the leading '{first[0]}' "
+                          "(the value is everything after the kubectl/oc CLI name)")
+        else:
+            refusal = guard_refusal(value)
+            if refusal:
+                errors.append(f"{section}: entry '{entry_id}' recheck was refused "
+                              f"by the guard: {refusal}")
     return errors
 
 
 def validate_wiki(content: str) -> list[str]:
-    """Rule 15: validate a wiki document against the skeleton (rules 10-12).
+    """Rule 15: validate a wiki document against the skeleton (rules 10-12
+    plus the recheck pair of rule 12a, #6).
 
     Returns human-readable validation errors; an empty list means valid. Pure —
     no I/O, no model calls. Checks exactly the skeleton: frontmatter block,
     closed key set, types, wiki_version; the five canonical sections exactly
     once each and no other level-2 headings; every top-level list item in
     Watch-list and Anomaly log a well-formed metadata line with valid
-    vocabularies, date formats, and unique ids. Prose, section order, other
-    heading levels, prose-section list items, fenced code blocks, and the
+    vocabularies, date formats, and unique ids — plus exactly one
+    guard-acceptable recheck pair on every Watch-list entry and at most one on
+    an Anomaly-log entry, judged with the guard's refusal grammar
+    (guard_refusal — shared code, never an execution). Prose, section order,
+    other heading levels, prose-section list items, fenced code blocks, and the
     values of the process-stamped fields are not judged.
     """
     split = _split_frontmatter(content)

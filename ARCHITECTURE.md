@@ -82,8 +82,11 @@ process-stamped after validation — never model-trusted — plus entry metadata
 (`id · status · first_seen · last_verified · source · confidence`) in Watch-list and
 Anomaly log; each patrol's rewrite is checked by `validate_wiki` before it may replace
 memory, gets one model-facing repair pass, and otherwise the old wiki stands while the
-patrol's findings still deliver (`.ai/spec/decisions/0011`). Planned next (v0.2):
-per-entry `recheck:` commands, `stale_after` expiry, and `--wiki-stats` health numbers.
+patrol's findings still deliver (`.ai/spec/decisions/0011`). Since #6 every Watch-list
+entry also carries a guard-bounded `recheck:` command — the exact `kubectl_readonly`
+argument string that re-verifies it, judged by the guard's refusal grammar
+(`.ai/spec/decisions/0013`). Planned next (v0.2): `stale_after` expiry and
+`--wiki-stats` health numbers.
 
 ## Deployment topology (current vs planned)
 
