@@ -14,7 +14,9 @@ redefined here.
   audit trail (#3).
 - **Watch-list** — wiki section holding the refinement loop: rules patrol N writes
   for patrol N+1 (what to re-check, escalate, or expire) — each entry carrying
-  its `recheck` command (#6).
+  its `recheck` command (#6); entries not re-verified within
+  `PATROL_WIKI_STALE_AFTER` accepted writes are auto-expired by the patroller
+  (#7).
 - **Skeleton** — the wiki's machine-checkable structure (#5): YAML frontmatter
   (`wiki_version`, `cluster_id`, `patrol_count`, `last_patrol`), the five canonical
   sections, and the entry metadata line in Watch-list and Anomaly log. Structure
@@ -30,6 +32,16 @@ redefined here.
   Required on Watch-list entries, optional in the Anomaly log, and
   guard-bounded: a valid recheck is a command the guard would accept, never
   refuse (ADR 0013).
+- **`verified_patrol`** — the process-stamped pair on an entry metadata line
+  (#7): the frontmatter `patrol_count` of the accepted write that last
+  verified the entry (the write where its `last_verified` last advanced). The
+  staleness clock's state — maintained by the patroller on every accepted
+  write, never model-trusted, never judged by the validator.
+- **Expiry flip** — the process-enforced retirement of a Watch-list entry
+  whose staleness reached `PATROL_WIKI_STALE_AFTER` (#7): `status` flips to
+  `expired`, the whole item moves to the end of the Anomaly log with an
+  `auto-expired` annotation line — history kept, never deleted; housekeeping
+  logged to the console, never a finding or notification.
 - **Stamp** — the patroller's deterministic post-validation rewrite of the
   process-owned frontmatter fields (`patrol_count`, `last_patrol`, `cluster_id`)
   before the atomic write (#5). Models are unreliable counters; the stamp makes

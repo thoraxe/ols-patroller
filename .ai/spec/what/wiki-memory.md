@@ -76,6 +76,11 @@ knowledge base of the observed cluster.
     stamp → write → commit → push (rule 16); the stamp advances `patrol_count` on
     every accepted write, so the byte-identical case is superseded (rule 17), and
     the e2e gains the repair and keep-old-wiki paths (rules 15–19).]
+    [PLANNED: #7 — the tail becomes validate → repair once → deliver → expire
+    → stamp → write → commit → push, and the e2e gains the expiry wiring: a
+    stale watching entry flips into the Anomaly log on the written wiki, a
+    re-verified entry's clock resets, and each flip logs a console line
+    (rules 20–22).]
 
 ### Format Contract
 
@@ -92,7 +97,10 @@ knowledge base of the observed cluster.
    patrol", "unchanged 18:44") carried forward across patrols. The recheck
    command (rule 12a) is that rule made executable: patrol N+1 runs the entry's
    recheck first when re-verifying it, and rewrites a recheck whose
-   verification path has changed [DONE: #6].
+   verification path has changed [DONE: #6]. [PLANNED: #7 — the loop's expire
+   leg is process-enforced: an entry whose `last_verified` stops advancing for
+   `PATROL_WIKI_STALE_AFTER` accepted writes is auto-expired by the patroller
+   (rules 20–22).]
 
 ### Epistemics
 
@@ -154,7 +162,10 @@ the history #7 expires into) carry per-entry structure; everything else is prose
       the line after the six required keys must consist solely of such
       ` · `-separated pairs — any other trailing text is a validation failure.
       Unknown keys are not judged — `recheck` is the first additional key the
-      validator judges (rule 12a) [DONE: #6].
+      validator judges (rule 12a) [DONE: #6]. A `verified_patrol` pair
+      (#7, rule 20) stays unjudged: it is process-stamped and overwritten
+      wholesale, so the model may copy, drop, or mangle it freely
+      [PLANNED: #7].
     - Free prose is the indented continuation of the list item (sub-bullets
       allowed) — the natural-language hypothesis. Prose is never validated and
       never appears on the metadata line itself: a trailing text after the
@@ -232,17 +243,21 @@ attempt, and then the old wiki wins. Persistence problems degrade, never block.
     guard's refusal grammar through shared code — never by executing the
     command [DONE: #6]. Prose, section order, heading levels other
     than 2, prose-section list items, and the values of the process-stamped
-    fields are not judged. Each error names the element that failed (the
+    fields are not judged [PLANNED: #7 — the per-entry `verified_patrol`
+    clock joins the process-stamped set (rule 20): still never judged,
+    always overwritten]. Each error names the element that failed (the
     missing section, the offending key, the entry missing its recheck).
     Validation is pure: no I/O, no model calls.
 16. **Write path.** After the shape pass, a non-empty `updated_wiki` is validated
     before anything is written:
-    - **valid** → stamp (rule 17) → atomic write → commit → push (rules 4c–4e);
+    - **valid** → expire (rules 20–22) → stamp (rule 17) → atomic write →
+      commit → push (rules 4c–4e) [PLANNED: #7 — the expiry pass runs after
+      the delivery decision resolves, immediately before the stamp];
     - **invalid** → one repair pass (rule 18). If the repaired report's wiki
-      validates, that report is the patrol's final report (stamp → write →
-      commit → push). If the repair is absent, fails, or its wiki is still
-      invalid → keep the old wiki, log a warning to **stderr** (the wiki update
-      was rejected; the previous wiki stands), write/commit/push nothing.
+      validates, that report is the patrol's final report (expire → stamp →
+      write → commit → push). If the repair is absent, fails, or its wiki is
+      still invalid → keep the old wiki, log a warning to **stderr** (the wiki
+      update was rejected; the previous wiki stands), write/commit/push nothing.
     Findings printing and notification run after the validation/repair decision
     resolves — before the physical write — so exactly one report's findings and
     notifications are delivered: the final one (the repaired report on repair
@@ -283,6 +298,103 @@ attempt, and then the old wiki wins. Persistence problems degrade, never block.
     (failed reporting pass) and rule 4b (unusable git): the wiki is memory, not
     the product.
 
+### Stale-entry Expiry
+
+The refinement loop's expire leg, made real [PLANNED: #7]: a watch-list entry
+the model stops re-verifying is retired by the **process**, deterministically
+— stale memory is worse than no memory for an agent whose wiki is hypotheses
+(the OKF/AIX `stale_after` motivation, issue #7). The patroller owns the
+staleness clock the way it owns `patrol_count` (rule 10's rationale: models
+are unreliable counters), so the flip is never the model's job to remember
+and never a validation concern — `verified_patrol` is not judged (rule 15).
+ADR `decisions/0014-process-enforced-stale-entry-expiry.md` records the
+decision and the alternatives (model-judged expiry, duration math, git
+archaeology).
+
+20. **Staleness clock (`verified_patrol`).** Every entry in Watch-list and
+    Anomaly log carries a process-owned `verified_patrol: <int>` pair among
+    the additional pairs of its metadata line (rule 12): the frontmatter
+    `patrol_count` value of the accepted write that last verified the entry.
+    The expiry pass (rule 22) maintains it on every accepted write; the
+    model's value is never trusted — an existing `verified_patrol` pair is
+    overwritten in place, an absent one appended as the line's final pair,
+    and nothing else on the line is touched. For each entry of the wiki about
+    to be written, with P the counter rule 17 is about to stamp (the on-disk
+    wiki's `patrol_count` + 1; a legacy or unparseable frontmatter counts 0):
+    - the id is absent from the old on-disk wiki's metadata sections → P (a
+      new entry is verified by the patrol that wrote it);
+    - `last_verified` is strictly later than the same id's date in the old
+      wiki (both validated `YYYY-MM-DD`, so string order is date order) → P:
+      **advancing `last_verified` is the one verification signal**;
+    - otherwise the old wiki's `verified_patrol` carries unchanged;
+    - the old wiki has no parseable `verified_patrol` for the id (pre-#7 wiki,
+      absent or garbled pair, unparseable old entry) → P: migration grace, so
+      an upgrade never mass-expires.
+    The clock is keyed by entry id across both metadata sections and counts
+    **accepted writes, not patrol starts** — a patrol that writes nothing
+    (empty update, failed report, rejected wiki) advances no clock, exactly
+    as it advances no `patrol_count`. A status flip or a section move by the
+    model does not reset the clock; only verification does — re-opening an
+    old entry as watching without re-verifying it expires it again. Because
+    the signal is date-granular, same-day re-verification at sub-daily
+    cadences does not reset the clock (the date cannot advance within a
+    day): a bounded under-count, at most writes-per-day minus one between
+    resets — N (rule 21) is chosen with cadence in mind (the default 5 at
+    the default 6 h cadence gives ~30 h of grace; at 12 h, ~2.5 days).
+21. **Expiry flip.** With N = `PATROL_WIKI_STALE_AFTER` (Configuration
+    Surface; default 5, non-negative integer; `0` disables the flip — the
+    rule-20 clock is still stamped, so re-enabling resumes with true
+    history), a **Watch-list** entry with `status: watching` whose age
+    `P − verified_patrol` has reached N is auto-expired by the process:
+    - `status` flips to `expired` on the metadata line — the only metadata
+      value the process rewrites besides `verified_patrol`;
+    - the whole list item (metadata line + indented continuation lines)
+      moves **verbatim** to the end of the Anomaly log section — history
+      kept, not silently retained, not deleted (rule 9's audit trail); a
+      `recheck` pair carried along stays valid (rule 12a: optional in the
+      Anomaly log). The Anomaly log's existing content — including a
+      placeholder line — is untouched; if the Watch-list empties, the
+      section stands itemless (rule 11 allows no items; the process never
+      adds prose). Pathological-but-valid shape: a wiki whose Anomaly log
+      ends inside an unclosed code fence (only possible when it is the last
+      section) still appends the item at the section's end, inside the
+      fence — validity and history are preserved; machine-readability of
+      that one item is not (rule 11 makes fenced lines prose, and the
+      process never edits fence lines);
+    - one indented annotation line is appended as the moved item's last
+      continuation line, exactly:
+      `  _auto-expired at patrol {P}: unverified for {age} patrols (stale_after {N})_`
+      with age = P − verified_patrol — the flip explains itself in the
+      document;
+    - the flipped wiki must itself pass `validate_wiki` — the flip preserves
+      everything rule 15 checked (status vocabulary, id uniqueness,
+      Anomaly-log recheck optionality, section structure).
+    Only Watch-list watching entries flip: `resolved`/`expired` entries,
+    Anomaly-log entries (watching ones included — a deliberate model
+    placement), and entries the model itself retired are the model's to
+    manage; the flip is the refinement loop's backstop, not an override of
+    the model's own status choices. Each flip prints one console line
+    (stdout, alongside rule 4d's wiki-commit line) naming the entry id and
+    its unverified-patrol count; expiry never becomes a finding or a
+    notification — it is wiki housekeeping, not a cluster observation (#9's
+    digest is the human surface for long-standing entries).
+22. **The expiry pass.** A pure, deterministic function —
+    `expire_stale_entries(content, old_wiki, patrol_count, stale_after)`,
+    returning the rewritten content plus the list of `(entry id, age)` pairs
+    flipped, in Watch-list item order; no I/O, no model calls, the same
+    fence-aware section/entry scanning as the validator (rule 15). It runs in the write path after the
+    validation/repair decision and the delivery, immediately before the
+    stamp (rule 16): its inputs are the validated wiki and the old on-disk
+    wiki (the clock's carry source — the same basis rule 17 uses for
+    `patrol_count`), and its output is what is stamped, written, committed,
+    and pushed. It runs only on accepted writes (rule 20's clock semantics);
+    empty updates and rejected wikis leave wiki and clocks untouched. The
+    rewrite is minimal: aside from the `verified_patrol` pairs, the flipped
+    entries' status values and location, and the annotation lines, the body
+    is preserved byte-for-byte — prose, section order, item markers, and the
+    frontmatter (the stamp owns the frontmatter, rule 17). The fake-model
+    e2e covers the wiring (rule 4f).
+
 ## Configuration Surface
 
 - `--wiki` — path to the wiki file (default `wiki/cluster-wiki.md` beside
@@ -296,6 +408,13 @@ attempt, and then the old wiki wins. Persistence problems degrade, never block.
 - `WIKI_VERSION` — hard-coded skeleton schema version (1), checked against the
   wiki frontmatter's `wiki_version` (rule 10); not env-configurable
   [DONE: #5]
+- `PATROL_WIKI_STALE_AFTER` — accepted-write threshold for stale-entry
+  expiry (rule 21): a Watch-list entry whose `last_verified` has not advanced
+  for this many accepted writes is flipped to `expired` and moved to the
+  Anomaly log. Non-negative integer, default 5; `0` disables the flip (the
+  `verified_patrol` clock is still stamped); read once at startup, and an
+  unparseable or negative value fails startup with a config error
+  [PLANNED: #7]
 
 ## Constraints
 
@@ -323,5 +442,5 @@ attempt, and then the old wiki wins. Persistence problems degrade, never block.
 | ~~#3~~ | ~~Git-backed wiki: wiki directory is a git repo (init at startup, file-only fallback), atomic write (temp + rename), one commit per wiki-changing patrol (`patrol N: X findings, Y warn`), optional `PATROL_WIKI_REMOTE` push — bounded, best-effort, local-first~~ |
 | ~~#5~~ | Skeleton schema + validation-on-write (rules 10–19): YAML frontmatter (`wiki_version` == 1, `cluster_id`, `patrol_count`, `last_patrol` — the last three process-stamped on write), fixed section set enforced exactly-once, entry metadata line (`id`, `status` watching/resolved/expired, `first_seen`, `last_verified`, `source`, `confidence` high/medium/low) in Watch-list + Anomaly log, `validate_wiki` gate with one shape-pass repair retry else keep-old-wiki; PyYAML joins the runtime deps (ADR 0011). Impl commit also syncs `ARCHITECTURE.md`'s wiki prose ("Planned next" paragraph) and `AGENTS.md`'s test list |
 | ~~#6~~ | ~~Per-entry `recheck:` commands — every Watch-list entry carries exactly one guard-acceptable `recheck:` pair (rule 12a): the `kubectl_readonly` argument string that re-verifies it, tool-argument form (no `kubectl`/`oc` prefix), judged by the guard's refusal grammar through shared code; optional in the Anomaly log; the report contract asks for it and the patrol prompt consumes it (ADR 0013). Impl commit also syncs `ARCHITECTURE.md`'s wiki prose (the planned-next line) and `AGENTS.md`'s test list~~ |
-| #7 | `stale_after`: auto-expire watch-list entries not re-verified within N patrols (flip to `expired`, keep in anomaly log) |
+| #7 | `stale_after`: auto-expire watch-list entries not re-verified within N patrols (flip to `expired`, keep in anomaly log) — process-stamped `verified_patrol` clock + expiry flip (rules 20–22, ADR 0014); impl commit also syncs `ARCHITECTURE.md`'s wiki prose (the planned-next line), `AGENTS.md`'s test list, and `README.md`'s config table (`PATROL_WIKI_STALE_AFTER`) |
 | #8 | `--wiki-stats`: four wiki-health numbers — verification rate, resolution ratio, confidence spread, churn/paraphrase-drift |

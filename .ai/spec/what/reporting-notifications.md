@@ -26,7 +26,16 @@ in `how/reporting-pipeline.md`.
    frontmatter keys, the section set, and the entry metadata line [DONE: #5],
    and the recheck requirement with its tool-argument form (no leading
    `kubectl`/`oc`; validated against the guard's refusal grammar)
-   [DONE: #6].
+   [DONE: #6]. [PLANNED: #7 — the contract also carries the staleness
+   clock's model-facing half: entry metadata lines may carry a
+   `verified_patrol` pair that the patroller re-stamps after validation
+   (copy or drop it freely, never compute it); `last_verified` advances only
+   when the entry was actually re-verified this patrol (it is the signal the
+   patroller's clock reads); and a watching Watch-list entry whose
+   `last_verified` stops advancing is auto-expired by the patroller after
+   `PATROL_WIKI_STALE_AFTER` accepted writes — re-verify what is worth
+   keeping, resolve or expire the rest deliberately
+   (`wiki-memory.md` rules 20–22).]
 
 ### Reporting Pass
 
@@ -80,6 +89,7 @@ in `how/reporting-pipeline.md`.
 | Ticket | Summary |
 |---|---|
 | #9 | Notification dedup: notify on state change, not every patrol — new entry, severity change/escalation, or resolution notify; standing unchanged entries stay wiki-only; optional periodic digest for long-unfixed entries |
+| #7 | Report contract states the staleness clock's model-facing half: `verified_patrol` is process-stamped (never computed by the model), `last_verified` advances only on actual re-verification, and unverified watching entries auto-expire (`wiki-memory.md` rules 20–22) |
 | ~~#6~~ | ~~Report contract asks for recheck commands: every Watch-list entry carries a guard-acceptable `recheck:` pair in tool-argument form (`wiki-memory.md` rule 12a)~~ |
 | ~~#27~~ | Per-turn output stream on by default (`-q/--quiet` opts out); evidence prints with findings (rule 9a) |
 | ~~#5~~ | Wiki-skeleton validation on `updated_wiki` with one shape-pass repair retry; final-report delivery ordering (rule 7a; contract in `wiki-memory.md` rules 15–19) |

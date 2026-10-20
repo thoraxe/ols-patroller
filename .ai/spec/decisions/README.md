@@ -38,3 +38,4 @@ Date: YYYY-MM-DD · Status: proposed | accepted | superseded by NNNN
 | [0011](0011-wiki-skeleton-stamped-counters.md) | Wiki skeleton: validated structure, stamped counters, one repair pass |
 | [0012](0012-opt-in-deploy-key-wiring.md) | Opt-in deploy-key wiring via a committed example patch |
 | [0013](0013-recheck-guard-bounded-citations.md) | Recheck commands are guard-bounded citations |
+| [0014](0014-process-enforced-stale-entry-expiry.md) | Stale-entry expiry is process-enforced, counted in accepted writes |

@@ -39,7 +39,9 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
    [DONE: #3]; skeleton-validated on write — frontmatter, fixed section set,
    entry metadata, a guard-acceptable `recheck` command on every Watch-list
    entry [DONE: #6] — with one repair pass and process-stamped counters
-   [DONE: #5] (`wiki-memory.md`).
+   [DONE: #5]; entries carry a process-stamped `verified_patrol` clock and
+   unverified watch-list entries auto-expire into the Anomaly log
+   [PLANNED: #7] (`wiki-memory.md`).
 10. **Reporting & notifications** — typed report schema, severity vocabulary,
     console/Slack delivery (`reporting-notifications.md`).
 11. **Safety model** — layered read-only enforcement spanning guard, engine, and
@@ -70,9 +72,10 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
     full skeleton — frontmatter + sections [DONE: #5]).
 14. Each patrol: load wiki → gather in-flight AgenticRuns context (best-effort) →
     agentic exploration → reporting pass → validate the wiki skeleton (one repair
-    pass on failure) [DONE: #5] → print findings, send notifications, stamp
-    the frontmatter counters [DONE: #5], rewrite the wiki atomically, commit it
-    to the wiki repo, push if `PATROL_WIKI_REMOTE` is set [DONE: #3].
+    pass on failure) [DONE: #5] → print findings, send notifications, expire
+    stale watch-list entries [PLANNED: #7], stamp the frontmatter counters
+    [DONE: #5], rewrite the wiki atomically, commit it to the wiki repo, push
+    if `PATROL_WIKI_REMOTE` is set [DONE: #3].
 15. If the reporting pass fails entirely, the patrol ends with a warning and the wiki
     is left unchanged. The same holds when the wiki update fails skeleton
     validation and its repair pass: the old wiki stands and the patrol's findings
@@ -106,6 +109,10 @@ Environment variables:
   (best-effort, bounded; the local commit is the source of truth) [DONE: #3];
   in-cluster, the SSH form rides the optional deploy-key wiring
   (`in-cluster-deployment.md` rules 16a–16d [DONE: #39])
+- `PATROL_WIKI_STALE_AFTER` — accepted-write threshold for stale-entry expiry:
+  a Watch-list entry whose `last_verified` has not advanced for this many
+  accepted writes is flipped to `expired` and moved to the Anomaly log
+  (default `5`; `0` disables the flip) [PLANNED: #7]
 
 CLI flags: `--once` (default), `--loop`, `--interval`, `--dry-cluster`, `--wiki`
 (default `wiki/cluster-wiki.md` next to `patrol.py` [DONE: #3; was

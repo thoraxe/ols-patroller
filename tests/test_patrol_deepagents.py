@@ -32,6 +32,12 @@ Covers (safety-model.md rules 6b-6c, wiki-memory.md rules 4f and 15-19):
 - recheck wiring of #6 (rule 12a): a Watch-list entry missing its recheck
   command fails validation and gets the same one-repair-pass treatment, the
   recheck error riding in the repair prompt
+- stale-entry expiry wiring of #7 (rules 20-22): the expiry pass runs on
+  accepted writes, between delivery and the stamp — a watch-list entry
+  carried unchanged past PATROL_WIKI_STALE_AFTER flips to expired and lands
+  at the end of the Anomaly log with its recheck and an auto-expired
+  annotation (clock carried), a re-verified entry's clock resets, and the
+  flip logs a console line
 
 The `--raw` guard refusal is not e2e-covered: it is unit-checked in
 test_kubectl_guard.py (kubectl-guard.md rule 6a, #11).
@@ -225,6 +231,47 @@ def frontmatter(text):
     lines = text.split("\n")
     assert lines[0] == "---", "not a frontmatter document"
     return yaml.safe_load("\n".join(lines[1:lines.index("---", 1)]))
+
+
+def expiry_wiki_text(watch_body, marker="e2e wiki marker", patrol_count=9):
+    """A skeleton-valid updated_wiki (rules 10-12a) whose Watch-list body is
+    supplied — for #7 expiry scenarios (entries with controlled dates). The
+    frontmatter values are the model's own guesses; the process stamp and the
+    expiry pass own the truth."""
+    return (
+        "---\n"
+        "wiki_version: 1\n"
+        "cluster_id: model-guess\n"
+        f"patrol_count: {patrol_count}\n"
+        'last_patrol: "2026-10-16T00:00:00+00:00"\n'
+        "---\n"
+        "# Cluster Wiki\n"
+        "\n"
+        "## Topology\n"
+        f"- {marker} (kubectl get nodes, 2026-10-16, high)\n"
+        "\n"
+        "## Baselines\n"
+        "_(none)_\n"
+        "\n"
+        "## Watch-list\n"
+        f"{watch_body}\n"
+        "\n"
+        "## Open questions\n"
+        "- (none yet)\n"
+        "\n"
+        "## Anomaly log\n"
+        "_(empty)_\n"
+    )
+
+
+WATCH_V1 = (
+    "- id: W-1 · status: watching · first_seen: 2026-10-15 · last_verified: 2026-10-16"
+    " · source: kubectl get nodes · confidence: high · recheck: get nodes\n"
+    "  worker-1 has been NotReady for 40 days.\n"
+    "- id: W-2 · status: watching · first_seen: 2026-10-15 · last_verified: 2026-10-16"
+    " · source: kubectl get pods -A · confidence: medium · recheck: get pods -A\n"
+    "  demo-app crashlooping."
+)
 
 
 REPORT = {
@@ -579,6 +626,68 @@ def test_stamp_derives_patrol_count_from_disk(tmp_path, monkeypatch):
         "--max-steps", "8")
     assert frontmatter(wiki.read_text())["patrol_count"] == 1
     assert "v2" in wiki.read_text()
+
+
+# --------------------------------------------------------------- stale-entry expiry (#7)
+
+def test_stale_entry_expires_and_reverified_entry_survives(tmp_path, monkeypatch, capsys):
+    """#7 rules 20-22 wired through main(): patrol 1 writes two fresh entries
+    (clocks stamped 1). Patrol 2 re-verifies W-1 (last_verified advances ->
+    clock resets to 2) and carries W-2 unchanged (clock carried 1;
+    STALE_AFTER=1 -> age 1 flips): W-2 lands expired at the end of the Anomaly
+    log with its recheck and the auto-expired annotation, W-1 stays watching,
+    the flip logs a console line, and both writes commit."""
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    monkeypatch.setattr(patrol, "STALE_AFTER", 1)
+
+    def report_with(watch_body):
+        return dict(REPORT, updated_wiki=expiry_wiki_text(watch_body))
+
+    # patrol 1: two fresh entries -> written with clocks stamped at 1
+    run_patrol_cli(monkeypatch, ScriptedEndpoint(turns=NATURAL_TURNS[:1],
+                                                 report=report_with(WATCH_V1)), wiki,
+                   "--max-steps", "8")
+    assert frontmatter(wiki.read_text())["patrol_count"] == 1
+    assert wiki.read_text().count("verified_patrol: 1") == 2
+
+    capsys.readouterr()  # scope the patrol-2 assertions to patrol 2
+
+    # patrol 2: W-1 re-verified (date advanced), W-2 copied unchanged
+    watch_v2 = WATCH_V1.replace(
+        "- id: W-1 · status: watching · first_seen: 2026-10-15 · last_verified: 2026-10-16",
+        "- id: W-1 · status: watching · first_seen: 2026-10-15 · last_verified: 2026-10-17")
+    run_patrol_cli(monkeypatch, ScriptedEndpoint(turns=NATURAL_TURNS[:1],
+                                                 report=report_with(watch_v2)), wiki,
+                   "--max-steps", "8")
+
+    final = wiki.read_text()
+    assert frontmatter(final)["patrol_count"] == 2
+    assert patrol.validate_wiki(final) == []
+
+    wl = final.split("## Watch-list", 1)[1].split("## Open questions", 1)[0]
+    al = final.split("## Anomaly log", 1)[1]
+    # W-2 flipped out of the Watch-list; W-1 survives with a reset clock
+    assert "id: W-2" not in wl
+    assert "id: W-1" in wl and "status: watching" in wl
+    assert "verified_patrol: 2" in wl
+    # W-2 expired into the Anomaly log: carried clock, recheck kept, annotation
+    assert "id: W-2 · status: expired" in al
+    assert "recheck: get pods -A" in al
+    assert "verified_patrol: 1" in al
+    assert "auto-expired at patrol 2: unverified for 1 patrols" in al
+    assert "_(empty)_" in al  # the placeholder line is untouched prose
+
+    assert commit_count(wiki.parent) == 2  # one commit per accepted write
+    # expiry is wiki housekeeping, never a finding or notification (rule 21):
+    # the findings block still reports the report's own two findings, and no
+    # notification mentions the expired entry
+    out = capsys.readouterr().out
+    assert "findings (2):" in out
+    assert not any("NOTIFY" in l and "W-2" in l for l in out.splitlines())
+    # one console line per flip, naming the id and its unverified-patrol count
+    flip_lines = [l for l in out.splitlines() if "auto-expired" in l]
+    assert len(flip_lines) == 1
+    assert "W-2" in flip_lines[0] and "unverified for 1" in flip_lines[0]
 
 
 def test_wiki_flag_default_is_the_wiki_directory():
