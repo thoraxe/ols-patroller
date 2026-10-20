@@ -89,7 +89,10 @@ knowledge base of the observed cluster.
    prose sections it stays an unvalidated convention (rule 13).]
 7. The watch-list is the refinement loop: patrol N writes the rules patrol N+1
    follows. Real runs show per-entry persistence tracking ("Unfixed through 5th
-   patrol", "unchanged 18:44") carried forward across patrols.
+   patrol", "unchanged 18:44") carried forward across patrols. The recheck
+   command (rule 12a) is that rule made executable: patrol N+1 runs the entry's
+   recheck first when re-verifying it, and rewrites a recheck whose
+   verification path has changed [PLANNED: #6].
 
 ### Epistemics
 
@@ -147,13 +150,55 @@ the history #7 expires into) carry per-entry structure; everything else is prose
     - `source` — non-empty text citing what was observed (typically the command).
     - `confidence` — one of `high`, `medium`, `low`.
     - Additional `key: value` pairs may follow `confidence` on the metadata line
-      (forward-compatible: #6's `recheck`); the rest of the line after the six
-      required keys must consist solely of such ` · `-separated pairs — any
-      other trailing text is a validation failure. Unknown keys are not judged.
+      (forward-compatible: #6's `recheck`, specified as rule 12a); the rest of
+      the line after the six required keys must consist solely of such
+      ` · `-separated pairs — any other trailing text is a validation failure.
+      Unknown keys are not judged — `recheck` is the first additional key the
+      validator judges (rule 12a) [PLANNED: #6].
     - Free prose is the indented continuation of the list item (sub-bullets
       allowed) — the natural-language hypothesis. Prose is never validated and
       never appears on the metadata line itself: a trailing text after the
       fields is a validation failure.
+12a. **Recheck command** [PLANNED: #6]. A `recheck` pair on an entry metadata
+    line carries the `kubectl_readonly` invocation that re-verifies the entry —
+    the citation made regenerable: OKF/AIX rule 2 ("never rewrite the evidence —
+    cite the source") translated for regenerable evidence, where the citation
+    is the command that regenerates it. Entries become self-linting — a patrol,
+    a human, or a future lint-only mode can re-verify any watch-list claim
+    without re-deriving the investigation. Structure is added exactly where
+    that consumer needs it (rule 13's principle): one more machine-checked
+    field on the metadata line; the hypothesis prose is untouched.
+    - **Required in Watch-list, optional in Anomaly log.** Every Watch-list
+      entry's metadata line carries exactly one `recheck: <command>` pair; a
+      Watch-list entry without one is a validation failure (an entry that
+      cannot be re-verified is not a watchable claim). In the Anomaly log a
+      `recheck` is allowed but not required — history entries whose
+      verification loop has ended; a recheck carried along by #7's expiry flip
+      stays valid. A duplicate `recheck` pair on one entry (either section) is
+      a validation failure.
+    - **Tool-argument form.** The value is the exact `kubectl_readonly`
+      argument string — everything after the CLI name (`kubectl-guard.md`
+      rule 1) — with no leading `kubectl` or `oc` token; a prefixed form is a
+      validation failure whose error names the fix. The prefix check is its
+      own check, distinguished from and running before the guard-grammar
+      check (a bare verb refusal would not name the fix). The value must be
+      non-empty and shlex-parseable.
+    - **Guard-bounded.** The value must be a command the guard would accept,
+      not refuse: the guard's pre-execution refusal grammar (`kubectl-guard.md`
+      rules 2–6a — parseability, verb whitelist, secret-value protection,
+      raw-path refusal) is the single source of truth for what a recheck may
+      cite, checked by the same logic the guard itself uses and never by
+      executing the command (the validator stays pure, rule 15). A recheck the
+      guard would refuse is a validation failure: the wiki's citations are
+      bounded by the same read-only channel as the patrol itself, so memory
+      can never teach or require a command outside layer 1 (ADR 0013).
+    - **Metadata-line pair, not prose.** Only a `recheck` pair on the metadata
+      line satisfies the Watch-list requirement; a `recheck:`-looking line in
+      the entry's indented prose is unvalidated prose (rule 12) and does not
+      count.
+    - Each recheck error names the section, the entry id, and the reason —
+      missing, duplicate, prefixed, or refused (carrying the guard's refusal
+      reason) — so the repair pass (rule 18) can fix it in one round.
 13. **Prose sections.** Topology, Baselines, and Open questions carry no entry
     metadata: list items there are free prose (rule 6's inline
     `(source, timestamp, confidence)` tag remains the convention, unvalidated).
@@ -174,17 +219,22 @@ is checked before it may replace memory, gets exactly one model-facing repair
 attempt, and then the old wiki wins. Persistence problems degrade, never block.
 
 15. **Validator.** `validate_wiki(content) -> list[str]` returns human-readable
-    validation errors (empty list = valid). It checks exactly rules 10–12 —
-    frontmatter block present at the top, parseable YAML mapping (PyYAML,
-    `pyyaml>=6`, joins the runtime dependency set), closed key set, types,
-    `wiki_version == WIKI_VERSION`; the five canonical sections exactly once
-    each and no other level-2 headings; every top-level list item in Watch-list
-    and Anomaly log a well-formed metadata line with valid vocabularies, date
-    formats, and unique ids — and nothing else. Prose, section order, heading
-    levels other than 2, prose-section list items, and the values of the
-    process-stamped fields are not judged. Each error names the element that
-    failed (the missing section, the offending key). Validation is pure: no I/O,
-    no model calls.
+    validation errors (empty list = valid). It checks exactly rules 10–12 and,
+    for the `recheck` pair, rule 12a [PLANNED: #6] — frontmatter block present
+    at the top, parseable YAML mapping (PyYAML, `pyyaml>=6`, joins the runtime
+    dependency set), closed key set, types, `wiki_version == WIKI_VERSION`;
+    the five canonical sections exactly once each and no other level-2
+    headings; every top-level list item in Watch-list and Anomaly log a
+    well-formed metadata line with valid vocabularies, date formats, and
+    unique ids — and nothing else. The recheck check (rule 12a) joins this
+    closed set: exactly one guard-acceptable `recheck` pair on every
+    Watch-list entry, at most one on an Anomaly-log entry, judged with the
+    guard's refusal grammar through shared code — never by executing the
+    command [PLANNED: #6]. Prose, section order, heading levels other
+    than 2, prose-section list items, and the values of the process-stamped
+    fields are not judged. Each error names the element that failed (the
+    missing section, the offending key, the entry missing its recheck).
+    Validation is pure: no I/O, no model calls.
 16. **Write path.** After the shape pass, a non-empty `updated_wiki` is validated
     before anything is written:
     - **valid** → stamp (rule 17) → atomic write → commit → push (rules 4c–4e);
@@ -272,6 +322,6 @@ attempt, and then the old wiki wins. Persistence problems degrade, never block.
 |---|---|
 | ~~#3~~ | ~~Git-backed wiki: wiki directory is a git repo (init at startup, file-only fallback), atomic write (temp + rename), one commit per wiki-changing patrol (`patrol N: X findings, Y warn`), optional `PATROL_WIKI_REMOTE` push — bounded, best-effort, local-first~~ |
 | ~~#5~~ | Skeleton schema + validation-on-write (rules 10–19): YAML frontmatter (`wiki_version` == 1, `cluster_id`, `patrol_count`, `last_patrol` — the last three process-stamped on write), fixed section set enforced exactly-once, entry metadata line (`id`, `status` watching/resolved/expired, `first_seen`, `last_verified`, `source`, `confidence` high/medium/low) in Watch-list + Anomaly log, `validate_wiki` gate with one shape-pass repair retry else keep-old-wiki; PyYAML joins the runtime deps (ADR 0011). Impl commit also syncs `ARCHITECTURE.md`'s wiki prose ("Planned next" paragraph) and `AGENTS.md`'s test list |
-| #6 | Per-entry `recheck:` commands — each watch-list entry carries the kubectl invocation that re-verifies it (self-linting wiki) |
+| #6 | Per-entry `recheck:` commands — every Watch-list entry carries exactly one guard-acceptable `recheck:` pair (rule 12a): the `kubectl_readonly` argument string that re-verifies it, tool-argument form (no `kubectl`/`oc` prefix), judged by the guard's refusal grammar through shared code; optional in the Anomaly log; the report contract asks for it and the patrol prompt consumes it (ADR 0013). Impl commit also syncs `ARCHITECTURE.md`'s wiki prose (the planned-next line) and `AGENTS.md`'s test list |
 | #7 | `stale_after`: auto-expire watch-list entries not re-verified within N patrols (flip to `expired`, keep in anomaly log) |
 | #8 | `--wiki-stats`: four wiki-health numbers — verification rate, resolution ratio, confidence spread, churn/paraphrase-drift |

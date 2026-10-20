@@ -7,7 +7,7 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
 
 | Symbol | Responsibility |
 |---|---|
-| `REPORT_CONTRACT` | Instructions appended for the reporting pass (field semantics, wiki skeleton format: frontmatter keys, section set, entry metadata line [DONE: #5]) |
+| `REPORT_CONTRACT` | Instructions appended for the reporting pass (field semantics, wiki skeleton format: frontmatter keys, section set, entry metadata line [DONE: #5]; the Watch-list recheck requirement + its tool-argument form [PLANNED: #6]) |
 | `shape_report` | Tool-free structured-output pass with one schema retry; `repair=(rejected_wiki, errors)` re-invokes it as the wiki-validation repair pass [DONE: #5] |
 | `report_fields` | Normalizes the result (pydantic model or dict) into plain data |
 | `notify` | Console `🔔 NOTIFY` + optional Slack webhook post |
@@ -28,7 +28,9 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
 4. `report_fields` normalizes (pydantic → `model_dump`; dict → `.get()` with falsy
    notifications filtered).
 5. Wiki gate (#5): a non-empty `updated_wiki` is checked by `validate_wiki`
-   (pure; PyYAML parses the frontmatter). Invalid → one repair pass:
+   (pure; PyYAML parses the frontmatter; the recheck check judges Watch-list
+   `recheck` pairs — required — and Anomaly-log ones — at most one — with the
+   guard's refusal grammar [PLANNED: #6]). Invalid → one repair pass:
    `shape_report` re-invoked with `repair=(rejected_wiki, errors)`, whose user
    message states the wiki failed validation and carries the errors + rejected
    wiki. The repaired report replaces the first wholesale when its wiki

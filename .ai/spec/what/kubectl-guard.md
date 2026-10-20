@@ -90,9 +90,15 @@ sees these messages and recovers based on them.
   rules 3–6 and 6a, execution rules 8–11, CLI resolution rule 12, dry-mode rule 13
   — see `safety-model.md` rule 6a [DONE: #4]. Rule 6a's tests land with its spec
   PR and pass with its implementation [DONE: #11].
+- The refusal grammar (rules 2–6a: parseability, non-empty, verb whitelist,
+  secret-value protection, raw-path refusal) is the single source of truth for
+  "a command `kubectl_readonly` accepts". The wiki validator reuses it to
+  judge `recheck` citations (`wiki-memory.md` rule 12a) through shared code,
+  never by executing the command [PLANNED: #6].
 
 ## Planned Changes
 
 | Ticket | Summary |
 |---|---|
+| #6 | Refusal grammar extracted as a shared pure predicate (`guard_refusal`); the wiki validator judges `recheck` citations with it — guard behavior itself unchanged (`wiki-memory.md` rule 12a) |
 | ~~#11~~ | Refuse any command containing `--raw` (rule 6a) — proxy/stats endpoints dump multi-hundred-KB JSON that truncates and gets retried, burning patrol turns |

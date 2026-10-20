@@ -1,4 +1,5 @@
-"""Wiki skeleton schema + validation-on-write — contract tests for #5.
+"""Wiki skeleton schema + validation-on-write — contract tests for #5, plus
+the per-entry recheck-command contract of #6.
 
 These tests pin the public surface of patrol.py's planned wiki-schema region:
 
@@ -11,7 +12,9 @@ contract's format instructions (reporting-notifications.md rule 5), and the
 runtime dependency surface (container-image.md rules 6-7 — PyYAML joins the
 pinned set). They fail before implementation (AttributeError on the missing
 symbols, AssertionError on the missing surfaces) and must pass after.
-Contract: .ai/spec/what/wiki-memory.md rules 10-19 [PLANNED: #5].
+Contract: .ai/spec/what/wiki-memory.md rules 10-19 [PLANNED: #5]; rule 12a
+(the recheck pair: required and guard-acceptable on every Watch-list entry,
+optional in the Anomaly log) [PLANNED: #6].
 
 Scope note: these tests pin the pure validator/stamper. The wiring into the
 patrol tail (validate -> one repair pass -> stamp -> write, keep-old-wiki on
@@ -50,7 +53,7 @@ def default_bodies():
     return {
         "Topology": "- 3 masters, 2 workers (kubectl get nodes, 2026-10-14, high)",
         "Baselines": "_(none yet)_",
-        "Watch-list": (meta_line()
+        "Watch-list": (meta_line(extra="recheck: get nodes")  # rule 12a (#6)
                        + "\n  worker-1 NotReady for 40d — free prose hypothesis."),
         "Open questions": "- why is worker-1 flapping?",
         "Anomaly log": (meta_line(id="A-1", source="kubectl get pods -A",
@@ -134,9 +137,10 @@ def test_validate_accepts_prose_sections_without_metadata():
 
 
 def test_validate_accepts_extra_metadata_keys_and_sub_bullets():
-    """Rule 12: additional key: value pairs may follow confidence (forward-compat
-    for #6's recheck); prose continuation may include sub-bullets."""
-    entry = (meta_line(extra="recheck: kubectl get nodes")
+    """Rule 12: additional key: value pairs may follow confidence — `recheck`
+    is judged per rule 12a (#6), unknown keys are not; prose continuation may
+    include sub-bullets."""
+    entry = (meta_line(extra="recheck: get nodes · note: checked twice")
              + "\n  worker-1 NotReady for 40d — free prose hypothesis."
              + "\n  - a sub-bullet of prose, not an entry")
     wiki = build_wiki(bodies={"Watch-list": entry})
@@ -163,7 +167,7 @@ def test_validate_skips_fenced_code_blocks():
     """Rule 11: fenced code blocks are prose — a `## ` line inside a fence is
     not a section heading, and a list-looking line inside a fence is not an
     entry (a fenced example of the format must not fail validation)."""
-    entry = (meta_line()
+    entry = (meta_line(extra="recheck: get nodes")
              + "\n  worker-1 NotReady for 40d — free prose hypothesis.")
     wiki = build_wiki(bodies={
         "Topology": "```\n## Fenced heading, not a section\n```",
@@ -344,6 +348,136 @@ def test_validate_does_not_judge_stamped_values():
     assert patrol.validate_wiki(wiki) == []
 
 
+# ------------------------------------------------------------ validate: recheck (rule 12a)
+
+def recheck_line(command="get nodes", **kwargs):
+    """A Watch-list entry metadata line carrying a recheck pair (rule 12a)."""
+    return meta_line(extra=f"recheck: {command}", **kwargs)
+
+
+def test_validate_requires_recheck_in_watch_list():
+    """Rule 12a: every Watch-list entry carries a recheck command — an entry
+    without one is a validation failure, and the error names the entry id."""
+    wiki = build_wiki(bodies={"Watch-list": meta_line()
+                              + "\n  worker-1 NotReady for 40d."})
+    errors = patrol.validate_wiki(wiki)
+    assert errors
+    assert any("W-1" in e and "recheck" in e for e in errors), \
+        "errors must name the entry id and the missing recheck"
+
+
+def test_validate_accepts_recheck_in_watch_list():
+    wiki = build_wiki(bodies={"Watch-list": recheck_line()
+                              + "\n  worker-1 NotReady for 40d."})
+    assert patrol.validate_wiki(wiki) == []
+
+
+def test_validate_recheck_optional_in_anomaly_log():
+    """Rule 12a: history entries do not need a recheck."""
+    wiki = build_wiki(bodies={"Anomaly log": meta_line(id="A-1")
+                              + "\n  demo-app crashlooping."})
+    assert patrol.validate_wiki(wiki) == []
+
+
+def test_validate_accepts_recheck_in_anomaly_log():
+    """Rule 12a: a recheck carried into the Anomaly log (e.g. by #7's expiry
+    flip) stays valid."""
+    wiki = build_wiki(bodies={"Anomaly log": recheck_line(id="A-1")
+                              + "\n  demo-app crashlooping."})
+    assert patrol.validate_wiki(wiki) == []
+
+
+def test_validate_rejects_duplicate_recheck():
+    """Rule 12a: exactly one recheck pair per entry."""
+    line = meta_line(extra=f"recheck: get nodes {DOT} recheck: get pods -A")
+    errors = patrol.validate_wiki(build_wiki(bodies={"Watch-list": line}))
+    assert errors
+    assert any("W-1" in e and "recheck" in e for e in errors)
+
+
+@pytest.mark.parametrize("prefix", ["kubectl", "oc"])
+def test_validate_rejects_prefixed_recheck(prefix):
+    """Rule 12a: the value is the kubectl_readonly argument string — a
+    leading kubectl/oc token is a validation failure."""
+    wiki = build_wiki(bodies={"Watch-list":
+                              recheck_line(command=f"{prefix} get nodes")})
+    errors = patrol.validate_wiki(wiki)
+    assert errors, f"{prefix}-prefixed recheck must be invalid"
+    assert any("recheck" in e for e in errors)
+
+
+@pytest.mark.parametrize("command", [
+    "delete pod demo-6b5c-xyz -n demo-app",                    # mutating verb
+    "get secret demo-secret -n demo-app -o yaml",              # secret value
+    "get --raw /api/v1/nodes/worker-0/proxy/stats/summary",    # raw path
+    "get nodes -o jsonpath='{.status",                          # unparseable
+])
+def test_validate_rejects_recheck_the_guard_would_refuse(command):
+    """Rule 12a: a recheck the guard would refuse (kubectl-guard.md rules
+    2–6a) is a validation failure — the wiki's citations are bounded by the
+    read-only channel (ADR 0013)."""
+    wiki = build_wiki(bodies={"Watch-list": recheck_line(command=command)})
+    errors = patrol.validate_wiki(wiki)
+    assert errors, f"recheck {command!r} must be rejected"
+    assert any("recheck" in e for e in errors)
+
+
+def test_validate_rejects_empty_recheck():
+    """Rule 12a via the guard grammar: a whitespace-only recheck value is an
+    empty command — refused."""
+    wiki = build_wiki(bodies={"Watch-list": meta_line() + f" {DOT} recheck:  "})
+    errors = patrol.validate_wiki(wiki)
+    assert errors
+    assert any("recheck" in e for e in errors)
+
+
+def test_validate_rejects_prose_recheck_line():
+    """Rule 12a: only a recheck pair on the metadata line counts — a
+    `recheck:` line in the entry's indented prose is prose (rule 12) and does
+    not satisfy the Watch-list requirement."""
+    entry = (meta_line()
+             + "\n  worker-1 NotReady for 40d."
+             + "\n  recheck: get nodes")
+    errors = patrol.validate_wiki(build_wiki(bodies={"Watch-list": entry}))
+    assert errors
+    assert any("W-1" in e and "recheck" in e for e in errors)
+
+
+@pytest.mark.parametrize("verb", sorted(patrol.READONLY_VERBS))
+def test_validate_accepts_every_readonly_verb_recheck(verb):
+    """Rule 12a: every guard verb is a legal recheck verb — the validator's
+    grammar is the guard's grammar, not a narrower copy."""
+    wiki = build_wiki(bodies={"Watch-list": recheck_line(command=f"{verb} nodes")})
+    assert patrol.validate_wiki(wiki) == []
+
+
+def test_recheck_grammar_is_the_guards_grammar():
+    """Single source of truth (rule 12a, ADR 0013): the validator rejects a
+    recheck exactly when kubectl_readonly itself would refuse the command —
+    same grammar, checked without executing anything."""
+    refused = ["delete pod demo -n app",
+               "get secret db -o jsonpath='{.data.password}'",
+               "get --raw /api/v1/nodes/n/proxy/stats/summary",
+               "get nodes -o jsonpath='{.status",
+               " "]
+    accepted = ["get nodes", "describe node worker-1", "top pods -A"]
+    for command in refused:
+        guard = patrol.kubectl_readonly(command, kubectl="kubectl",
+                                        dry=True, verbose=False)
+        assert guard.startswith("REFUSED"), f"guard must refuse {command!r}"
+        wiki = build_wiki(bodies={"Watch-list": recheck_line(command=command)})
+        assert patrol.validate_wiki(wiki), \
+            f"validator must reject the recheck the guard refuses: {command!r}"
+    for command in accepted:
+        guard = patrol.kubectl_readonly(command, kubectl="kubectl",
+                                        dry=True, verbose=False)
+        assert not guard.startswith("REFUSED"), \
+            f"guard must accept {command!r}, got {guard!r}"
+        wiki = build_wiki(bodies={"Watch-list": recheck_line(command=command)})
+        assert patrol.validate_wiki(wiki) == [], \
+            f"validator must accept the recheck the guard accepts: {command!r}"
+
+
 # ------------------------------------------------------------ stamp_wiki
 
 def test_stamp_rewrites_owned_fields_and_preserves_the_rest():
@@ -395,6 +529,21 @@ def test_report_contract_instructs_the_skeleton():
     for field in ("id:", "status:", "first_seen:", "last_verified:", "source:",
                   "confidence:"):
         assert field in contract, f"REPORT_CONTRACT must name the {field} field"
+
+
+def test_report_contract_instructs_recheck():
+    """reporting-notifications.md rule 5: the contract tells the model about
+    the Watch-list recheck requirement and its tool-argument form (rule 12a)."""
+    contract = patrol.REPORT_CONTRACT
+    assert "recheck:" in contract, "REPORT_CONTRACT must name the recheck: pair"
+    assert "no leading" in contract, \
+        "REPORT_CONTRACT must teach the tool-argument form (no kubectl/oc prefix)"
+
+
+def test_system_prompt_consumes_recheck():
+    """patrol-engine.md rule 3: the patrol prompt tells the model to consume
+    recheck commands — run an entry's recheck first when re-verifying it."""
+    assert "recheck" in patrol.SYSTEM_PROMPT
 
 
 def test_pyyaml_joins_the_runtime_dependency_surface():

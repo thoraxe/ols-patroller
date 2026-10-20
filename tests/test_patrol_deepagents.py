@@ -29,6 +29,9 @@ Covers (safety-model.md rules 6b-6c, wiki-memory.md rules 4f and 15-19):
   derived from the on-disk wiki, legacy wikis counting 0), and a twice-invalid
   wiki leaves the old wiki byte-for-byte intact with the patrol's findings
   still delivered
+- recheck wiring of #6 (rule 12a): a Watch-list entry missing its recheck
+  command fails validation and gets the same one-repair-pass treatment, the
+  recheck error riding in the repair prompt
 
 The `--raw` guard refusal is not e2e-covered: it is unit-checked in
 test_kubectl_guard.py (kubectl-guard.md rule 6a, #11).
@@ -184,7 +187,8 @@ class ScriptedEndpoint:
 # --------------------------------------------------------------- shared fixtures
 
 def wiki_text(marker="e2e wiki marker", patrol_count=9):
-    """A skeleton-valid updated_wiki (wiki-memory.md rules 10-12). The
+    """A skeleton-valid updated_wiki (wiki-memory.md rules 10-12a: the
+    Watch-list entry carries its recheck command, rule 12a). The
     frontmatter values are deliberately the model's own guesses (patrol_count
     9, a bogus cluster id) so tests can prove the process stamp overrides
     them on write."""
@@ -204,7 +208,7 @@ def wiki_text(marker="e2e wiki marker", patrol_count=9):
         "_(none)_\n"
         "\n"
         "## Watch-list\n"
-        "- id: W-1 · status: watching · first_seen: 2026-10-15 · last_verified: 2026-10-16 · source: kubectl get nodes · confidence: high\n"
+        "- id: W-1 · status: watching · first_seen: 2026-10-15 · last_verified: 2026-10-16 · source: kubectl get nodes · confidence: high · recheck: get nodes\n"
         "  worker-1 has been NotReady for 40 days.\n"
         "\n"
         "## Open questions\n"
@@ -491,6 +495,33 @@ def test_invalid_wiki_triggers_one_repair_pass(tmp_path, monkeypatch, capsys):
     assert "🔔 NOTIFY: repaired notification" in out
     assert "[warn] worker-1 NotReady for 40d" not in out  # wholesale replacement
     assert "🔔 NOTIFY: worker-1 has been NotReady" not in out
+    assert commit_count(wiki.parent) == 1
+
+
+def test_missing_recheck_triggers_one_repair_pass(tmp_path, monkeypatch, capsys):
+    """#6 rule 12a: a Watch-list entry without a recheck: command is a
+    validation failure — it gets the same one repair pass as any skeleton
+    error, with the recheck error in the repair prompt, and the repaired
+    (recheck-carrying) wiki is the one written and committed."""
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    rejected = wiki_text("REJECTED-WIKI-MARKER").replace(
+        " · recheck: get nodes", "")          # W-1 loses its recheck pair
+    endpoint = ScriptedEndpoint(turns=NATURAL_TURNS[:1],
+                                reports=[dict(REPORT, updated_wiki=rejected),
+                                         dict(REPORT,
+                                              updated_wiki=wiki_text("repaired marker"))])
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
+
+    # exactly two shape requests: the report, then the single repair pass
+    shapes = endpoint.shape_requests
+    assert len(shapes) == 2, f"expected report + repair, got {len(shapes)}"
+    repair_text = endpoint.conversation_text(shapes[1])
+    assert "recheck" in repair_text            # the recheck validation error
+    assert "REJECTED-WIKI-MARKER" in repair_text  # the rejected wiki
+
+    # the repaired report won: its wiki (with the recheck) is on disk
+    assert "repaired marker" in wiki.read_text()
+    assert " · recheck: get nodes" in wiki.read_text()
     assert commit_count(wiki.parent) == 1
 
 

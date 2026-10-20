@@ -13,15 +13,23 @@ redefined here.
   one wiki-changing patrol, one commit. The wiki's irreversibility insurance and
   audit trail (#3).
 - **Watch-list** — wiki section holding the refinement loop: rules patrol N writes
-  for patrol N+1 (what to re-check, escalate, or expire).
+  for patrol N+1 (what to re-check, escalate, or expire) — each entry carrying
+  its `recheck` command (#6).
 - **Skeleton** — the wiki's machine-checkable structure (#5): YAML frontmatter
   (`wiki_version`, `cluster_id`, `patrol_count`, `last_patrol`), the five canonical
   sections, and the entry metadata line in Watch-list and Anomaly log. Structure
   frames free prose; it never replaces it (load-bearing constraint of #5).
 - **Entry metadata line** — the first line of a Watch-list/Anomaly-log entry:
-  `id · status · first_seen · last_verified · source · confidence` as `key: value`
-  pairs separated by ` · ` — the machine-checkable part of an entry; free prose
-  follows as its continuation lines.
+  `id · status · first_seen · last_verified · source · confidence` (plus optional
+  additional pairs — e.g. `recheck`, #6) as `key: value` pairs separated by ` · ` —
+  the machine-checkable part of an entry; free prose follows as its continuation
+  lines.
+- **Recheck** — the `recheck:` pair on an entry metadata line (#6): the exact
+  `kubectl_readonly` argument string that re-verifies the entry — the wiki's
+  citation made regenerable (the command that regenerates the evidence).
+  Required on Watch-list entries, optional in the Anomaly log, and
+  guard-bounded: a valid recheck is a command the guard would accept, never
+  refuse (ADR 0013).
 - **Stamp** — the patroller's deterministic post-validation rewrite of the
   process-owned frontmatter fields (`patrol_count`, `last_patrol`, `cluster_id`)
   before the atomic write (#5). Models are unreliable counters; the stamp makes

@@ -19,10 +19,14 @@ in `how/reporting-pipeline.md`.
    (don't cry wolf), as human-readable messages.
 5. `updated_wiki` is the FULL new wiki content in the skeleton format
    (`wiki-memory.md` rules 10–13): frontmatter with the four keys, the five
-   canonical sections, entry metadata lines in Watch-list and Anomaly log, free
-   prose inside entries, stale entries expired. The report contract
-   (`REPORT_CONTRACT`) instructs the model in this format — the frontmatter keys,
-   the section set, and the entry metadata line [DONE: #5].
+   canonical sections, entry metadata lines in Watch-list and Anomaly log, a
+   guard-acceptable `recheck` command on every Watch-list entry (rule 12a)
+   [PLANNED: #6], free prose inside entries, stale entries expired. The report
+   contract (`REPORT_CONTRACT`) instructs the model in this format — the
+   frontmatter keys, the section set, and the entry metadata line [DONE: #5],
+   and the recheck requirement with its tool-argument form (no leading
+   `kubectl`/`oc`; validated against the guard's refusal grammar)
+   [PLANNED: #6].
 
 ### Reporting Pass
 
@@ -76,5 +80,6 @@ in `how/reporting-pipeline.md`.
 | Ticket | Summary |
 |---|---|
 | #9 | Notification dedup: notify on state change, not every patrol — new entry, severity change/escalation, or resolution notify; standing unchanged entries stay wiki-only; optional periodic digest for long-unfixed entries |
+| #6 | Report contract asks for recheck commands: every Watch-list entry carries a guard-acceptable `recheck:` pair in tool-argument form (`wiki-memory.md` rule 12a) |
 | ~~#27~~ | Per-turn output stream on by default (`-q/--quiet` opts out); evidence prints with findings (rule 9a) |
 | ~~#5~~ | Wiki-skeleton validation on `updated_wiki` with one shape-pass repair retry; final-report delivery ordering (rule 7a; contract in `wiki-memory.md` rules 15–19) |

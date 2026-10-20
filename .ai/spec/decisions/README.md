@@ -37,3 +37,4 @@ Date: YYYY-MM-DD · Status: proposed | accepted | superseded by NNNN
 | [0010](0010-release-retag-not-rebuild.md) | Release tags are registry-side retags of the sha image, not rebuilds |
 | [0011](0011-wiki-skeleton-stamped-counters.md) | Wiki skeleton: validated structure, stamped counters, one repair pass |
 | [0012](0012-opt-in-deploy-key-wiring.md) | Opt-in deploy-key wiring via a committed example patch |
+| [0013](0013-recheck-guard-bounded-citations.md) | Recheck commands are guard-bounded citations |
