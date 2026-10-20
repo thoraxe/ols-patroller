@@ -7,11 +7,11 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
 
 | Symbol | Responsibility |
 |---|---|
-| `REPORT_CONTRACT` | Instructions appended for the reporting pass (field semantics, wiki skeleton format: frontmatter keys, section set, entry metadata line [DONE: #5]; the Watch-list recheck requirement + its tool-argument form [DONE: #6]) |
+| `REPORT_CONTRACT` | Instructions appended for the reporting pass (field semantics, wiki skeleton format: frontmatter keys, section set, entry metadata line [DONE: #5]; the Watch-list recheck requirement + its tool-argument form [DONE: #6]; the staleness clock's model-facing half — `verified_patrol` is process-stamped, `last_verified` advances only on actual re-verification, unverified watching entries auto-expire [DONE: #7]) |
 | `shape_report` | Tool-free structured-output pass with one schema retry; `repair=(rejected_wiki, errors)` re-invokes it as the wiki-validation repair pass [DONE: #5] |
 | `report_fields` | Normalizes the result (pydantic model or dict) into plain data |
 | `notify` | Console `🔔 NOTIFY` + optional Slack webhook post |
-| `run_patrol` (tail) | Validates the report's wiki against the skeleton (one repair pass on failure, `validate_wiki`), delivers findings/notifications, stamps the frontmatter (`stamp_wiki`), writes the wiki atomically, commits + pushes it (wiki git persistence — `project-structure.md`) [#3: DONE; validation/repair/stamp: DONE: #5] |
+| `run_patrol` (tail) | Validates the report's wiki against the skeleton (one repair pass on failure, `validate_wiki`), delivers findings/notifications, expires stale watch-list entries (`expire_stale_entries`) [DONE: #7], stamps the frontmatter (`stamp_wiki`), writes the wiki atomically, commits + pushes it (wiki git persistence — `project-structure.md`) [#3: DONE; validation/repair/stamp: DONE: #5] |
 
 ## Data Flow
 
@@ -36,15 +36,24 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
    wiki. The repaired report replaces the first wholesale when its wiki
    validates; otherwise the old wiki stands, a warning logs, and the first
    report's findings/notifications deliver.
-6. Stamping (#5): before the write, `stamp_wiki` rewrites the process-owned
+6. Delivery (#5): findings printed (severity column; evidence by default —
+   `--quiet` suppresses [DONE: #27]) and `notify` called per notification —
+   both after the validation/repair decision resolves and before the physical
+   write, so the final report is the one delivered [DONE: #5].
+7. Expiry (#7): before the stamp, `expire_stale_entries(new_wiki, on-disk wiki,
+   patrol_count, STALE_AFTER)` maintains the per-entry `verified_patrol` clock
+   (new id or advanced `last_verified` → the current write's count, else carried,
+   missing/garbled → grace) and flips watching Watch-list entries whose clock is
+   `STALE_AFTER` writes behind into the end of the Anomaly log, each with an
+   `auto-expired` annotation line and a console log line — after delivery, so
+   the findings block and notifications precede any expiry line on the console
+   [DONE: #7].
+8. Stamping (#5): before the write, `stamp_wiki` rewrites the process-owned
    frontmatter fields — `patrol_count` (on-disk value + 1, legacy wikis count 0),
    `last_patrol` (patrol-start timestamp), `cluster_id` (`PATROL_CLUSTER_ID`).
-7. Consumers: findings printed (severity column; evidence by default — `--quiet`
-   suppresses [DONE: #27]), `notify` called per notification — both delivered
-   after the validation/repair decision resolves and before the physical write,
-   so the final report is the one delivered [DONE: #5]; wiki written
-   atomically and committed to the wiki repo if `updated_wiki` non-empty (push
-   when `PATROL_WIKI_REMOTE` is set) [DONE: #3], token totals printed.
+9. Persistence: the wiki written atomically and committed to the wiki repo if
+   `updated_wiki` non-empty (push when `PATROL_WIKI_REMOTE` is set) [DONE: #3],
+   token totals printed.
 
 ## Key Abstractions
 
@@ -62,7 +71,7 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
 | `shape_report` | langchain `with_structured_output` | function-calling schema binding to `PatrolReport` |
 | `run_patrol` | `shape_report` | message history + `budget_cut` flag |
 | `notify` | Slack incoming webhook | `requests.post` (15 s timeout, failure logged not raised) |
-| `run_patrol` | wiki file | `write_wiki_atomic` → `commit_wiki` → `push_wiki`, only when `updated_wiki` is non-empty and skeleton-valid (the gate, step 5) [#3: DONE; gate: DONE: #5] |
+| `run_patrol` | wiki file | `write_wiki_atomic` → `commit_wiki` → `push_wiki`, only when `updated_wiki` is non-empty and skeleton-valid (the gate, step 5; delivery, expiry, stamp, steps 6–8) [#3: DONE; gate: DONE: #5; expiry: DONE: #7] |
 
 ## Implementation Notes
 

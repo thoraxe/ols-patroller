@@ -94,6 +94,33 @@ WIKI_ENTRY_KEYS = ("id", "status", "first_seen", "last_verified", "source", "con
 WIKI_ENTRY_STATUSES = ("watching", "resolved", "expired")
 WIKI_ENTRY_CONFIDENCES = ("high", "medium", "low")
 WIKI_ENTRY_RECHECK = "recheck"  # the recheck metadata key (rule 12a, #6)
+WIKI_ENTRY_VERIFIED_PATROL = "verified_patrol"  # the staleness-clock key (rule 20, #7)
+
+
+def _stale_after() -> int:
+    """PATROL_WIKI_STALE_AFTER as a non-negative int (rule 21, #7).
+
+    The accepted-write threshold for stale-entry expiry: a Watch-list entry
+    whose last_verified has not advanced for this many accepted writes is
+    auto-expired into the Anomaly log. Default 5; 0 disables the flip (the
+    verified_patrol clock is still stamped, so re-enabling resumes with true
+    history). Read once at import; an unparseable or negative value fails
+    startup with a config error — the patrol never runs on a silently wrong
+    expiry threshold.
+    """
+    raw = os.environ.get("PATROL_WIKI_STALE_AFTER", "5")
+    try:
+        value = int(raw)
+    except ValueError:
+        value = -1
+    if value < 0:
+        print(f"[patrol] ERROR: PATROL_WIKI_STALE_AFTER must be a non-negative "
+              f"integer (got {raw!r})", file=sys.stderr)
+        sys.exit(1)
+    return value
+
+
+STALE_AFTER = _stale_after()
 
 READONLY_VERBS = {
     "get", "describe", "logs", "top", "version", "api-resources",
@@ -436,6 +463,14 @@ Produce the final PatrolReport for the cluster patrol above:
      verbs only, no Secret-value reads, no --raw paths), so it must be a
      command the guard would accept. Anomaly-log entries may carry a recheck
      too (optional). The recheck lives on the metadata line, never in prose.
+     Entry metadata lines may also carry a verified_patrol: <int> pair — the
+     patroller re-stamps it after validation, so copy or drop it freely and
+     never compute it yourself. last_verified must advance ONLY when the entry
+     was actually re-verified this patrol (it is the one signal the
+     patroller's staleness clock reads): a watching Watch-list entry whose
+     last_verified stops advancing is auto-expired by the patroller after
+     PATROL_WIKI_STALE_AFTER accepted writes. Re-verify what is worth
+     keeping; resolve or expire the rest deliberately.
   4. Topology, Baselines, and Open questions are free prose — no metadata lines
      there; keep tagging their entries with (source, timestamp, confidence)
      inline and expire stale entries rather than deleting history."""
@@ -772,6 +807,271 @@ def frontmatter_patrol_count(content: str) -> int:
     return v
 
 
+# ---- stale-entry expiry (wiki-memory.md rules 20-22, #7; ADR 0014) ----
+# The refinement loop's expire leg, process-enforced: a watch-list entry the
+# model stops re-verifying is retired by the patroller, deterministically, at
+# write time. The patroller owns the staleness clock the way it owns
+# patrol_count (models are unreliable counters), so the flip is never the
+# model's job to remember and never a validation concern — verified_patrol is
+# not judged (rule 15). Everything here is pure: no I/O, no model calls, the
+# same fence-aware section/entry scanning as the validator.
+
+
+def _scan_sections(lines: list[str]) -> list[tuple[str, int, int]]:
+    """[(name, body_start, body_end)] for each level-2 section, fence-aware —
+    the same scanning discipline as validate_wiki (rule 11: a '## ' line
+    inside a fenced code block is prose). A leading frontmatter block (rule
+    10) is skipped so its YAML can never read as headings or entries;
+    body_end is the next section heading's index or len(lines)."""
+    start = 0
+    if lines and lines[0].strip() == "---":
+        try:
+            start = next(i for i in range(1, len(lines))
+                         if lines[i].strip() == "---") + 1
+        except StopIteration:
+            start = 0  # unterminated fence: treat the whole file as body
+    sections: list[tuple[str, int, int]] = []
+    in_fence = False
+    current: tuple[str, int] | None = None
+    for i in range(start, len(lines)):
+        line = lines[i]
+        if line.strip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        if line.startswith("## "):  # level-2 only, like the validator
+            if current is not None:
+                sections.append((current[0], current[1], i))
+            current = (line[3:].rstrip(), i + 1)
+    if current is not None:
+        sections.append((current[0], current[1], len(lines)))
+    return sections
+
+
+def _scan_section_entries(lines: list[str], start: int, end: int) -> list[int]:
+    """Indices of a section's top-level list items (rule 12: '- '/'* ' at
+    column 0), fence-aware — fenced list-looking lines are prose, never
+    entries."""
+    entries: list[int] = []
+    in_fence = False
+    for i in range(start, end):
+        line = lines[i]
+        if line.strip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        if line.startswith("- ") or line.startswith("* "):
+            entries.append(i)
+    return entries
+
+
+def _item_extent(lines: list[str], idx: int) -> int:
+    """The end (exclusive) of the list item starting at lines[idx]: the
+    metadata line plus its indented continuation lines (rule 21: the whole
+    item moves verbatim). A blank line does not end the item, but trailing
+    blanks are left in the document — only indented content belongs to the
+    item. A column-0 non-blank line (another item, a heading, a fence, prose)
+    ends it."""
+    end = idx + 1
+    for i in range(idx + 1, len(lines)):
+        line = lines[i]
+        if line.startswith((" ", "\t")):
+            end = i + 1
+        elif not line.strip():
+            continue
+        else:
+            break
+    return end
+
+
+def _metadata_pairs(line: str) -> dict[str, str]:
+    """The ' · '-separated key: value pairs of a metadata line, first
+    occurrence per key (defensive: the old on-disk wiki may predate
+    validation, so parts may be missing or garbled)."""
+    if not (line.startswith("- ") or line.startswith("* ")):
+        return {}
+    pairs: dict[str, str] = {}
+    for part in line[2:].split(" · "):
+        m = _ENTRY_PAIR_RE.match(part)
+        if m and m.group(1) not in pairs:
+            pairs[m.group(1)] = m.group(2)
+    return pairs
+
+
+def _old_entry_clocks(old_wiki: str) -> dict[str, tuple[str | None, int | None]]:
+    """Rule 20's carry source: id -> (last_verified, verified_patrol) parsed
+    from the old on-disk wiki's metadata sections, keyed by id across BOTH
+    sections (a section move or status flip by the model does not reset the
+    clock — only verification does). Defensive by design: a legacy,
+    hand-edited, or pre-#7 wiki yields whatever parses; a missing id skips
+    the entry, a missing or garbled value yields None (the grace cases)."""
+    clocks: dict[str, tuple[str | None, int | None]] = {}
+    lines = old_wiki.split("\n")
+    for name, start, end in _scan_sections(lines):
+        if name not in WIKI_METADATA_SECTIONS:
+            continue
+        for idx in _scan_section_entries(lines, start, end):
+            pairs = _metadata_pairs(lines[idx])
+            entry_id = pairs.get("id")
+            if not entry_id:
+                continue
+            try:
+                verified = int(pairs.get(WIKI_ENTRY_VERIFIED_PATROL))  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                verified = None
+            clocks[entry_id] = (pairs.get("last_verified"), verified)
+    return clocks
+
+
+def _entry_clock(entry_id: str, last_verified: str | None,
+                 old_clocks: dict[str, tuple[str | None, int | None]],
+                 patrol_count: int) -> int:
+    """Rule 20: the verified_patrol value this accepted write stamps on one
+    entry. New id or advanced last_verified -> the current write's count
+    (advancing last_verified is the one verification signal); otherwise the
+    old wiki's clock carries; a missing or garbled old clock -> the current
+    count (migration grace: an upgrade never mass-expires)."""
+    old = old_clocks.get(entry_id)
+    if old is None:
+        return patrol_count
+    old_last_verified, old_clock = old
+    if (_is_calendar_date(old_last_verified) and _is_calendar_date(last_verified)
+            and last_verified > old_last_verified):
+        return patrol_count
+    if old_clock is not None:
+        return old_clock
+    return patrol_count
+
+
+def _stamp_verified_patrol(line: str, value: int) -> str:
+    """Rule 20: rewrite the verified_patrol pair of one metadata line. An
+    existing pair is overwritten in place (the model's value is never
+    trusted); an absent one is appended as the line's final pair. Nothing
+    else on the line is touched."""
+    pair = f"{WIKI_ENTRY_VERIFIED_PATROL}: {value}"
+    parts = line[2:].split(" · ")  # callers pass list-item lines: skip the marker
+    out: list[str] = []
+    stamped = False
+    for part in parts:
+        if part.startswith(f"{WIKI_ENTRY_VERIFIED_PATROL}: "):
+            if not stamped:
+                out.append(pair)
+                stamped = True
+            # a duplicate pair (never valid, never judged) drops: exactly one
+            # survives the stamp
+        else:
+            out.append(part)
+    if not stamped:
+        out.append(pair)
+    return line[:2] + " · ".join(out)
+
+
+def _flip_status_expired(line: str) -> str:
+    """Rule 21: status flips to expired on the metadata line — the only
+    metadata value the process rewrites besides verified_patrol. The first
+    'status: ' pair is the canonical one (the six required keys lead a
+    validated line)."""
+    parts = line[2:].split(" · ")
+    for i, part in enumerate(parts):
+        if part.startswith("status: "):
+            parts[i] = "status: expired"
+            break
+    return line[:2] + " · ".join(parts)
+
+
+def expire_stale_entries(content: str, old_wiki: str, patrol_count: int,
+                         stale_after: int) -> tuple[str, list[tuple[str, int]]]:
+    """Rules 20-22 (#7): the stale-entry expiry pass — pure and deterministic.
+
+    Maintains the per-entry verified_patrol clock (new id or advanced
+    last_verified -> the current write's count, else carried, missing/garbled
+    -> grace) on every entry of both metadata sections, and flips watching
+    Watch-list entries whose age `patrol_count - verified_patrol` has reached
+    `stale_after` (`0` disables the flip; the clock is still stamped): status
+    -> expired, the whole item moved verbatim to the end of the Anomaly log
+    with one `auto-expired` annotation line appended as its last continuation
+    line. Returns (rewritten content, [(entry id, age)] flipped, in Watch-list
+    item order). Aside from the verified_patrol pairs, the flipped entries'
+    status values and location, and the annotation lines, the body is
+    preserved byte-for-byte — the frontmatter included (the stamp owns it,
+    rule 17). Inputs: the VALIDATED wiki about to be written and the old
+    on-disk wiki (the clock's carry source); runs only on accepted writes.
+    """
+    lines = content.split("\n")
+    ranges: dict[str, tuple[int, int]] = {}
+    for name, start, end in _scan_sections(lines):
+        ranges.setdefault(name, (start, end))
+    old_clocks = _old_entry_clocks(old_wiki)
+
+    replacements: dict[int, str] = {}   # metadata-line index -> stamped line
+    moves: list[tuple[int, int, list[str]]] = []  # (start, end, moved block)
+    flipped: list[tuple[str, int]] = []
+
+    watch = ranges.get("Watch-list")
+    anomaly = ranges.get("Anomaly log")
+    if watch:
+        for idx in _scan_section_entries(lines, *watch):
+            pairs = _metadata_pairs(lines[idx])
+            entry_id = pairs.get("id", "")
+            clock = _entry_clock(entry_id, pairs.get("last_verified"),
+                                 old_clocks, patrol_count)
+            age = patrol_count - clock
+            if (stale_after > 0 and anomaly is not None
+                    and pairs.get("status") == "watching" and age >= stale_after):
+                end = _item_extent(lines, idx)
+                annotation = (f"  _auto-expired at patrol {patrol_count}: "
+                              f"unverified for {age} patrols "
+                              f"(stale_after {stale_after})_")
+                block = ([_flip_status_expired(_stamp_verified_patrol(lines[idx], clock))]
+                         + lines[idx + 1:end] + [annotation])
+                moves.append((idx, end, block))
+                flipped.append((entry_id, age))
+            else:
+                replacements[idx] = _stamp_verified_patrol(lines[idx], clock)
+    if anomaly:
+        for idx in _scan_section_entries(lines, *anomaly):
+            pairs = _metadata_pairs(lines[idx])
+            clock = _entry_clock(pairs.get("id", ""), pairs.get("last_verified"),
+                                 old_clocks, patrol_count)
+            replacements[idx] = _stamp_verified_patrol(lines[idx], clock)
+
+    if not moves:
+        if not replacements:
+            return content, []
+        out = [replacements.get(i, line) for i, line in enumerate(lines)]
+        return "\n".join(out), []
+
+    # The moved items land at the END of the Anomaly log: after its last
+    # content line (existing entries, a placeholder, or the inside of an
+    # unclosed fence — rule 21's pathological-but-valid shape), never before
+    # it; a section with no content receives them right after its heading.
+    a_start, a_end = anomaly or (0, 0)
+    insert_at = a_start
+    for i in range(a_end - 1, a_start - 1, -1):
+        if lines[i].strip():
+            insert_at = i + 1
+            break
+    cut: set[int] = set()
+    for start, end, _block in moves:
+        cut.update(range(start, end))
+    out: list[str] = []
+    inserted = False
+    for i, line in enumerate(lines):
+        if i in cut:
+            continue
+        out.append(replacements.get(i, line))
+        if not inserted and i + 1 == insert_at:
+            for _start, _end, block in moves:
+                out.extend(block)
+            inserted = True
+    if not inserted:  # empty Anomaly log: the heading is the last content line
+        for _start, _end, block in moves:
+            out.extend(block)
+    return "\n".join(out), flipped
+
+
 # --------------------------------------------------------------------------- wiki git
 # Git-backed wiki persistence (wiki-memory.md rules 4a-4e, #3). Git is process-level
 # durability, never an agent capability: everything here runs in the patrol process
@@ -1079,12 +1379,25 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
     notify([m for m in notifications if m])
 
     if new_wiki:
+        # Rule 22 (#7): the expiry pass — pure and deterministic, after the
+        # delivery decision resolves and immediately before the stamp. P is
+        # the counter the stamp is about to write (the on-disk wiki's
+        # patrol_count + 1, the same basis rule 17 uses); the old on-disk
+        # wiki is the clock's carry source. One console line per flip (rule
+        # 21): expiry is wiki housekeeping, never a finding or notification.
+        patrol_count = frontmatter_patrol_count(wiki) + 1
+        new_wiki, flips = expire_stale_entries(new_wiki, wiki,
+                                               patrol_count=patrol_count,
+                                               stale_after=STALE_AFTER)
+        for entry_id, age in flips:
+            print(f"[patrol] wiki: entry '{entry_id}' auto-expired "
+                  f"(unverified for {age} patrols, stale_after {STALE_AFTER})")
         # Rule 17: stamp the process-owned frontmatter fields — patrol_count
         # from the ON-DISK wiki (never the model's guess), last_patrol from this
         # patrol's start, cluster_id from config. Every accepted write advances
         # patrol_count, so every accepted write changes the file and commits.
         stamped = stamp_wiki(new_wiki,
-                             patrol_count=frontmatter_patrol_count(wiki) + 1,
+                             patrol_count=patrol_count,
                              last_patrol=ts,
                              cluster_id=CLUSTER_ID)
         write_wiki_atomic(wiki_path, stamped)

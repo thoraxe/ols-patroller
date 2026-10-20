@@ -85,7 +85,12 @@ memory, gets one model-facing repair pass, and otherwise the old wiki stands whi
 patrol's findings still deliver (`.ai/spec/decisions/0011`). Since #6 every Watch-list
 entry also carries a guard-bounded `recheck:` command — the exact `kubectl_readonly`
 argument string that re-verifies it, judged by the guard's refusal grammar
-(`.ai/spec/decisions/0013`). Planned next (v0.2): `stale_after` expiry and
+(`.ai/spec/decisions/0013`). Since #7 the refinement loop's expire leg is
+process-enforced: every metadata entry carries a patroller-stamped `verified_patrol`
+clock, and a watching watch-list entry whose `last_verified` has not advanced for
+`PATROL_WIKI_STALE_AFTER` (default 5) accepted writes is auto-expired — flipped to
+`expired` and moved to the end of the Anomaly log with an `auto-expired` annotation,
+history kept, never deleted (`.ai/spec/decisions/0014`). Planned next (v0.2):
 `--wiki-stats` health numbers.
 
 ## Deployment topology (current vs planned)
