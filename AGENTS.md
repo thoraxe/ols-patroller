@@ -17,10 +17,11 @@ issues inform the specs.
 | Phase | Command | Gate |
 |---|---|---|
 | 1. Spec PR — contract rules + failing tests, fresh-AI review loop until clean | `/skill:spec-first <issue or feature>` | **Human adds `spec-approved`** |
-| 2. Implementation — context-clear agent makes the tests pass, fresh-AI review loop | `/skill:spec-implement <PR>` (fresh session) | **Human merges** |
+| 2. Implementation — context-clear agent makes the tests pass, fresh-AI review loop | `/skill:spec-implement <PR>` (fresh session) | **AI merges** (after clean review + `implementation-complete`; current policy, revocable) |
 
 PR state labels track where a PR is in that loop. The skills manage the AI-review
-and ready states; humans own the gate transitions (`spec-approved`, merging):
+and ready states. Humans own the `spec-approved` gate; merging is agent-owned
+under current policy (clean implementation review + `implementation-complete`):
 
 | Label | Meaning |
 |---|---|
@@ -28,7 +29,7 @@ and ready states; humans own the gate transitions (`spec-approved`, merging):
 | `spec-review-required` | Spec passed all AI reviews — ready for human review |
 | `spec-approved` | A human reviewed and approved the spec changes (gate to phase 2) |
 | `ai-implementation-review` | PR is currently being reviewed by AI (implementation phase) |
-| `implementation-complete` | Fully AI-reviewed — could be merged; optional human review |
+| `implementation-complete` | Fully AI-reviewed — the implementing agent merges the PR at this point (current policy, revocable) |
 
 - Every feature PR has exactly **two commits**: (1) specs + failing tests,
   (2) implementation.
@@ -37,7 +38,11 @@ and ready states; humans own the gate transitions (`spec-approved`, merging):
 - Implementation never changes contract rules — only `[PLANNED: #N]` → `[DONE: #N]`
   flips. If the spec turns out wrong, stop and surface it; spec changes need their
   own review loop.
-- Never merge without human approval.
+- Merging: the implementing agent merges once the implementation review is
+  APPROVED with zero blocking findings and the PR carries `implementation-complete`
+  (merge commit only — squash/rebase would collapse the two-commit structure).
+  Current policy, revocable by the human at any time; the `spec-approved` gate
+  stays human-only either way.
 
 ## Development
 

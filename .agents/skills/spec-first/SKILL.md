@@ -27,7 +27,9 @@ The argument names the work:
 
 - The PR contains **spec changes + failing tests only**. No implementation code
   beyond test scaffolding (conftest, dependency wiring, test fixtures).
-- Never merge, never push to `main`. Human approval is the only merge path.
+- Never merge, never push to `main`. This skill never merges — merging happens in
+  `spec-implement`, after the implementation review is clean and the PR carries
+  `implementation-complete` (current policy).
 - Never add the `spec-approved` label yourself — that transition belongs to a
   human; the label is the gate `spec-implement` keys on.
 - Write for a context-clear implementer: the implementing agent will read the
