@@ -121,6 +121,7 @@ truth). If git is unavailable, the patroller degrades to file-only.
 | `PATROL_TOOL_TIMEOUT` | `60` | per-command timeout |
 | `PATROL_CLUSTER_ID` | `local` | cluster identity for wiki commit emails (`patrol@<id>`) |
 | `PATROL_WIKI_REMOTE` | — | if set, wiki commits are pushed there (best-effort replication) |
+| `PATROL_WIKI_STALE_AFTER` | `5` | auto-expire a watch-list entry — flip to `expired`, move it to the Anomaly log with an `auto-expired` annotation — when its `last_verified` has not advanced for this many accepted wiki writes; `0` disables the flip (the per-entry clock is still kept) |
 
 ## Deploy in-cluster
 

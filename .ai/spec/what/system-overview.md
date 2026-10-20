@@ -41,7 +41,7 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
    entry [DONE: #6] — with one repair pass and process-stamped counters
    [DONE: #5]; entries carry a process-stamped `verified_patrol` clock and
    unverified watch-list entries auto-expire into the Anomaly log
-   [PLANNED: #7] (`wiki-memory.md`).
+   [DONE: #7] (`wiki-memory.md`).
 10. **Reporting & notifications** — typed report schema, severity vocabulary,
     console/Slack delivery (`reporting-notifications.md`).
 11. **Safety model** — layered read-only enforcement spanning guard, engine, and
@@ -73,7 +73,7 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
 14. Each patrol: load wiki → gather in-flight AgenticRuns context (best-effort) →
     agentic exploration → reporting pass → validate the wiki skeleton (one repair
     pass on failure) [DONE: #5] → print findings, send notifications, expire
-    stale watch-list entries [PLANNED: #7], stamp the frontmatter counters
+    stale watch-list entries [DONE: #7], stamp the frontmatter counters
     [DONE: #5], rewrite the wiki atomically, commit it to the wiki repo, push
     if `PATROL_WIKI_REMOTE` is set [DONE: #3].
 15. If the reporting pass fails entirely, the patrol ends with a warning and the wiki
@@ -112,7 +112,7 @@ Environment variables:
 - `PATROL_WIKI_STALE_AFTER` — accepted-write threshold for stale-entry expiry:
   a Watch-list entry whose `last_verified` has not advanced for this many
   accepted writes is flipped to `expired` and moved to the Anomaly log
-  (default `5`; `0` disables the flip) [PLANNED: #7]
+  (default `5`; `0` disables the flip) [DONE: #7]
 
 CLI flags: `--once` (default), `--loop`, `--interval`, `--dry-cluster`, `--wiki`
 (default `wiki/cluster-wiki.md` next to `patrol.py` [DONE: #3; was

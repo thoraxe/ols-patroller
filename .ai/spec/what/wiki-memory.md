@@ -76,7 +76,7 @@ knowledge base of the observed cluster.
     stamp → write → commit → push (rule 16); the stamp advances `patrol_count` on
     every accepted write, so the byte-identical case is superseded (rule 17), and
     the e2e gains the repair and keep-old-wiki paths (rules 15–19).]
-    [PLANNED: #7 — the tail becomes validate → repair once → deliver → expire
+    [DONE: #7 — the tail becomes validate → repair once → deliver → expire
     → stamp → write → commit → push, and the e2e gains the expiry wiring: a
     stale watching entry flips into the Anomaly log on the written wiki, a
     re-verified entry's clock resets, and each flip logs a console line
@@ -97,7 +97,7 @@ knowledge base of the observed cluster.
    patrol", "unchanged 18:44") carried forward across patrols. The recheck
    command (rule 12a) is that rule made executable: patrol N+1 runs the entry's
    recheck first when re-verifying it, and rewrites a recheck whose
-   verification path has changed [DONE: #6]. [PLANNED: #7 — the loop's expire
+   verification path has changed [DONE: #6]. [DONE: #7 — the loop's expire
    leg is process-enforced: an entry whose `last_verified` stops advancing for
    `PATROL_WIKI_STALE_AFTER` accepted writes is auto-expired by the patroller
    (rules 20–22).]
@@ -165,7 +165,7 @@ the history #7 expires into) carry per-entry structure; everything else is prose
       validator judges (rule 12a) [DONE: #6]. A `verified_patrol` pair
       (#7, rule 20) stays unjudged: it is process-stamped and overwritten
       wholesale, so the model may copy, drop, or mangle it freely
-      [PLANNED: #7].
+      [DONE: #7].
     - Free prose is the indented continuation of the list item (sub-bullets
       allowed) — the natural-language hypothesis. Prose is never validated and
       never appears on the metadata line itself: a trailing text after the
@@ -243,7 +243,7 @@ attempt, and then the old wiki wins. Persistence problems degrade, never block.
     guard's refusal grammar through shared code — never by executing the
     command [DONE: #6]. Prose, section order, heading levels other
     than 2, prose-section list items, and the values of the process-stamped
-    fields are not judged [PLANNED: #7 — the per-entry `verified_patrol`
+    fields are not judged [DONE: #7 — the per-entry `verified_patrol`
     clock joins the process-stamped set (rule 20): still never judged,
     always overwritten]. Each error names the element that failed (the
     missing section, the offending key, the entry missing its recheck).
@@ -251,7 +251,7 @@ attempt, and then the old wiki wins. Persistence problems degrade, never block.
 16. **Write path.** After the shape pass, a non-empty `updated_wiki` is validated
     before anything is written:
     - **valid** → expire (rules 20–22) → stamp (rule 17) → atomic write →
-      commit → push (rules 4c–4e) [PLANNED: #7 — the expiry pass runs after
+      commit → push (rules 4c–4e) [DONE: #7 — the expiry pass runs after
       the delivery decision resolves, immediately before the stamp];
     - **invalid** → one repair pass (rule 18). If the repaired report's wiki
       validates, that report is the patrol's final report (expire → stamp →
@@ -300,7 +300,7 @@ attempt, and then the old wiki wins. Persistence problems degrade, never block.
 
 ### Stale-entry Expiry
 
-The refinement loop's expire leg, made real [PLANNED: #7]: a watch-list entry
+The refinement loop's expire leg, made real [DONE: #7]: a watch-list entry
 the model stops re-verifying is retired by the **process**, deterministically
 — stale memory is worse than no memory for an agent whose wiki is hypotheses
 (the OKF/AIX `stale_after` motivation, issue #7). The patroller owns the
@@ -414,7 +414,7 @@ archaeology).
   Anomaly log. Non-negative integer, default 5; `0` disables the flip (the
   `verified_patrol` clock is still stamped); read once at startup, and an
   unparseable or negative value fails startup with a config error
-  [PLANNED: #7]
+  [DONE: #7]
 
 ## Constraints
 
@@ -442,5 +442,5 @@ archaeology).
 | ~~#3~~ | ~~Git-backed wiki: wiki directory is a git repo (init at startup, file-only fallback), atomic write (temp + rename), one commit per wiki-changing patrol (`patrol N: X findings, Y warn`), optional `PATROL_WIKI_REMOTE` push — bounded, best-effort, local-first~~ |
 | ~~#5~~ | Skeleton schema + validation-on-write (rules 10–19): YAML frontmatter (`wiki_version` == 1, `cluster_id`, `patrol_count`, `last_patrol` — the last three process-stamped on write), fixed section set enforced exactly-once, entry metadata line (`id`, `status` watching/resolved/expired, `first_seen`, `last_verified`, `source`, `confidence` high/medium/low) in Watch-list + Anomaly log, `validate_wiki` gate with one shape-pass repair retry else keep-old-wiki; PyYAML joins the runtime deps (ADR 0011). Impl commit also syncs `ARCHITECTURE.md`'s wiki prose ("Planned next" paragraph) and `AGENTS.md`'s test list |
 | ~~#6~~ | ~~Per-entry `recheck:` commands — every Watch-list entry carries exactly one guard-acceptable `recheck:` pair (rule 12a): the `kubectl_readonly` argument string that re-verifies it, tool-argument form (no `kubectl`/`oc` prefix), judged by the guard's refusal grammar through shared code; optional in the Anomaly log; the report contract asks for it and the patrol prompt consumes it (ADR 0013). Impl commit also syncs `ARCHITECTURE.md`'s wiki prose (the planned-next line) and `AGENTS.md`'s test list~~ |
-| #7 | `stale_after`: auto-expire watch-list entries not re-verified within N patrols (flip to `expired`, keep in anomaly log) — process-stamped `verified_patrol` clock + expiry flip (rules 20–22, ADR 0014); impl commit also syncs `ARCHITECTURE.md`'s wiki prose (the planned-next line), `AGENTS.md`'s test list, and `README.md`'s config table (`PATROL_WIKI_STALE_AFTER`) |
+| ~~#7~~ | ~~`stale_after`: auto-expire watch-list entries not re-verified within N patrols (flip to `expired`, keep in anomaly log) — process-stamped `verified_patrol` clock + expiry flip (rules 20–22, ADR 0014); impl commit also syncs `ARCHITECTURE.md`'s wiki prose (the planned-next line), `AGENTS.md`'s test list, and `README.md`'s config table (`PATROL_WIKI_STALE_AFTER`)~~ |
 | #8 | `--wiki-stats`: four wiki-health numbers — verification rate, resolution ratio, confidence spread, churn/paraphrase-drift |
