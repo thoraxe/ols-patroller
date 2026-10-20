@@ -92,7 +92,7 @@ knowledge base of the observed cluster.
    patrol", "unchanged 18:44") carried forward across patrols. The recheck
    command (rule 12a) is that rule made executable: patrol N+1 runs the entry's
    recheck first when re-verifying it, and rewrites a recheck whose
-   verification path has changed [PLANNED: #6].
+   verification path has changed [DONE: #6].
 
 ### Epistemics
 
@@ -154,12 +154,12 @@ the history #7 expires into) carry per-entry structure; everything else is prose
       the line after the six required keys must consist solely of such
       ` · `-separated pairs — any other trailing text is a validation failure.
       Unknown keys are not judged — `recheck` is the first additional key the
-      validator judges (rule 12a) [PLANNED: #6].
+      validator judges (rule 12a) [DONE: #6].
     - Free prose is the indented continuation of the list item (sub-bullets
       allowed) — the natural-language hypothesis. Prose is never validated and
       never appears on the metadata line itself: a trailing text after the
       fields is a validation failure.
-12a. **Recheck command** [PLANNED: #6]. A `recheck` pair on an entry metadata
+12a. **Recheck command** [DONE: #6]. A `recheck` pair on an entry metadata
     line carries the `kubectl_readonly` invocation that re-verifies the entry —
     the citation made regenerable: OKF/AIX rule 2 ("never rewrite the evidence —
     cite the source") translated for regenerable evidence, where the citation
@@ -220,7 +220,7 @@ attempt, and then the old wiki wins. Persistence problems degrade, never block.
 
 15. **Validator.** `validate_wiki(content) -> list[str]` returns human-readable
     validation errors (empty list = valid). It checks exactly rules 10–12 and,
-    for the `recheck` pair, rule 12a [PLANNED: #6] — frontmatter block present
+    for the `recheck` pair, rule 12a [DONE: #6] — frontmatter block present
     at the top, parseable YAML mapping (PyYAML, `pyyaml>=6`, joins the runtime
     dependency set), closed key set, types, `wiki_version == WIKI_VERSION`;
     the five canonical sections exactly once each and no other level-2
@@ -230,7 +230,7 @@ attempt, and then the old wiki wins. Persistence problems degrade, never block.
     closed set: exactly one guard-acceptable `recheck` pair on every
     Watch-list entry, at most one on an Anomaly-log entry, judged with the
     guard's refusal grammar through shared code — never by executing the
-    command [PLANNED: #6]. Prose, section order, heading levels other
+    command [DONE: #6]. Prose, section order, heading levels other
     than 2, prose-section list items, and the values of the process-stamped
     fields are not judged. Each error names the element that failed (the
     missing section, the offending key, the entry missing its recheck).
@@ -322,6 +322,6 @@ attempt, and then the old wiki wins. Persistence problems degrade, never block.
 |---|---|
 | ~~#3~~ | ~~Git-backed wiki: wiki directory is a git repo (init at startup, file-only fallback), atomic write (temp + rename), one commit per wiki-changing patrol (`patrol N: X findings, Y warn`), optional `PATROL_WIKI_REMOTE` push — bounded, best-effort, local-first~~ |
 | ~~#5~~ | Skeleton schema + validation-on-write (rules 10–19): YAML frontmatter (`wiki_version` == 1, `cluster_id`, `patrol_count`, `last_patrol` — the last three process-stamped on write), fixed section set enforced exactly-once, entry metadata line (`id`, `status` watching/resolved/expired, `first_seen`, `last_verified`, `source`, `confidence` high/medium/low) in Watch-list + Anomaly log, `validate_wiki` gate with one shape-pass repair retry else keep-old-wiki; PyYAML joins the runtime deps (ADR 0011). Impl commit also syncs `ARCHITECTURE.md`'s wiki prose ("Planned next" paragraph) and `AGENTS.md`'s test list |
-| #6 | Per-entry `recheck:` commands — every Watch-list entry carries exactly one guard-acceptable `recheck:` pair (rule 12a): the `kubectl_readonly` argument string that re-verifies it, tool-argument form (no `kubectl`/`oc` prefix), judged by the guard's refusal grammar through shared code; optional in the Anomaly log; the report contract asks for it and the patrol prompt consumes it (ADR 0013). Impl commit also syncs `ARCHITECTURE.md`'s wiki prose (the planned-next line) and `AGENTS.md`'s test list |
+| ~~#6~~ | ~~Per-entry `recheck:` commands — every Watch-list entry carries exactly one guard-acceptable `recheck:` pair (rule 12a): the `kubectl_readonly` argument string that re-verifies it, tool-argument form (no `kubectl`/`oc` prefix), judged by the guard's refusal grammar through shared code; optional in the Anomaly log; the report contract asks for it and the patrol prompt consumes it (ADR 0013). Impl commit also syncs `ARCHITECTURE.md`'s wiki prose (the planned-next line) and `AGENTS.md`'s test list~~ |
 | #7 | `stale_after`: auto-expire watch-list entries not re-verified within N patrols (flip to `expired`, keep in anomaly log) |
 | #8 | `--wiki-stats`: four wiki-health numbers — verification rate, resolution ratio, confidence spread, churn/paraphrase-drift |

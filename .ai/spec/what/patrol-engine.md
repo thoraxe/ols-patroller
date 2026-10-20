@@ -19,7 +19,7 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
    (2) compare against the wiki for drift — Watch-list entries carry `recheck:`
    commands (`wiki-memory.md` rule 12a), the read-only invocations that re-verify
    them: run an entry's recheck first when re-checking it, and rewrite a recheck
-   whose verification path has changed [PLANNED: #6]; (3) decide what a human
+   whose verification path has changed [DONE: #6]; (3) decide what a human
    should actually care about (don't cry wolf); (4) produce an updated wiki and
    refined watch-list.
 4. When done exploring, the model stops calling tools and writes a plain-text final
@@ -85,7 +85,7 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
 
 | Ticket | Summary |
 |---|---|
-| #6 | Prompt consumes recheck commands: run an entry's `recheck` first when re-verifying it, keep it current when the verification path changes (`wiki-memory.md` rule 12a) |
+| ~~#6~~ | ~~Prompt consumes recheck commands: run an entry's `recheck` first when re-verifying it, keep it current when the verification path changes (`wiki-memory.md` rule 12a)~~ |
 | #10 | Cost control: scoping (cluster vs per-namespace rounds), token soft-stop, termination tuning, smarter output truncation than hard OUT_CAP |
 | #14 | CRD-based dispatcher (`PatrolSchedule`) replacing the `--loop` process |
 | #15 | Pluggable investigation engine — evaluate HolmesGPT as the RCA phase; keep the current loop swappable |

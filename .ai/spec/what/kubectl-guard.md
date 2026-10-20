@@ -94,11 +94,11 @@ sees these messages and recovers based on them.
   secret-value protection, raw-path refusal) is the single source of truth for
   "a command `kubectl_readonly` accepts". The wiki validator reuses it to
   judge `recheck` citations (`wiki-memory.md` rule 12a) through shared code,
-  never by executing the command [PLANNED: #6].
+  never by executing the command [DONE: #6].
 
 ## Planned Changes
 
 | Ticket | Summary |
 |---|---|
-| #6 | Refusal grammar extracted as a shared pure predicate (`guard_refusal`); the wiki validator judges `recheck` citations with it — guard behavior itself unchanged (`wiki-memory.md` rule 12a) |
+| ~~#6~~ | ~~Refusal grammar extracted as a shared pure predicate (`guard_refusal`); the wiki validator judges `recheck` citations with it — guard behavior itself unchanged (`wiki-memory.md` rule 12a)~~ |
 | ~~#11~~ | Refuse any command containing `--raw` (rule 6a) — proxy/stats endpoints dump multi-hundred-KB JSON that truncates and gets retried, burning patrol turns |

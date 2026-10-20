@@ -38,7 +38,7 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
    rewritten each patrol, git-backed: one wiki-changing patrol, one commit
    [DONE: #3]; skeleton-validated on write — frontmatter, fixed section set,
    entry metadata, a guard-acceptable `recheck` command on every Watch-list
-   entry [PLANNED: #6] — with one repair pass and process-stamped counters
+   entry [DONE: #6] — with one repair pass and process-stamped counters
    [DONE: #5] (`wiki-memory.md`).
 10. **Reporting & notifications** — typed report schema, severity vocabulary,
     console/Slack delivery (`reporting-notifications.md`).
