@@ -1,6 +1,6 @@
 ---
 name: spec-implement
-description: Implement an approved spec PR — a context-clear agent makes the failing tests pass exactly as the approved spec specifies, gets fresh independent AI review, and adds the single implementation commit for human approval. Phase 2 of the spec-first PR workflow.
+description: Implement an approved spec PR — a context-clear agent makes the failing tests pass exactly as the approved spec specifies, gets fresh independent AI review, adds the single implementation commit, and merges once the review is clean and the PR is labeled. Phase 2 of the spec-first PR workflow.
 disable-model-invocation: true
 ---
 
@@ -38,8 +38,11 @@ issue number. Resolve with `gh pr view` / `gh pr diff` as needed.
   strikethroughs.
 - Exactly one additional commit on the PR branch. Never amend, rebase, or otherwise
   touch commit 1.
-- Never merge, and never add the `spec-approved` label — both are human actions.
-  `implementation-complete` signals the PR *could* be merged; it does not merge it.
+- Never add the `spec-approved` label — that gate stays human-only. Merging is
+  agent-owned under current policy, but only in step 5 and only when the review
+  loop returned APPROVED with zero BLOCKING findings and the PR carries the
+  `implementation-complete` label. If that policy is revoked, merging reverts to
+  a human action.
 - If the spec is wrong or impossible to implement as written: STOP. Report the
   conflict in the PR conversation and to the user. Spec changes need their own
   `/skill:spec-first` review loop — do not fix the spec inline.
@@ -86,17 +89,23 @@ glossary.
 - Save each round's report to `.ai/spec/verification/impl-<slug>-report.md`
   (gitignored; the PR body carries the outcome).
 
-### 5. Commit and report
+### 5. Commit, label, merge, and report
 
 - One commit on the PR branch: `impl: <title> (#N)` — implementation + how/ sync +
   `[DONE: #N]` marker flips + Planned Changes strikethroughs.
-- Push to the PR branch. Do not merge.
+- Push to the PR branch.
 - Flip the state: remove `ai-implementation-review`, add
   `implementation-complete` (`gh pr edit <N> --remove-label
-  ai-implementation-review --add-label implementation-complete`). The PR now
-  signals it could be merged — the merge itself stays with a human.
-- Report to the user: what was implemented, test results, review outcome, and that
-  the PR awaits their final approval (merge or further human review).
+  ai-implementation-review --add-label implementation-complete`). This label is
+  the merge precondition — never merge without it on the PR.
+- Merge: `gh pr merge <N> --merge` — a merge commit, matching repo history; never
+  `--squash` or `--rebase` (both collapse the two-commit spec→impl structure),
+  never `--auto`. Merge only when the review loop ended APPROVED with zero
+  BLOCKING findings and the label flip succeeded. If the merge fails (branch
+  protection, conflicts, anything else), stop and report — never force it.
+- Report to the user: what was implemented, test results, review outcome, and the
+  merge result (merged, or not merged and why). Flag anything a human may still
+  want to look at post-merge.
 
 ## Reviewer dispatch (Pi)
 
@@ -115,6 +124,7 @@ glossary.
 ## What this skill does NOT do
 
 - Change contract rules, bend the spec, or "improve" the design.
-- Merge, rebase, or amend.
+- Rebase, amend, or otherwise rewrite history; and no merging except the labeled,
+  review-clean merge of step 5 (`--merge` only, never squash/rebase/auto).
 - Skip the review loop because the tests pass — tests passing is necessary, not
   sufficient.
