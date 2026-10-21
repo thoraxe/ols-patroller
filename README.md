@@ -24,8 +24,8 @@ export PATROL_MODEL=<model id>
 uv run patrol.py --once --dry-cluster     # no cluster needed; canned fixtures
 uv run patrol.py --once                   # real cluster (needs oc/kubectl + kubeconfig)
 uv run patrol.py --loop --interval 21600  # patrol every 6 h (the default cadence)
-uv run patrol.py --wiki-stats             # the wiki's four health numbers — offline,
-                                          # no PATROL_* env or cluster needed
+uv run patrol.py --wiki-stats             # the wiki's health numbers (incl. size) —
+                                          # offline, no PATROL_* env or cluster needed
 ```
 
 Per-turn output — model reasoning previews, tool invocations, the guard's expanded
@@ -37,13 +37,15 @@ Run `--once --dry-cluster` **twice** to see the memory loop: patrol #1 maps the
 cluster + writes the wiki; patrol #2 consults the watch-list, tracks persistence
 across patrols, and escalates per its own previously-written rules.
 
-`--wiki-stats` reads only the wiki (and its git history) and prints the four
-health numbers — **verification rate** (Watch-list entries whose process-stamped
+`--wiki-stats` reads only the wiki (and its git history) and prints the health
+numbers — **verification rate** (Watch-list entries whose process-stamped
 `verified_patrol` equals the frontmatter `patrol_count`), **resolution ratio**
 (watching/resolved/expired counts), **confidence spread** (with a warning when
 one level holds ≥ 2/3 of ≥ 5 graded entries — a grade everyone gets is not a
-grade), and **churn** (entries whose prose changed in every one of the last 5
-wiki commits with no status change — the photocopy-of-a-photocopy effect).
+grade), **churn** (entries whose prose changed in every one of the last 5
+wiki commits with no status change — the photocopy-of-a-photocopy effect),
+and **size** (the character count against the soft 20,000-char budget, with a
+warning over it — the wiki is a working set; git history is the archive).
 Hints on the human surface, never gates.
 
 ## What it does per patrol
@@ -101,7 +103,12 @@ wiki-changing patrol stages exactly the wiki file and commits
 `patrol N: X findings, Y warn` — irreversibility insurance, since a bad rewrite
 is always revertible. Set `PATROL_WIKI_REMOTE` to replicate the repo off-cluster
 (best-effort, bounded, never blocks the patrol; the local repo is the source of
-truth). If git is unavailable, the patroller degrades to file-only.
+truth). If git is unavailable, the patroller degrades to file-only. The wiki is
+a bounded working set: every watching Anomaly-log entry plus the last 20
+resolved/expired ones survive each accepted write (older closed entries are
+pruned by the patroller — one console line each — and stay recoverable from
+the repo's history), and a soft 20,000-character budget warns on overshoot
+without ever rejecting a write.
 
 ## Safety model
 
@@ -133,7 +140,7 @@ truth). If git is unavailable, the patroller degrades to file-only.
 | `PATROL_CLUSTER_ID` | `local` | cluster identity for wiki commit emails (`patrol@<id>`) |
 | `PATROL_WIKI_REMOTE` | — | if set, wiki commits are pushed there (best-effort replication) |
 | `PATROL_WIKI_STALE_AFTER` | `5` | auto-expire a watch-list entry — flip to `expired`, move it to the Anomaly log with an `auto-expired` annotation — when its `last_verified` has not advanced for this many accepted wiki writes; `0` disables the flip (the per-entry clock is still kept) |
-| `--wiki-stats` (CLI flag) | — | print the wiki's four health numbers (verification rate, resolution ratio, confidence spread, churn) and exit — fully offline: no `PATROL_*` env, no cluster, no repo initialization; a missing wiki file is an error, everything else degrades to `n/a`. Churn examines the last 5 wiki commits (prose-only — process stamps and date advances never count as rewording) and the lopsided-confidence warning fires at ≥ 2/3 of ≥ 5 graded entries; both thresholds are hard-coded, not configurable |
+| `--wiki-stats` (CLI flag) | — | print the wiki's health numbers (verification rate, resolution ratio, confidence spread, churn, size against the soft 20,000-char budget) and exit — fully offline: no `PATROL_*` env, no cluster, no repo initialization; a missing wiki file is an error, everything else degrades to `n/a`. Churn examines the last 5 wiki commits (prose-only — process stamps and date advances never count as rewording) and the lopsided-confidence warning fires at ≥ 2/3 of ≥ 5 graded entries; both thresholds are hard-coded, not configurable |
 
 ## Deploy in-cluster
 

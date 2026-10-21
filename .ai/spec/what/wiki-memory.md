@@ -81,7 +81,7 @@ knowledge base of the observed cluster.
     stale watching entry flips into the Anomaly log on the written wiki, a
     re-verified entry's clock resets, and each flip logs a console line
     (rules 20–22).]
-    [PLANNED: #40 — the tail becomes validate → repair once → deliver →
+    [DONE: #40 — the tail becomes validate → repair once → deliver →
     expire → compact → stamp → write → commit → push, and the e2e gains
     the budget wiring: a resolved/expired Anomaly log over the keep budget
     is pruned on the written wiki with one console line per pruned entry,
@@ -115,7 +115,7 @@ knowledge base of the observed cluster.
    other way around.
 9. The wiki is the audit trail for a non-deterministic agent: since patrols are not
    reproducible, the wiki (plus logs) is the record of what was believed and when.
-   [PLANNED: #40 — the record spans the wiki plus its git history (rule 4a):
+   [DONE: #40 — the record spans the wiki plus its git history (rule 4a):
    the working-set budget (rule 28) prunes from the document what the
    archive retains, so the audit trail survives compaction.]
 
@@ -254,7 +254,7 @@ attempt, and then the old wiki wins. Persistence problems degrade, never block.
     than 2, prose-section list items, and the values of the process-stamped
     fields are not judged [DONE: #7 — the per-entry `verified_patrol`
     clock joins the process-stamped set (rule 20): still never judged,
-    always overwritten] [PLANNED: #40 — document length is equally
+    always overwritten] [DONE: #40 — document length is equally
     unjudged: the soft budget (rule 29) never gates validation]. Each
     error names the element that failed (the
     missing section, the offending key, the entry missing its recheck).
@@ -264,12 +264,12 @@ attempt, and then the old wiki wins. Persistence problems degrade, never block.
     - **valid** → expire (rules 20–22) → stamp (rule 17) → atomic write →
       commit → push (rules 4c–4e) [DONE: #7 — the expiry pass runs after
       the delivery decision resolves, immediately before the stamp]
-      [PLANNED: #40 — the compaction pass (rule 28) joins between expiry
+      [DONE: #40 — the compaction pass (rule 28) joins between expiry
       and the stamp — expire → compact → stamp → write → commit → push —
       and the soft-budget warning (rule 29) fires on the final wiki];
     - **invalid** → one repair pass (rule 18). If the repaired report's wiki
       validates, that report is the patrol's final report (expire → compact
-      → stamp → write → commit → push [PLANNED: #40 — compaction joins
+      → stamp → write → commit → push [DONE: #40 — compaction joins
       the tail]). If the repair is absent, fails, or its wiki is
       still invalid → keep the old wiki, log a warning to **stderr** (the wiki
       update was rejected; the previous wiki stands), write/commit/push nothing.
@@ -303,7 +303,7 @@ attempt, and then the old wiki wins. Persistence problems degrade, never block.
     the same tool-free structured-output call, same `PatrolReport` binding —
     whose user message states that the previous wiki failed validation and
     carries the error list and the rejected wiki, asking for a corrected
-    `PatrolReport` [PLANNED: #40 — when the rejected wiki is over the soft
+    `PatrolReport` [DONE: #40 — when the rejected wiki is over the soft
     budget, its budget warning (rule 29) joins the error list as one more
     line: the model is asked to shorten while it fixes structure, though
     acceptance stays structural validity alone]. At most **one** repair pass
@@ -370,7 +370,7 @@ archaeology).
     - the whole list item (metadata line + indented continuation lines)
       moves **verbatim** to the end of the Anomaly log section — history
       kept, not silently retained, not deleted (rule 9's audit trail)
-      [PLANNED: #40 — kept in the working set until the anomaly-log budget
+      [DONE: #40 — kept in the working set until the anomaly-log budget
       prunes it (rule 28); the git archive retains it either way]; a
       `recheck` pair carried along stays valid (rule 12a: optional in the
       Anomaly log). The Anomaly log's existing content — including a
@@ -405,7 +405,7 @@ archaeology).
     flipped, in Watch-list item order; no I/O, no model calls, the same
     fence-aware section/entry scanning as the validator (rule 15). It runs in the write path after the
     validation/repair decision and the delivery, immediately before the
-    stamp (rule 16) [PLANNED: #40 — with compaction in the tail, "immediately"
+    stamp (rule 16) [DONE: #40 — with compaction in the tail, "immediately"
     becomes "next": expire → compact → stamp (rule 16), and what is stamped
     is the compacted output]: its inputs are the validated wiki and the old on-disk
     wiki (the clock's carry source — the same basis rule 17 uses for
@@ -425,14 +425,14 @@ The wiki's four health numbers [DONE: #8] — "rules without measures drift"
 discipline — verify what you watch (#7's clock), resolve or expire deliberately,
 grade confidence honestly — and the stats measure whether the discipline holds.
 The size line extends the block with #40's measure: the working-set budgets
-(rules 28–29) get their drift alarm too [PLANNED: #40].
+(rules 28–29) get their drift alarm too [DONE: #40].
 All four numbers are computed by the patroller process, offline, from the wiki
 document and its git history: no model calls, no cluster reads, no patrol, no
 writes. ADR `decisions/0015-wiki-stats-offline-prose-churn.md` records the
 shape.
 
 23. **The stats mode.** `--wiki-stats` prints the four numbers for the wiki at
-    `--wiki` and exits [PLANNED: #40 — plus the size line (rule 24): the
+    `--wiki` and exits [DONE: #40 — plus the size line (rule 24): the
     wiki's size against the soft budget, the working-set drift measure] —
     it never runs a patrol and takes precedence over
     `--once` (the default mode). The mode is fully offline: it requires no
@@ -450,7 +450,7 @@ shape.
     stats print and exit, they cannot schedule.
 24. **The printed block.** `--wiki-stats` prints to stdout one block carrying
     the four numbers (exact keywords pinned; spacing and decoration free;
-    percentages are floored integers) [PLANNED: #40 — plus the size line
+    percentages are floored integers) [DONE: #40 — plus the size line
     below: four numbers and size]:
     - a header naming the cluster and the patrol clock: `cluster <cluster_id>`
       and `patrol_count <P>`;
@@ -467,15 +467,15 @@ shape.
       grade everyone gets is not a grade`;
     - `size: <N> chars (<P>% of budget)` — N the wiki document's character
       count (the whole file, frontmatter included), P the floored
-      percentage of `WIKI_CHAR_BUDGET` [PLANNED: #40];
+      percentage of `WIKI_CHAR_BUDGET` [DONE: #40];
     - when the wiki is over the soft budget (rule 29): one warning line —
       the rule-29 warning text prefixed `WARNING: ` — e.g. `WARNING: wiki
       over length budget: 21400 chars vs 20000 budget — summarize and
-      prune; git history is the archive` [PLANNED: #40].
+      prune; git history is the archive` [DONE: #40].
 25. **The document-stats parser (`wiki_stats`).** A pure function
     `wiki_stats(content) -> dict` — no I/O, no model calls — computing the
     three numbers that read the wiki document (the fourth, churn, reads git
-    history — rule 27) [PLANNED: #40 — the size keys make it four document
+    history — rule 27) [DONE: #40 — the size keys make it four document
     numbers; churn stays the history reader]. The parser is defensive: it reads skeleton-valid
     wikis exactly and hand-edited ones as far as they parse — a top-level list
     item of a metadata section is an **entry** iff its line parses into
@@ -483,7 +483,7 @@ shape.
     invisible to every stat. Each stat uses the field it needs: an entry
     counts toward a stat iff that field's value is in the stat's vocabulary
     (garbage or missing values are skipped for that stat only). The dict has
-    exactly ten keys [PLANNED: #40 — was eight; `char_count` and
+    exactly ten keys [DONE: #40 — was eight; `char_count` and
     `over_budget` join] — `patrol_count` (P, the frontmatter `patrol_count`
     under `frontmatter_patrol_count` semantics: unparseable or absent counts
     0), `cluster_id` (the frontmatter string, `""` when absent), `watch_total`,
@@ -515,7 +515,7 @@ shape.
       `high` (at ≥ 2/3 the dominant level is necessarily unique). Below the
       minimum the spread is reported without judgment — too little data to
       call lopsided.
-    - **size** [PLANNED: #40] — `char_count`: the wiki document's character
+    - **size** [DONE: #40] — `char_count`: the wiki document's character
       count (the whole file, frontmatter included — always computable,
       whatever the document's validity, like the rest of the defensive
       parser); `over_budget`: True iff `char_count` exceeds
@@ -566,7 +566,7 @@ shape.
 
 ### Working-Set Budget
 
-The wiki is a **working set**, not a log [PLANNED: #40]: growth taxes every
+The wiki is a **working set**, not a log [DONE: #40]: growth taxes every
 patrol — the wiki is injected whole into the prompt (rule 3) and re-emitted
 whole by the shape pass under `max_tokens` (today's de-facto ceiling: an
 over-long wiki fails the reporting pass rather than being trimmed) — while
@@ -684,7 +684,7 @@ load-bearing constraint of #5).
   [DONE: #7]
 - `--wiki-stats` — print the wiki's four health numbers (rules 23–27) and
   exit: verification rate, resolution ratio, confidence spread, churn
-  [PLANNED: #40 — plus the size line (rule 24): the wiki's character count
+  [DONE: #40 — plus the size line (rule 24): the wiki's character count
   and over-budget warning]. Offline
   — no `PATROL_*` env, no cluster, no repo initialization; a missing wiki file
   is an error, everything else degrades to `n/a` [DONE: #8]
@@ -699,13 +699,13 @@ load-bearing constraint of #5).
   Anomaly log's keep budget (rule 28): the last 20 resolved/expired entries
   survive every accepted write; earlier ones are pruned by the patroller,
   recoverable from git history. Passed to the compaction pass by the write
-  path (read at call time, the `STALE_AFTER` pattern) [PLANNED: #40]
+  path (read at call time, the `STALE_AFTER` pattern) [DONE: #40]
 - `WIKI_CHAR_BUDGET` — hard-coded constant (not env-configurable), the soft
   whole-wiki character budget (rule 29): 20,000 characters (the whole file,
   frontmatter included). Overshoot warns — write path (stderr),
   repair-pass error list, `--wiki-stats` size line — and never gates
   validation; read at call time by `wiki_budget_warnings` (and by
-  `wiki_stats`'s `over_budget`) [PLANNED: #40]
+  `wiki_stats`'s `over_budget`) [DONE: #40]
 
 ## Constraints
 
@@ -730,7 +730,7 @@ load-bearing constraint of #5).
   prunes older ones, recoverable from git history — and a soft character
   budget warns on overshoot without ever gating validation. Growth taxes
   every patrol (the wiki is injected whole, rule 3); the archive is the
-  wiki repo, not the document [PLANNED: #40].
+  wiki repo, not the document [DONE: #40].
 
 ## Planned Changes
 
@@ -741,4 +741,4 @@ load-bearing constraint of #5).
 | ~~#6~~ | ~~Per-entry `recheck:` commands — every Watch-list entry carries exactly one guard-acceptable `recheck:` pair (rule 12a): the `kubectl_readonly` argument string that re-verifies it, tool-argument form (no `kubectl`/`oc` prefix), judged by the guard's refusal grammar through shared code; optional in the Anomaly log; the report contract asks for it and the patrol prompt consumes it (ADR 0013). Impl commit also syncs `ARCHITECTURE.md`'s wiki prose (the planned-next line) and `AGENTS.md`'s test list~~ |
 | ~~#7~~ | ~~`stale_after`: auto-expire watch-list entries not re-verified within N patrols (flip to `expired`, keep in anomaly log) — process-stamped `verified_patrol` clock + expiry flip (rules 20–22, ADR 0014); impl commit also syncs `ARCHITECTURE.md`'s wiki prose (the planned-next line), `AGENTS.md`'s test list, and `README.md`'s config table (`PATROL_WIKI_STALE_AFTER`)~~ |
 | ~~#8~~ | ~~`--wiki-stats`: the four wiki-health numbers (rules 23–27, ADR 0015) — verification rate (`verified_patrol` == frontmatter `patrol_count` over the Watch-list), resolution ratio (status counts over both metadata sections), confidence spread with the lopsided warning (≥ 2/3 of ≥ 5 graded entries), churn (prose-only comparison over the last `WIKI_CHURN_WINDOW` = 5 commits, flagged when every pair changed with no status change); a fully offline mode (no `PATROL_*` env, no cluster, no repo init) that degrades to `n/a`, never fails. Impl commit also syncs `README.md` (usage + config table), `AGENTS.md`'s test list, and `ARCHITECTURE.md`'s wiki prose (the planned-next line)~~ |
-| #40 | Wiki length budget (rules 28–29, ADR 0017): the Anomaly log becomes a bounded working set — the patroller keeps every watching entry plus the last `WIKI_ANOMALY_KEEP` (20) resolved/expired entries in document order, pruning older whole items on every accepted write (pure `compact_anomaly_log`, fence-aware, one console line per prune, recoverable from git history); a soft whole-wiki character budget `WIKI_CHAR_BUDGET` (20,000) that never gates validation — it warns on the write path (stderr), rides the repair pass's error list, and surfaces in `--wiki-stats` (the `size:` line + over-budget warning; `wiki_stats` gains `char_count`/`over_budget`, ten keys); the report contract carries the summarize-and-prune expectations. Impl commit also syncs `ARCHITECTURE.md`'s wiki prose (the planned-next line), `AGENTS.md`'s test list, the `--wiki-stats` argparse help (the size number), and `README.md`'s `--wiki-stats` prose (usage + config table: the four numbers gain the size line) |
+| ~~#40~~ | ~~Wiki length budget (rules 28–29, ADR 0017): the Anomaly log becomes a bounded working set — the patroller keeps every watching entry plus the last `WIKI_ANOMALY_KEEP` (20) resolved/expired entries in document order, pruning older whole items on every accepted write (pure `compact_anomaly_log`, fence-aware, one console line per prune, recoverable from git history); a soft whole-wiki character budget `WIKI_CHAR_BUDGET` (20,000) that never gates validation — it warns on the write path (stderr), rides the repair pass's error list, and surfaces in `--wiki-stats` (the `size:` line + over-budget warning; `wiki_stats` gains `char_count`/`over_budget`, ten keys); the report contract carries the summarize-and-prune expectations. Impl commit also syncs `ARCHITECTURE.md`'s wiki prose (the planned-next line), `AGENTS.md`'s test list, the `--wiki-stats` argparse help (the size number), and `README.md`'s `--wiki-stats` prose (usage + config table: the four numbers gain the size line)~~ |
