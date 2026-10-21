@@ -15,13 +15,66 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
    wiki over observation); do not re-investigate anything covered by in-flight
    AgenticRuns.
 3. Patrol order mandated by the prompt: (1) map topology (operators, key workloads,
-   namespaces, wiring) with a broad sweep first, then drill into anything suspicious;
-   (2) compare against the wiki for drift — Watch-list entries carry `recheck:`
+   namespaces, wiring) with the layered sweep (rules 3a–3e) [PLANNED: #20 — was
+   "a broad sweep first"], then drill into anything suspicious; (2) compare
+   against the wiki for drift — Watch-list entries carry `recheck:`
    commands (`wiki-memory.md` rule 12a), the read-only invocations that re-verify
    them: run an entry's recheck first when re-checking it, and rewrite a recheck
    whose verification path has changed [DONE: #6]; (3) decide what a human
    should actually care about (don't cry wolf); (4) produce an updated wiki and
    refined watch-list.
+3a. **Layered sweep** [PLANNED: #20]. The prompt teaches mapping the cluster
+    (and any broad query) as a layered sweep, not flat enumeration — each layer
+    is one bounded query, and the model drills into what looks off:
+    1. `get clusteroperators` — cluster-level health
+    2. `get nodes` — capacity/scheduling
+    3. `get namespaces` — footprint
+    4. `get deployments -A` / `get daemonsets -A` / `get statefulsets -A` —
+       workload topology: one row per workload instead of N rows per replica,
+       and the READY column flags rollout problems for free
+    5. problem pods only (rules 3b–3c)
+    6. `get events -A --field-selector=type=Warning` — warnings, not the event
+       firehose
+
+    Rationale: `get pods -A` on a thousands-of-pods cluster is thousands of
+    rows — it truncates at `OUT_CAP` mid-table (the model sees an unknown
+    fraction of the list, then burns turns re-querying), while the layered
+    sweep answers the same questions in hundreds of rows. Targeted drilldowns
+    (`describe`, single-object `get`) are always allowed on top of the sweep.
+3b. **Problem-pod selection** [PLANNED: #20]. The prompt teaches selecting
+    problem pods with per-phase equality selectors
+    (`--field-selector=status.phase=Pending`, `--field-selector=status.phase=Failed`)
+    and warns against inequality selectors (`status.phase!=Running`): `!=` is
+    not reliable on `oc` — equality per problem phase is the portable form.
+3c. **Crash-loop and restart sweep** [PLANNED: #20]. CrashLoopBackOff is
+    invisible to phase selectors — pod `status.phase` stays `Running` while
+    containers crash-loop (the table's STATUS column shows a container
+    *waiting reason*). The prompt teaches sweeping waiting reasons and restart
+    counts client-side with this jsonpath template:
+
+        get pods -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{" "}{.status.containerStatuses[*].state.waiting.reason}{" restarts="}{.status.containerStatuses[*].restartCount}{"\n"}{end}'
+
+    jsonpath/custom-columns are client-side formatters: the model-facing
+    output stays bounded on big clusters (`OUT_CAP` applies after formatting),
+    and the sweep yields absolute values instead of the table's relative
+    timestamps (`40d`) — what the Watch-list's persistence tracking (restart
+    deltas, "unchanged 18:44") needs.
+3d. **Field selection over full dumps** [PLANNED: #20]. The prompt teaches:
+    full `-o json` / `-o yaml` is reserved for single-object drilldowns
+    (`get node worker-1 -o yaml`) — never full dumps of lists, which cost
+    ~5–10× the table tokens for the same objects (key names repeated per
+    object). For list-shaped needs: `--field-selector`, `-o jsonpath` /
+    custom-columns, and `--no-headers` for name-only lists. All of these are
+    already guard-permitted for non-secret resources — the teaching closes
+    the gap, not the guard (ADR 0016).
+3e. **Subsequent patrols lean on the wiki** [PLANNED: #20]. The layered sweep
+    is the dry-wiki (first-patrol) map. On a populated wiki the prompt teaches
+    leaning on memory instead of re-deriving: run Watch-list rechecks first,
+    verify Baselines rather than re-mapping topology, and reserve a full sweep
+    for an area the wiki is stale, contradicted, or silent about — never
+    re-derive a map the wiki already holds. Real-run evidence: patrol #7's
+    "restart sweep matches the 18:02 baseline exactly" — the compounding-wiki
+    economy #5–#8 built.
 4. When done exploring, the model stops calling tools and writes a plain-text final
    summary (findings with severity and evidence, wiki corrections, what the next
    patrol should watch) — a separate reporting step formats the structured report.
@@ -56,9 +109,43 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
 ### Dry-Cluster Mode
 
 13. With `--dry-cluster`, commands are answered from canned fixtures keyed by
-    substring of the command (first match wins); only `version`, `get
-    clusteroperators`, `get nodes`, `get namespaces`, `get pods -A`, and `get
-    agenticruns` have fixtures.
+    substring of the command (first match wins). The fixture set models the
+    taught sweep (rules 3a–3c) so `--dry-cluster` exercises the patterns the
+    prompt teaches [PLANNED: #20 — before #20 the fixtures were only `version`,
+    `get clusteroperators`, `get nodes`, `get namespaces`, `get pods -A`, and
+    `get agenticruns`]:
+    - `version`, `get clusteroperators`, `get nodes`, `get namespaces`,
+      `get agenticruns` — unchanged.
+    - The workload-object tables (rule 3a layer 4): `get deployments -A`,
+      `get daemonsets -A`, `get statefulsets -A` — one row per workload; the
+      demo deployment's `1/2` READY flags the crash-looping workload (its two
+      replicas are the flat pods table's two demo-app pods, one of them
+      down), the payoff the rule promises.
+    - The phase sweeps (rule 3b): `status.phase=Pending`, `status.phase=Failed`
+      — both answer *no resources found*: the demo's problem pods are
+      crash-looping (phase `Running`), which is rule 3c's lesson live — the
+      phase sweeps come up empty and only the reason/restart sweep finds the
+      problem.
+    - The crash-loop sweep (rule 3c): `containerStatuses` — one
+      `namespace/name <waiting reason> restarts=N` line per pod, healthy pods
+      included (empty reason, `restarts=0`), consistent with the flat pods
+      table: same pods, same counts — two views of one demo cluster.
+    - The flat `get pods -A` table — still answerable: the guard permits flat
+      enumeration and the demo data stays honest (ordering per rule 13a).
+    - Warning events (rule 3a layer 6): `type=Warning` — a warnings-only
+      events table naming the demo's two problems (the crash-loop `BackOff`,
+      the NotReady worker's `NodeNotReady`).
+13a. **Sweep-fixture keying and order** [PLANNED: #20].
+    - Sweep keys precede the flat `get pods -A` key in the table: every
+      problem-pod sweep command contains the substring `get pods -A`, so with
+      first-match-wins a sweep key placed after it would never fire.
+    - The sweep keys are the distinctive selector values
+      (`status.phase=Pending`, not `--field-selector=status.phase=Pending`) so
+      both flag forms (`--field-selector=x` and `--field-selector x`) match.
+    - The events fixture is keyed on `type=Warning`, not `get events`: the
+      unfiltered event firehose is rule 3a layer 6's anti-pattern, and dry
+      mode deliberately does not serve it — a flat `get events` query gets
+      rule 14's no-fixture message.
 14. An unmatched dry-cluster command returns a "no fixture" message that lists the
     available fixtures and instructs the model to treat the resource as absent and
     not retry command variations.
@@ -87,6 +174,7 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
 |---|---|
 | ~~#6~~ | ~~Prompt consumes recheck commands: run an entry's `recheck` first when re-verifying it, keep it current when the verification path changes (`wiki-memory.md` rule 12a)~~ |
 | #10 | Cost control: scoping (cluster vs per-namespace rounds), token soft-stop, termination tuning, smarter output truncation than hard OUT_CAP |
+| #20 | Efficient cluster sweep: the layered sweep + field-selection teaching in the system prompt (rules 3a–3e), dry-cluster fixtures modeling the taught sweep (rules 13–13a), and the guard truncation marker's recovery hint (`kubectl-guard.md` rule 11) — prompt guidance and fixture data only: no new config surface, no guard refusal changes (ADR 0016). Impl commit also syncs `AGENTS.md`'s test list |
 | #14 | CRD-based dispatcher (`PatrolSchedule`) replacing the `--loop` process |
 | #15 | Pluggable investigation engine — evaluate HolmesGPT as the RCA phase; keep the current loop swappable |
 | #12 | Remediation handoff: warn/crit findings with known remediation dispatch governed AgenticRuns |
