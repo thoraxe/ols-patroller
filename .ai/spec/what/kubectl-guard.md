@@ -67,7 +67,7 @@ sees these messages and recovers based on them.
     a recovery hint** naming the narrowing patterns — field selectors
     (`--field-selector`), client-side formatters (`-o jsonpath`, custom-columns),
     or a single-object drilldown — so the agent recovers systematically
-    instead of retrying the same dump [PLANNED: #20]. The
+    instead of retrying the same dump [DONE: #20]. The
     `[truncated, N chars total]` marker format is unchanged (the true total
     stays in it); the hint follows the marker on the capped output, and the
     whole appended suffix — marker plus hint — stays under 250 chars (a hint
@@ -119,4 +119,4 @@ sees these messages and recovers based on them.
 |---|---|
 | ~~#6~~ | ~~Refusal grammar extracted as a shared pure predicate (`guard_refusal`); the wiki validator judges `recheck` citations with it — guard behavior itself unchanged (`wiki-memory.md` rule 12a)~~ |
 | ~~#11~~ | ~~Refuse any command containing `--raw` (rule 6a) — proxy/stats endpoints dump multi-hundred-KB JSON that truncates and gets retried, burning patrol turns~~ |
-| #20 | Truncation-marker recovery hint (rule 11): output capped at `OUT_CAP` appends, after the unchanged `[truncated, N chars total]` marker, the narrowing patterns (`--field-selector`, `-o jsonpath`/custom-columns, single-object drilldown) — output shaping only, the refusal grammar untouched (ADR 0016) |
+| ~~#20~~ | ~~Truncation-marker recovery hint (rule 11): output capped at `OUT_CAP` appends, after the unchanged `[truncated, N chars total]` marker, the narrowing patterns (`--field-selector`, `-o jsonpath`/custom-columns, single-object drilldown) — output shaping only, the refusal grammar untouched (ADR 0016)~~ |

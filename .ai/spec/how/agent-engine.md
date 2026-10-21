@@ -75,7 +75,7 @@ shape pass over the accumulated message list.
   (smarter truncation) and #11 (refuse `--raw`) [DONE: #11]. Since #20 the
   truncation marker carries a narrowing hint (`--field-selector` / `-o jsonpath` /
   single-object drilldown) so the model recovers systematically instead of
-  retrying the same dump [PLANNED: #20].
+  retrying the same dump [DONE: #20].
 - **E2E verification:** the engine wiring — exact tool surface, subagent disable,
   budget-cut salvage, shape-pass handoff — is pinned by `tests/test_patrol_deepagents.py`,
   a scripted wire-level endpoint behind the `make_model` seam (see

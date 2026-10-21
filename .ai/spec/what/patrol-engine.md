@@ -15,7 +15,7 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
    wiki over observation); do not re-investigate anything covered by in-flight
    AgenticRuns.
 3. Patrol order mandated by the prompt: (1) map topology (operators, key workloads,
-   namespaces, wiring) with the layered sweep (rules 3a–3e) [PLANNED: #20 — was
+   namespaces, wiring) with the layered sweep (rules 3a–3e) [DONE: #20 — was
    "a broad sweep first"], then drill into anything suspicious; (2) compare
    against the wiki for drift — Watch-list entries carry `recheck:`
    commands (`wiki-memory.md` rule 12a), the read-only invocations that re-verify
@@ -23,7 +23,7 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
    whose verification path has changed [DONE: #6]; (3) decide what a human
    should actually care about (don't cry wolf); (4) produce an updated wiki and
    refined watch-list.
-3a. **Layered sweep** [PLANNED: #20]. The prompt teaches mapping the cluster
+3a. **Layered sweep** [DONE: #20]. The prompt teaches mapping the cluster
     (and any broad query) as a layered sweep, not flat enumeration — each layer
     is one bounded query, and the model drills into what looks off:
     1. `get clusteroperators` — cluster-level health
@@ -41,12 +41,12 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
     fraction of the list, then burns turns re-querying), while the layered
     sweep answers the same questions in hundreds of rows. Targeted drilldowns
     (`describe`, single-object `get`) are always allowed on top of the sweep.
-3b. **Problem-pod selection** [PLANNED: #20]. The prompt teaches selecting
+3b. **Problem-pod selection** [DONE: #20]. The prompt teaches selecting
     problem pods with per-phase equality selectors
     (`--field-selector=status.phase=Pending`, `--field-selector=status.phase=Failed`)
     and warns against inequality selectors (`status.phase!=Running`): `!=` is
     not reliable on `oc` — equality per problem phase is the portable form.
-3c. **Crash-loop and restart sweep** [PLANNED: #20]. CrashLoopBackOff is
+3c. **Crash-loop and restart sweep** [DONE: #20]. CrashLoopBackOff is
     invisible to phase selectors — pod `status.phase` stays `Running` while
     containers crash-loop (the table's STATUS column shows a container
     *waiting reason*). The prompt teaches sweeping waiting reasons and restart
@@ -59,7 +59,7 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
     and the sweep yields absolute values instead of the table's relative
     timestamps (`40d`) — what the Watch-list's persistence tracking (restart
     deltas, "unchanged 18:44") needs.
-3d. **Field selection over full dumps** [PLANNED: #20]. The prompt teaches:
+3d. **Field selection over full dumps** [DONE: #20]. The prompt teaches:
     full `-o json` / `-o yaml` is reserved for single-object drilldowns
     (`get node worker-1 -o yaml`) — never full dumps of lists, which cost
     ~5–10× the table tokens for the same objects (key names repeated per
@@ -67,7 +67,7 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
     custom-columns, and `--no-headers` for name-only lists. All of these are
     already guard-permitted for non-secret resources — the teaching closes
     the gap, not the guard (ADR 0016).
-3e. **Subsequent patrols lean on the wiki** [PLANNED: #20]. The layered sweep
+3e. **Subsequent patrols lean on the wiki** [DONE: #20]. The layered sweep
     is the dry-wiki (first-patrol) map. On a populated wiki the prompt teaches
     leaning on memory instead of re-deriving: run Watch-list rechecks first,
     verify Baselines rather than re-mapping topology, and reserve a full sweep
@@ -111,7 +111,7 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
 13. With `--dry-cluster`, commands are answered from canned fixtures keyed by
     substring of the command (first match wins). The fixture set models the
     taught sweep (rules 3a–3c) so `--dry-cluster` exercises the patterns the
-    prompt teaches [PLANNED: #20 — before #20 the fixtures were only `version`,
+    prompt teaches [DONE: #20 — before #20 the fixtures were only `version`,
     `get clusteroperators`, `get nodes`, `get namespaces`, `get pods -A`, and
     `get agenticruns`]:
     - `version`, `get clusteroperators`, `get nodes`, `get namespaces`,
@@ -135,7 +135,7 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
     - Warning events (rule 3a layer 6): `type=Warning` — a warnings-only
       events table naming the demo's two problems (the crash-loop `BackOff`,
       the NotReady worker's `NodeNotReady`).
-13a. **Sweep-fixture keying and order** [PLANNED: #20].
+13a. **Sweep-fixture keying and order** [DONE: #20].
     - Sweep keys precede the flat `get pods -A` key in the table: every
       problem-pod sweep command contains the substring `get pods -A`, so with
       first-match-wins a sweep key placed after it would never fire.
@@ -174,7 +174,7 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
 |---|---|
 | ~~#6~~ | ~~Prompt consumes recheck commands: run an entry's `recheck` first when re-verifying it, keep it current when the verification path changes (`wiki-memory.md` rule 12a)~~ |
 | #10 | Cost control: scoping (cluster vs per-namespace rounds), token soft-stop, termination tuning, smarter output truncation than hard OUT_CAP |
-| #20 | Efficient cluster sweep: the layered sweep + field-selection teaching in the system prompt (rules 3a–3e), dry-cluster fixtures modeling the taught sweep (rules 13–13a), and the guard truncation marker's recovery hint (`kubectl-guard.md` rule 11) — prompt guidance and fixture data only: no new config surface, no guard refusal changes (ADR 0016). Impl commit also syncs `AGENTS.md`'s test list |
+| ~~#20~~ | ~~Efficient cluster sweep: the layered sweep + field-selection teaching in the system prompt (rules 3a–3e), dry-cluster fixtures modeling the taught sweep (rules 13–13a), and the guard truncation marker's recovery hint (`kubectl-guard.md` rule 11) — prompt guidance and fixture data only: no new config surface, no guard refusal changes (ADR 0016). Impl commit also syncs `AGENTS.md`'s test list~~ |
 | #14 | CRD-based dispatcher (`PatrolSchedule`) replacing the `--loop` process |
 | #15 | Pluggable investigation engine — evaluate HolmesGPT as the RCA phase; keep the current loop swappable |
 | #12 | Remediation handoff: warn/crit findings with known remediation dispatch governed AgenticRuns |

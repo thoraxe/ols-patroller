@@ -96,7 +96,13 @@ resolution ratio, confidence spread, churn (prose-only comparison over the last
 5 wiki commits; process stamps and date advances never count as rewording) —
 from the document and its git history, with no `PATROL_*` env, cluster access,
 or repo initialization (`.ai/spec/decisions/0015`). Planned next (v0.2):
-efficient-sweep guidance (#20) and the wiki length budget (#40).
+the wiki length budget (#40). Since #20 the prompt teaches an efficient
+cluster sweep — layered (operators → nodes → namespaces → workload objects →
+problem pods → warning events), field-selected (`--field-selector`,
+jsonpath/custom-columns, single-object drilldowns) over flat enumeration and
+full dumps, leaning on the wiki on subsequent patrols instead of re-deriving
+it; the guard's truncation marker carries the same narrowing hint as recovery
+(`.ai/spec/decisions/0016`).
 
 ## Deployment topology (current vs planned)
 
