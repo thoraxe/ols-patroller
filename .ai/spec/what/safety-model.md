@@ -38,7 +38,8 @@ held to production standards: documented, unit-checked, and verified end-to-end.
     `get secrets` (names/metadata) and `describe secret` stay allowed (rules
     5–6); a missing CLI binary (rule 9), a timed-out command (rule 8), the
     stderr header and empty-output marker (rule 10), the `OUT_CAP` truncation
-    marker (rule 11), the CLI resolution order (rule 12), and dry-mode fixture
+    marker with its #20 recovery hint (rule 11) [DONE: #20], the CLI
+    resolution order (rule 12), and dry-mode fixture
     substitution with the no-fixture message (rule 13); the raw-path refusal
     joins these checks — every `--raw` flag form refused across verbs, bare-`raw`
     names allowed, the refusal ahead of subprocess execution and dry-mode

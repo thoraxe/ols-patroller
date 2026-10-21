@@ -67,7 +67,10 @@ under current policy (clean implementation review + `implementation-complete`):
   flip); and `tests/test_wiki_stats.py` covers the wiki health-stats
   contract (#8: the `wiki_stats` and `wiki_churn` matrices, the
   `wiki_history` window over a real repo, and the offline `--wiki-stats`
-  mode).
+  mode); and `tests/test_sweep_efficiency.py` covers the efficient-sweep
+  contract (#20: the layered-sweep and field-selection teaching in the system
+  prompt, and the dry-cluster fixtures that model the taught sweep — the
+  truncation-marker recovery hint is covered in `test_kubectl_guard.py`).
 - `wiki/` (the wiki directory: `cluster-wiki.md` + its git repo) is a runtime
   artifact (gitignored) — never commit it.
 - Roadmap: GitHub issues + milestones, not documents. Spec files mark planned

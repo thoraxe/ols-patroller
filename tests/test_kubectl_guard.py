@@ -7,6 +7,8 @@ script. The raw-path (`--raw`) refusal is specced for #11 (rule 6a): its tests
 land with #11's spec PR and fail until #11's implementation makes them pass.
 
 Contract: .ai/spec/what/kubectl-guard.md rules 1-13 (safety-model.md rule 6a).
+The truncation-marker recovery hint is specced for #20 (rule 11): its tests
+land with #20's spec PR and fail until #20's implementation makes them pass.
 
 Run: uv run --group dev pytest tests/ -q
 """
@@ -151,8 +153,44 @@ def test_output_cap_truncation_marker(tmp_path):
     long_text = "x" * (patrol.OUT_CAP + 5000)
     cli = _fake_cli(tmp_path, f"printf '%s\\n' '{long_text}'")
     out = guard("get nodes", kubectl=cli, dry=False)
-    assert len(out) < patrol.OUT_CAP + 100
+    assert len(out) < patrol.OUT_CAP + 250  # cap + marker + #20's recovery hint
     assert f"[truncated, {len(long_text) + 1} chars total]" in out
+
+
+def test_output_cap_truncation_hint(tmp_path):
+    """Rule 11 (#20): truncated output carries a recovery hint naming the
+    narrowing patterns (--field-selector, -o jsonpath) after the unchanged
+    marker — the model recovers systematically instead of retrying the dump."""
+    long_text = "x" * (patrol.OUT_CAP + 5000)
+    cli = _fake_cli(tmp_path, f"printf '%s\\n' '{long_text}'")
+    out = guard("get nodes", kubectl=cli, dry=False)
+    assert f"[truncated, {len(long_text) + 1} chars total]" in out  # marker unchanged
+    # the hint follows the marker (asserted on presence first so a missing
+    # hint fails as a missing-behavior assertion, not a lookup error)
+    assert "field-selector" in out
+    assert out.index("[truncated,") < out.index("field-selector")
+    assert "jsonpath" in out
+    assert "custom-columns" in out
+    assert "single-object" in out
+
+
+def test_no_hint_when_output_fits(tmp_path):
+    """Rule 11 (#20): the hint rides only truncated output — output that fits
+    carries neither marker nor hint."""
+    cli = _fake_cli(tmp_path, "echo all good")
+    out = guard("get nodes", kubectl=cli, dry=False)
+    assert "truncated" not in out
+    assert "field-selector" not in out and "jsonpath" not in out
+
+
+def test_dry_mode_cap_stays_hint_free(monkeypatch):
+    """Rule 11 (#20) with rule 13: dry-mode fixture capping is silent — no
+    marker, no hint (fixture text is demo data, not cluster output)."""
+    monkeypatch.setattr(patrol, "FIXTURES", [("get nodes", "y" * (patrol.OUT_CAP + 100))])
+    out = guard("get nodes")
+    assert len(out) == patrol.OUT_CAP
+    assert "truncated" not in out
+    assert "field-selector" not in out and "jsonpath" not in out
 
 
 def test_dry_mode_fixture_cap_is_silent(monkeypatch):
@@ -195,7 +233,7 @@ def test_dry_mode_fixture_substitution_first_match():
 
 
 def test_dry_mode_no_fixture_message_lists_available():
-    out = guard("get deployments -A")
+    out = guard("get pvcs")
     assert "no fixture" in out
     assert "get nodes" in out          # available fixtures are listed
     assert "do not retry" in out or "not retry" in out

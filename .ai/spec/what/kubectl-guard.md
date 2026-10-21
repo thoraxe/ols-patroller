@@ -63,7 +63,24 @@ sees these messages and recovers based on them.
 ### Output Cap
 
 11. Tool output fed back to the model is capped at `OUT_CAP` = 15,000 chars
-    (hard-coded); truncated output appends `...[truncated, N chars total]`.
+    (hard-coded); truncated output appends `...[truncated, N chars total]` **plus
+    a recovery hint** naming the narrowing patterns — field selectors
+    (`--field-selector`), client-side formatters (`-o jsonpath`, custom-columns),
+    or a single-object drilldown — so the agent recovers systematically
+    instead of retrying the same dump [DONE: #20]. The
+    `[truncated, N chars total]` marker format is unchanged (the true total
+    stays in it); the hint follows the marker on the capped output, and the
+    whole appended suffix — marker plus hint — stays under 250 chars (a hint
+    anywhere near the cap in size would defeat its purpose). Dry-mode
+    fixture capping stays marker-free and hint-free (fixture text is demo
+    data, not cluster output — the dry-mode cap is this file's rule 13, the
+    fixture-set rationale is `patrol-engine.md` rules 13–13a). This is output shaping only — the refusal
+    grammar (rules 2–6a) is untouched, so `guard_refusal` and the recheck
+    validity it backs (ADR 0013) are unaffected; the guard never refuses a
+    legal read for cost reasons (ADR 0016). The hint complements #10's
+    smarter-truncation work and echoes the prompt's sweep teaching
+    (`patrol-engine.md` rules 3a–3d): a model that hits the cap is told the
+    same narrowing moves the prompt teaches upfront.
 
 ### CLI Resolution
 
@@ -101,4 +118,5 @@ sees these messages and recovers based on them.
 | Ticket | Summary |
 |---|---|
 | ~~#6~~ | ~~Refusal grammar extracted as a shared pure predicate (`guard_refusal`); the wiki validator judges `recheck` citations with it — guard behavior itself unchanged (`wiki-memory.md` rule 12a)~~ |
-| ~~#11~~ | Refuse any command containing `--raw` (rule 6a) — proxy/stats endpoints dump multi-hundred-KB JSON that truncates and gets retried, burning patrol turns |
+| ~~#11~~ | ~~Refuse any command containing `--raw` (rule 6a) — proxy/stats endpoints dump multi-hundred-KB JSON that truncates and gets retried, burning patrol turns~~ |
+| ~~#20~~ | ~~Truncation-marker recovery hint (rule 11): output capped at `OUT_CAP` appends, after the unchanged `[truncated, N chars total]` marker, the narrowing patterns (`--field-selector`, `-o jsonpath`/custom-columns, single-object drilldown) — output shaping only, the refusal grammar untouched (ADR 0016)~~ |

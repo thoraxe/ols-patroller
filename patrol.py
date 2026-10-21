@@ -150,11 +150,38 @@ Hard rules:
 
 Your patrol, in order:
 1. Map how the cluster is deployed and wired (topology): operators, key workloads, namespaces,
-   how major pieces connect. Prefer a broad sweep first, then drill into anything suspicious.
+   how major pieces connect. Map it as a LAYERED SWEEP — one bounded query per layer, drilling
+   into whatever looks off — never a flat `get pods -A` enumeration (on a thousands-of-pods
+   cluster that is thousands of rows, truncated mid-table at the output cap, while the layered
+   sweep answers the same questions in hundreds of rows):
+     1. `get clusteroperators` — cluster-level health
+     2. `get nodes` — capacity/scheduling
+     3. `get namespaces` — footprint
+     4. `get deployments -A`, `get daemonsets -A`, `get statefulsets -A` — workload topology:
+        one row per workload instead of N rows per replica, and the READY column flags rollout
+        problems for free
+     5. problem pods only (see below)
+     6. `get events -A --field-selector=type=Warning` — warnings, not the event firehose
+   Targeted drilldowns (`describe`, single-object `get`) are always allowed on top of the sweep.
+   Select problem pods with per-phase equality selectors (`--field-selector=status.phase=Pending`,
+   `--field-selector=status.phase=Failed`); avoid inequality selectors — `status.phase!=Running`
+   is not reliable on `oc`; equality per problem phase is the portable form.
+   CrashLoopBackOff is invisible to phase selectors: a crash-looping pod's status.phase stays
+   Running while its containers crash-loop. Sweep waiting reasons and restart counts client-side
+   (output stays bounded, and you get absolute values instead of the table's relative ages):
+     get pods -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{" "}{.status.containerStatuses[*].state.waiting.reason}{" restarts="}{.status.containerStatuses[*].restartCount}{"\\n"}{end}'
+   Prefer field selection over full dumps: full `-o json`/`-o yaml` is reserved for single-object
+   drilldowns (`get node worker-1 -o yaml`) — never dump whole lists (they cost roughly 5-10x
+   the table tokens for the same objects). For list-shaped needs use `--field-selector`,
+   `-o jsonpath` or custom-columns, and `--no-headers` for name-only lists.
 2. Compare what you see against the WIKI. Note drift, new/removed components, anomalies.
    Watch-list entries carry a `recheck:` command — the read-only invocation that
    re-verifies the entry. Run an entry's recheck FIRST when re-checking it, and
    rewrite a recheck whose verification path has changed (keep it current).
+   On a populated wiki, lean on your memory instead of re-deriving it: run Watch-list rechecks
+   first, verify Baselines rather than re-mapping topology, and reserve a full sweep for an
+   area where the wiki is stale, contradicted, or silent — never re-derive a map the wiki
+   already holds. The layered sweep above is the dry-wiki (first-patrol) map.
 3. Decide what a human should actually care about (don't cry wolf).
 4. Produce an UPDATED wiki and a refined watch-list for the next patrol.
 
@@ -199,7 +226,17 @@ _(empty)_
 
 # ------------------------------------------------------------------- dry-cluster fixtures
 # Minimal canned outputs so the agent loop can be demoed without a real cluster.
-# Keyed by a substring of the command; first match wins.
+# Keyed by a substring of the command; first match wins. The set models the
+# taught sweep (patrol-engine.md rules 13-13a): workload-object tables, phase
+# sweeps, the crash-loop sweep, and warning events. Every problem-pod sweep
+# key sits BEFORE the flat `get pods -A` key — each problem-pod sweep command
+# contains that substring too, so such a key placed after it would never fire
+# (the events key `type=Warning` is position-independent: events commands
+# never contain `get pods -A`). Keys are the
+# distinctive selector values (`status.phase=Pending`, `type=Warning`), not
+# flag forms, so both `--field-selector=x` and `--field-selector x` match; the
+# unfiltered event firehose (`get events` with no selector) is deliberately
+# unserved.
 FIXTURES: list[tuple[str, str]] = [
     ("version", "Client Version: 4.16.0\nServer Version: 4.16.7\nKubernetes Version: v1.29.6"),
     ("get clusteroperators", (
@@ -224,12 +261,45 @@ FIXTURES: list[tuple[str, str]] = [
         "openshift-ingress        Active   40d\n"
         "demo-app                 Active   3d\n"
     )),
+    # Rule 3a layer 4: workload topology, one row per workload. The demo
+    # deployment's 1/2 READY is the crash-looping workload — its two replicas
+    # are the flat pods table's two demo-app pods, one of them down.
+    ("get deployments -A", (
+        "NAMESPACE              NAME             READY   UP-TO-DATE   AVAILABLE   AGE\n"
+        "openshift-lightspeed   lightspeed-app   1/1     1            1           2d\n"
+        "demo-app               demo             1/2     1            1           3d\n"
+    )),
+    ("get daemonsets -A", "No resources found in all namespaces."),
+    ("get statefulsets -A", (
+        "NAMESPACE              NAME             READY   AGE\n"
+        "openshift-monitoring   prometheus-k8s   1/1     40d\n"
+    )),
+    # Rule 3b phase sweeps: the demo's problem pods are crash-looping (phase
+    # Running), so both sweeps come up empty — rule 3c's lesson live.
+    ("status.phase=Pending", "No resources found in all namespaces."),
+    ("status.phase=Failed", "No resources found in all namespaces."),
+    # Rule 3c crash-loop sweep: one namespace/name reason restarts line per
+    # pod, healthy pods included — same pods, same counts as the flat table.
+    ("containerStatuses", (
+        "openshift-lightspeed/lightspeed-app-7c9-abc  restarts=0\n"
+        "openshift-monitoring/prometheus-k8s-0  restarts=0\n"
+        "demo-app/demo-6b5c-xyz CrashLoopBackOff restarts=128\n"
+        "demo-app/demo-6b5c-pqr  restarts=0\n"
+    )),
+    # Flat enumeration stays answerable: the guard permits it and the demo
+    # data stays honest.
     ("get pods -A", (
         "NAMESPACE              NAME                         READY   STATUS             RESTARTS   AGE\n"
         "openshift-lightspeed   lightspeed-app-7c9-abc       1/1     Running            0          2d\n"
         "openshift-monitoring   prometheus-k8s-0             6/6     Running            0          40d\n"
         "demo-app               demo-6b5c-xyz                0/1     CrashLoopBackOff   128        3d\n"
         "demo-app               demo-6b5c-pqr                1/1     Running            0          3d\n"
+    )),
+    # Rule 3a layer 6: warnings only, naming the demo's two problems.
+    ("type=Warning", (
+        "NAMESPACE     LAST SEEN   TYPE      REASON         OBJECT             MESSAGE\n"
+        "demo-app      2m          Warning   BackOff        pod/demo-6b5c-xyz  Back-off restarting failed container\n"
+        "default       5m          Warning   NodeNotReady   node/worker-1      Node worker-1 status is now: NotReady\n"
     )),
     ("get agenticruns", "No resources found.  (agentic.openshift.io CRD may not be installed)"),
 ]
@@ -343,7 +413,18 @@ def kubectl_readonly(arg_string: str, *, kubectl: str, dry: bool, verbose: bool)
         return f"ERROR: command timed out after {TOOL_TIMEOUT}s"
     out = (proc.stdout or "") + (("\n[stderr]\n" + proc.stderr) if proc.stderr else "")
     if len(out) > OUT_CAP:
-        out = out[:OUT_CAP] + f"\n...[truncated, {len(out)} chars total]"
+        # Rule 11 (#20): after the unchanged marker, a recovery hint naming the
+        # narrowing patterns the prompt teaches (patrol-engine.md rules 3a-3d)
+        # — the model recovers systematically instead of retrying the same
+        # dump. Marker plus hint stay under 250 chars so the suffix can never
+        # rival the cap it explains. Output shaping only — the refusal grammar
+        # is untouched (ADR 0016); dry-mode fixture capping above stays
+        # marker-free and hint-free (rule 13: fixture text is demo data).
+        out = (out[:OUT_CAP]
+               + f"\n...[truncated, {len(out)} chars total]"
+               + "\nRecover by narrowing, not retrying: --field-selector=..., "
+                 "-o jsonpath or custom-columns projections, or a single-object "
+                 "drilldown (describe / get <one object>).")
     return out.strip() or "(no output)"
 
 
