@@ -45,7 +45,12 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
    unverified watch-list entries auto-expire into the Anomaly log
    [DONE: #7] (`wiki-memory.md`). `--wiki-stats` prints the wiki's four
    health numbers — verification rate, resolution ratio, confidence spread,
-   churn — offline, from the document and its git history [DONE: #8].
+   churn — offline, from the document and its git history [DONE: #8]. The
+   wiki is a bounded working set: the Anomaly log keeps the last
+   `WIKI_ANOMALY_KEEP` (20) resolved/expired entries — older ones pruned by
+   the patroller, recoverable from git history — and a soft
+   20,000-character budget warns on overshoot without ever failing
+   validation [PLANNED: #40].
 10. **Reporting & notifications** — typed report schema, severity vocabulary,
     console/Slack delivery (`reporting-notifications.md`).
 11. **Safety model** — layered read-only enforcement spanning guard, engine, and
@@ -78,7 +83,8 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
 14. Each patrol: load wiki → gather in-flight AgenticRuns context (best-effort) →
     agentic exploration → reporting pass → validate the wiki skeleton (one repair
     pass on failure) [DONE: #5] → print findings, send notifications, expire
-    stale watch-list entries [DONE: #7], stamp the frontmatter counters
+    stale watch-list entries [DONE: #7], compact the Anomaly log to its keep
+    budget [PLANNED: #40], stamp the frontmatter counters
     [DONE: #5], rewrite the wiki atomically, commit it to the wiki repo, push
     if `PATROL_WIKI_REMOTE` is set [DONE: #3].
 15. If the reporting pass fails entirely, the patrol ends with a warning and the wiki
@@ -124,7 +130,8 @@ CLI flags: `--once` (default), `--loop`, `--interval`, `--dry-cluster`, `--wiki`
 `cluster-wiki.md`]), `--max-steps`, `-q/--quiet` (suppress the per-turn output
 stream, on by default [DONE: #27 — was the opt-in `-v/--verbose`]), and
 `--wiki-stats` (print the wiki's four health numbers and exit — offline, no
-`PATROL_*` env needed, never runs a patrol [DONE: #8]).
+`PATROL_*` env needed, never runs a patrol [DONE: #8]; plus the #40 size
+line: the character count and over-budget warning [PLANNED: #40]).
 In-cluster, the image's default command is `--loop --interval 21600 --wiki
 /wiki/cluster-wiki.md` [DONE: #1] [DONE: #25] (`container-image.md`).
 
@@ -133,7 +140,9 @@ fed back to the model; model temperature 0.3, `max_tokens` 16000, request timeou
 300 s; wiki push bounds — 3 attempts, 30 s per attempt, 5 s backoff between
 attempts [DONE: #3]; wiki skeleton schema version `WIKI_VERSION` = 1 [DONE: #5];
 wiki stats — churn window `WIKI_CHURN_WINDOW` = 5 revisions, lopsided
-thresholds 5 graded entries / 2/3 share [DONE: #8].
+thresholds 5 graded entries / 2/3 share [DONE: #8]; wiki working-set budgets —
+anomaly-log keep `WIKI_ANOMALY_KEEP` = 20 entries, soft length
+`WIKI_CHAR_BUDGET` = 20,000 chars [PLANNED: #40].
 
 In-cluster wiring (Secret keys, the `PATROL_CLUSTER_ID` literal, kustomize image
 override, the CI workflow) is deployment surface, not patrol surface —

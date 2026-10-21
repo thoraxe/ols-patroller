@@ -40,12 +40,23 @@ redefined here.
 - **Expiry flip** — the process-enforced retirement of a Watch-list entry
   whose staleness reached `PATROL_WIKI_STALE_AFTER` (#7): `status` flips to
   `expired`, the whole item moves to the end of the Anomaly log with an
-  `auto-expired` annotation line — history kept, never deleted; housekeeping
+  `auto-expired` annotation line — history kept, never deleted (post-#40:
+  kept in the working set until the anomaly-log budget prunes it — the
+  **working set** entry; git history retains it either way); housekeeping
   logged to the console, never a finding or notification.
+- **Working set** — the wiki's bounded present tense (#40): git history is
+  the archive, the wiki is the working set. The Anomaly log keeps at most
+  the last `WIKI_ANOMALY_KEEP` (20) resolved/expired entries — the
+  patroller prunes older ones on every accepted write, whole items,
+  recoverable from the wiki repo — and a soft whole-wiki character budget
+  (`WIKI_CHAR_BUDGET`, 20,000) warns on overshoot (write path, repair
+  pass, `--wiki-stats`) without ever failing validation. The wiki is what
+  the next patrol reads; the repo is what the auditor reads.
 - **Stats mode** — `--wiki-stats` (#8): the offline command that prints the
-  wiki's four health numbers and exits — no model, no cluster, no `PATROL_*`
-  env, no writes; the three document numbers read the wiki file, churn reads
-  the wiki repo's history.
+  wiki's health numbers — #8's four (verification rate, resolution ratio,
+  confidence spread, churn) plus #40's size line — and exits; no model, no
+  cluster, no `PATROL_*` env, no writes; the document numbers read the wiki
+  file, churn reads the wiki repo's history.
 - **Verification rate** — health number 1 (#8): the share of Watch-list
   entries whose `verified_patrol` equals the frontmatter `patrol_count` —
   verified by the most recent accepted write (rule 20's clock, surfaced).

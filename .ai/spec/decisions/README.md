@@ -41,3 +41,4 @@ Date: YYYY-MM-DD · Status: proposed | accepted | superseded by NNNN
 | [0014](0014-process-enforced-stale-entry-expiry.md) | Stale-entry expiry is process-enforced, counted in accepted writes |
 | [0015](0015-wiki-stats-offline-prose-churn.md) | Wiki stats: an offline command; churn is prose-keyed over a bounded git window |
 | [0016](0016-sweep-taught-not-guard-enforced.md) | Sweep efficiency is taught, not guard-enforced |
+| [0017](0017-working-set-wiki-not-log.md) | The wiki is a working set; git history is the archive |

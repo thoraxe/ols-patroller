@@ -7,11 +7,11 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
 
 | Symbol | Responsibility |
 |---|---|
-| `REPORT_CONTRACT` | Instructions appended for the reporting pass (field semantics, wiki skeleton format: frontmatter keys, section set, entry metadata line [DONE: #5]; the Watch-list recheck requirement + its tool-argument form [DONE: #6]; the staleness clock's model-facing half — `verified_patrol` is process-stamped, `last_verified` advances only on actual re-verification, unverified watching entries auto-expire [DONE: #7]) |
+| `REPORT_CONTRACT` | Instructions appended for the reporting pass (field semantics, wiki skeleton format: frontmatter keys, section set, entry metadata line [DONE: #5]; the Watch-list recheck requirement + its tool-argument form [DONE: #6]; the staleness clock's model-facing half — `verified_patrol` is process-stamped, `last_verified` advances only on actual re-verification, unverified watching entries auto-expire [DONE: #7]; the working-set expectations — the wiki is a working set (git history is the archive), summarize and prune within the soft character budget, the Anomaly log keeps the last `WIKI_ANOMALY_KEEP` closed entries [PLANNED: #40]) |
 | `shape_report` | Tool-free structured-output pass with one schema retry; `repair=(rejected_wiki, errors)` re-invokes it as the wiki-validation repair pass [DONE: #5] |
 | `report_fields` | Normalizes the result (pydantic model or dict) into plain data |
 | `notify` | Console `🔔 NOTIFY` + optional Slack webhook post |
-| `run_patrol` (tail) | Validates the report's wiki against the skeleton (one repair pass on failure, `validate_wiki`), delivers findings/notifications, expires stale watch-list entries (`expire_stale_entries`) [DONE: #7], stamps the frontmatter (`stamp_wiki`), writes the wiki atomically, commits + pushes it (wiki git persistence — `project-structure.md`) [#3: DONE; validation/repair/stamp: DONE: #5] |
+| `run_patrol` (tail) | Validates the report's wiki against the skeleton (one repair pass on failure, `validate_wiki`), delivers findings/notifications, expires stale watch-list entries (`expire_stale_entries`) [DONE: #7], compacts the Anomaly log to its keep budget (`compact_anomaly_log`) [PLANNED: #40], stamps the frontmatter (`stamp_wiki`), then warns on soft-budget overshoot (`wiki_budget_warnings` on the final wiki, stderr — post-stamp, rule 29) [PLANNED: #40], writes the wiki atomically, commits + pushes it (wiki git persistence — `project-structure.md`) [#3: DONE; validation/repair/stamp: DONE: #5] |
 
 ## Data Flow
 
@@ -33,7 +33,8 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
    guard's refusal grammar [DONE: #6]). Invalid → one repair pass:
    `shape_report` re-invoked with `repair=(rejected_wiki, errors)`, whose user
    message states the wiki failed validation and carries the errors + rejected
-   wiki. The repaired report replaces the first wholesale when its wiki
+   wiki (plus the rejected wiki's budget warning when it is over the soft
+   budget [PLANNED: #40]). The repaired report replaces the first wholesale when its wiki
    validates; otherwise the old wiki stands, a warning logs, and the first
    report's findings/notifications deliver.
 6. Delivery (#5): findings printed (severity column; evidence by default —
@@ -48,6 +49,14 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
    `auto-expired` annotation line and a console log line — after delivery, so
    the findings block and notifications precede any expiry line on the console
    [DONE: #7].
+7a. Compaction + budget warning (#40): after expiry and before the stamp,
+   `compact_anomaly_log(new_wiki, WIKI_ANOMALY_KEEP)` prunes resolved/expired
+   Anomaly-log entries beyond the last `WIKI_ANOMALY_KEEP` (20) in document
+   order — whole items, watching entries kept, one console line per prune
+   naming the id and the budget; after the stamp, `wiki_budget_warnings` on
+   the final wiki prints one stderr warning when it is over
+   `WIKI_CHAR_BUDGET` — the write, commit, and push proceed regardless (the
+   budget is soft) [PLANNED: #40].
 8. Stamping (#5): before the write, `stamp_wiki` rewrites the process-owned
    frontmatter fields — `patrol_count` (on-disk value + 1, legacy wikis count 0),
    `last_patrol` (patrol-start timestamp), `cluster_id` (`PATROL_CLUSTER_ID`).
@@ -91,3 +100,6 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
 - The validator is pure and the repair bounded: at most one repair pass per
   patrol (one extra model-call round); the common case (valid first write) adds
   no model calls [DONE: #5].
+- The length budget is deliberately soft (#40): it never rejects a wiki — the
+  anomaly-log keep budget is the mechanical bound, the character budget the
+  drift alarm (rule 29) [PLANNED: #40].

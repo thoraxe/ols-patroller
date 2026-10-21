@@ -38,6 +38,13 @@ Covers (safety-model.md rules 6b-6c, wiki-memory.md rules 4f and 15-19):
   at the end of the Anomaly log with its recheck and an auto-expired
   annotation (clock carried), a re-verified entry's clock resets, and the
   flip logs a console line
+- working-set budget wiring of #40 (rules 28-29): the compaction pass runs
+  after expiry and before the stamp — a resolved/expired Anomaly log over
+  WIKI_ANOMALY_KEEP is written pruned to the last keep closed entries with
+  one console line per prune, an over-budget wiki still writes and commits
+  with one stderr warning (the budget never gates), and a repair pass
+  carries the rejected wiki's budget warning alongside the structural
+  errors
 
 The `--raw` guard refusal is not e2e-covered: it is unit-checked in
 test_kubectl_guard.py (kubectl-guard.md rule 6a, #11).
@@ -233,11 +240,12 @@ def frontmatter(text):
     return yaml.safe_load("\n".join(lines[1:lines.index("---", 1)]))
 
 
-def expiry_wiki_text(watch_body, marker="e2e wiki marker", patrol_count=9):
+def expiry_wiki_text(watch_body, anomaly_body="_(empty)_", marker="e2e wiki marker", patrol_count=9):
     """A skeleton-valid updated_wiki (rules 10-12a) whose Watch-list body is
-    supplied — for #7 expiry scenarios (entries with controlled dates). The
-    frontmatter values are the model's own guesses; the process stamp and the
-    expiry pass own the truth."""
+    supplied — for #7 expiry scenarios (entries with controlled dates) — and
+    whose Anomaly-log body may be supplied too (for #40 budget scenarios,
+    entries with controlled counts). The frontmatter values are the model's
+    own guesses; the process stamp and the expiry pass own the truth."""
     return (
         "---\n"
         "wiki_version: 1\n"
@@ -260,7 +268,7 @@ def expiry_wiki_text(watch_body, marker="e2e wiki marker", patrol_count=9):
         "- (none yet)\n"
         "\n"
         "## Anomaly log\n"
-        "_(empty)_\n"
+        f"{anomaly_body}\n"
     )
 
 
@@ -688,6 +696,125 @@ def test_stale_entry_expires_and_reverified_entry_survives(tmp_path, monkeypatch
     flip_lines = [l for l in out.splitlines() if "auto-expired" in l]
     assert len(flip_lines) == 1
     assert "W-2" in flip_lines[0] and "unverified for 1" in flip_lines[0]
+
+
+# --------------------------------------------------------------- working-set budget (#40)
+
+def test_anomaly_log_compaction_wiring(tmp_path, monkeypatch, capsys):
+    """#40 rule 28 wired through main(): a report whose Anomaly log carries
+    more resolved/expired entries than WIKI_ANOMALY_KEEP is written pruned —
+    the last `keep` closed entries survive, earlier ones vanish from the
+    written wiki (git history retains them), one console line per prune
+    names the id and the budget, and the written wiki still validates."""
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    monkeypatch.setattr(patrol, "WIKI_ANOMALY_KEEP", 2)
+    anomaly_body = "\n".join(
+        f"- id: A-{i} · status: expired · first_seen: 2026-10-01"
+        f" · last_verified: 2026-10-16 · source: kubectl get pods -A"
+        f" · confidence: low\n  history entry {i}." for i in range(1, 5))
+    report = dict(REPORT, updated_wiki=expiry_wiki_text(WATCH_V1, anomaly_body))
+    run_patrol_cli(monkeypatch, ScriptedEndpoint(turns=NATURAL_TURNS[:1],
+                                                 report=report), wiki,
+                   "--max-steps", "8")
+
+    final = wiki.read_text()
+    assert patrol.validate_wiki(final) == []
+    al = final.split("## Anomaly log", 1)[1]
+    assert "id: A-3" in al and "id: A-4" in al         # the last keep=2 survive
+    assert "id: A-1" not in al and "id: A-2" not in al  # pruned from the working set
+    assert commit_count(wiki.parent) == 1               # the accepted (pruned) write committed
+    out = capsys.readouterr().out
+    prune_lines = [l for l in out.splitlines() if "pruned" in l]
+    assert len(prune_lines) == 2, out
+    assert "A-1" in prune_lines[0] and "A-2" in prune_lines[1]
+    assert "keep budget 2" in prune_lines[0]
+    # pruning is wiki housekeeping, never a finding or notification (rule 28)
+    assert "findings (2):" in out
+    assert not any("NOTIFY" in l and "A-1" in l for l in out.splitlines())
+
+
+def test_pruned_entries_recoverable_from_git_history(tmp_path, monkeypatch, capsys):
+    """#40 rule 28's archive half, two patrols: patrol 1 (keep 4) writes four
+    closed Anomaly-log entries; patrol 2 (keep 2) prunes the two oldest from
+    the working set — and they stay readable in the wiki repo's previous
+    commit. The stance, made exact: git history is the archive; the wiki is
+    the working set."""
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    monkeypatch.setattr(patrol, "STALE_AFTER", 5)  # determinism: no flips here
+    anomaly_body = "\n".join(
+        f"- id: A-{i} · status: expired · first_seen: 2026-10-01"
+        f" · last_verified: 2026-10-16 · source: kubectl get pods -A"
+        f" · confidence: low\n  history entry {i}." for i in range(1, 5))
+    report = dict(REPORT, updated_wiki=expiry_wiki_text(WATCH_V1, anomaly_body))
+
+    monkeypatch.setattr(patrol, "WIKI_ANOMALY_KEEP", 4)   # patrol 1: all fit
+    run_patrol_cli(monkeypatch, ScriptedEndpoint(turns=NATURAL_TURNS[:1],
+                                                 report=report), wiki,
+                   "--max-steps", "8")
+    assert "id: A-1" in wiki.read_text()
+
+    monkeypatch.setattr(patrol, "WIKI_ANOMALY_KEEP", 2)   # patrol 2: budget cut
+    run_patrol_cli(monkeypatch, ScriptedEndpoint(turns=NATURAL_TURNS[:1],
+                                                 report=report), wiki,
+                   "--max-steps", "8")
+    final = wiki.read_text()
+    assert "id: A-1" not in final and "id: A-2" not in final  # pruned on write
+    assert "id: A-3" in final and "id: A-4" in final
+    assert commit_count(wiki.parent) == 2
+
+    # the pruned entries stay recoverable from the wiki repo's history
+    history = patrol.wiki_history(wiki, 2)
+    assert len(history) == 2
+    assert "id: A-1" in history[0] and "id: A-2" in history[0]
+    assert "id: A-1" not in history[1]
+
+
+def test_over_budget_wiki_writes_with_stderr_warning(tmp_path, monkeypatch, capsys):
+    """#40 rule 29 wired: the budget is soft — an over-budget wiki is
+    accepted, written, committed, and stamped like any other; the overshoot
+    surfaces as one stderr warning naming the budget, and the patrol's
+    findings still deliver."""
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    monkeypatch.setattr(patrol, "WIKI_CHAR_BUDGET", 500)
+    big = wiki_text("big but valid")
+    assert len(big) > 500 and patrol.validate_wiki(big) == []
+    run_patrol_cli(monkeypatch, ScriptedEndpoint(
+        turns=NATURAL_TURNS[:1], report=dict(REPORT, updated_wiki=big)),
+        wiki, "--max-steps", "8")
+
+    assert "big but valid" in wiki.read_text()   # written anyway (soft)
+    assert commit_count(wiki.parent) == 1        # committed anyway
+    captured = capsys.readouterr()
+    assert "findings (2):" in captured.out       # the patrol delivered
+    assert "over" in captured.err and "length budget" in captured.err
+    assert "500" in captured.err                 # the budget is named
+
+
+def test_repair_prompt_carries_the_budget_warning(tmp_path, monkeypatch, capsys):
+    """#40 rule 29's repair half: when a repair pass runs, the rejected
+    wiki's budget warning rides the error list (the repair prompt carries
+    the structural errors AND the over-budget warning), but acceptance
+    stays structural — the repaired, still over-budget wiki is written."""
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    monkeypatch.setattr(patrol, "WIKI_CHAR_BUDGET", 500)
+    rejected = wiki_text("REJECTED-WIKI-MARKER").replace(
+        "patrol_count: 9\n", "patrol_count: 9\nbogus_key: 1\n")
+    assert len(rejected) > 500
+    endpoint = ScriptedEndpoint(
+        turns=NATURAL_TURNS[:1],
+        reports=[dict(REPORT, updated_wiki=rejected),
+                 dict(REPORT, updated_wiki=wiki_text("repaired marker"))])
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
+
+    shapes = endpoint.shape_requests
+    assert len(shapes) == 2, f"expected report + repair, got {len(shapes)}"
+    repair_text = endpoint.conversation_text(shapes[1])
+    assert "bogus_key" in repair_text        # the structural errors
+    assert "length budget" in repair_text     # the budget warning rides along
+    assert "summarize" in repair_text
+    # acceptance stayed structural: the over-budget repaired wiki was written
+    assert "repaired marker" in wiki.read_text()
+    assert commit_count(wiki.parent) == 1
 
 
 def test_wiki_flag_default_is_the_wiki_directory():
