@@ -96,6 +96,14 @@ WIKI_ENTRY_CONFIDENCES = ("high", "medium", "low")
 WIKI_ENTRY_RECHECK = "recheck"  # the recheck metadata key (rule 12a, #6)
 WIKI_ENTRY_VERIFIED_PATROL = "verified_patrol"  # the staleness-clock key (rule 20, #7)
 
+# Wiki health stats (wiki-memory.md rules 23-27, #8; ADR 0015). Hard-coded
+# like OUT_CAP, not env-configurable — retuning them is a spec change, not a
+# config knob. The churn window mirrors the default PATROL_WIKI_STALE_AFTER
+# grace: one commit ~ one accepted write, so both count the same unit.
+WIKI_CHURN_WINDOW = 5               # revisions (one per commit) churn examines
+WIKI_STATS_LOPSIDED_MIN = 5         # graded entries before a spread can be lopsided
+WIKI_STATS_LOPSIDED_SHARE = 2 / 3   # dominant-level share that fires the warning
+
 
 def _stale_after() -> int:
     """PATROL_WIKI_STALE_AFTER as a non-negative int (rule 21, #7).
@@ -1072,6 +1080,174 @@ def expire_stale_entries(content: str, old_wiki: str, patrol_count: int,
     return "\n".join(out), flipped
 
 
+# ---- wiki health stats (wiki-memory.md rules 25-26, #8; ADR 0015) ----
+# The three document stats plus the churn parser: pure functions over wiki
+# text — no I/O, no model calls — measuring the discipline the wiki imposes
+# (verify what you watch, resolve or expire deliberately, grade confidence
+# honestly). Defensive by design (rule 25): a top-level list item of a
+# metadata section is an entry iff its line parses into ' · '-separated
+# 'key: value' pairs carrying an id — anything else is invisible to every
+# stat — and each stat uses only the field it needs (a garbage or missing
+# value skips that stat alone).
+
+
+def _stats_entry_pairs(line: str) -> dict[str, str] | None:
+    """Rule 25's defensive entry test: the list item's metadata pairs, or
+    None when the line is not an entry (some part fails to parse as a
+    'key: value' pair, or no id is carried). First occurrence wins per key."""
+    if not (line.startswith("- ") or line.startswith("* ")):
+        return None
+    pairs: dict[str, str] = {}
+    for part in line[2:].split(" · "):
+        m = _ENTRY_PAIR_RE.match(part)
+        if not m:
+            return None
+        pairs.setdefault(m.group(1), m.group(2))
+    if not pairs.get("id"):
+        return None
+    return pairs
+
+
+def wiki_stats(content: str) -> dict:
+    """Rule 25 (#8): the three document health numbers — pure and defensive.
+
+    Reads skeleton-valid wikis exactly and hand-edited ones as far as they
+    parse (the `_stats_entry_pairs` entry test). Returns a dict with exactly
+    eight keys: `patrol_count` (the frontmatter clock under
+    frontmatter_patrol_count semantics: unparseable or absent counts 0),
+    `cluster_id` (the frontmatter string, "" when absent), `watch_total` /
+    `watch_verified` / `verification_rate` (over Watch-list entries only:
+    verified means the verified_patrol pair parses as an integer equal to
+    patrol_count — Anomaly-log entries are never in the denominator; the
+    rate is None iff watch_total == 0), `status_counts` and
+    `confidence_counts` (over BOTH metadata sections, bucketed by value,
+    keys always present), and `lopsided` (the dominant confidence level when
+    the warning fires — at least WIKI_STATS_LOPSIDED_MIN graded entries and
+    one level at WIKI_STATS_LOPSIDED_SHARE of the graded total, for ANY
+    level — else None).
+    """
+    patrol_count = frontmatter_patrol_count(content)
+    cluster_id = ""
+    split = _split_frontmatter(content)
+    if split is not None:
+        try:
+            fm = yaml.safe_load("\n".join(split[0]))
+        except yaml.YAMLError:
+            fm = None
+        if isinstance(fm, dict) and isinstance(fm.get("cluster_id"), str):
+            cluster_id = fm["cluster_id"]
+
+    watch_total = 0
+    watch_verified = 0
+    status_counts = {status: 0 for status in WIKI_ENTRY_STATUSES}
+    confidence_counts = {level: 0 for level in WIKI_ENTRY_CONFIDENCES}
+    lines = content.split("\n")
+    for name, start, end in _scan_sections(lines):
+        if name not in WIKI_METADATA_SECTIONS:
+            continue
+        for idx in _scan_section_entries(lines, start, end):
+            pairs = _stats_entry_pairs(lines[idx])
+            if pairs is None:
+                continue  # not an entry: invisible to every stat
+            if name == "Watch-list":
+                watch_total += 1
+                try:
+                    verified = int(pairs[WIKI_ENTRY_VERIFIED_PATROL])
+                except (KeyError, TypeError, ValueError):
+                    verified = None  # missing or garbled: not verified
+                if verified == patrol_count:
+                    watch_verified += 1
+            status = pairs.get("status")
+            if status in status_counts:
+                status_counts[status] += 1
+            confidence = pairs.get("confidence")
+            if confidence in confidence_counts:
+                confidence_counts[confidence] += 1
+
+    graded = sum(confidence_counts.values())
+    lopsided = None
+    if graded >= WIKI_STATS_LOPSIDED_MIN:
+        for level in WIKI_ENTRY_CONFIDENCES:
+            if confidence_counts[level] >= WIKI_STATS_LOPSIDED_SHARE * graded:
+                lopsided = level  # at >= 2/3 the dominant level is unique
+                break
+    return {
+        "patrol_count": patrol_count,
+        "cluster_id": cluster_id,
+        "watch_total": watch_total,
+        "watch_verified": watch_verified,
+        "verification_rate": (watch_verified / watch_total) if watch_total else None,
+        "status_counts": status_counts,
+        "confidence_counts": confidence_counts,
+        "lopsided": lopsided,
+    }
+
+
+def _churn_scan(content: str) -> tuple[dict[str, tuple[str | None, tuple[str, ...]]],
+                                        list[str]]:
+    """Rule 26: one revision's churn view — ({id: (status, prose)}, ordered
+    ids). The status reads as None when absent or garbled (absent on both
+    sides of a pair then compares equal); the prose is the entry's indented
+    continuation block — the same item extent the expiry pass moves verbatim
+    (rule 21) — compared byte-exact. A duplicate id resolves to its first
+    occurrence in document order; the id order is Watch-list document order,
+    then Anomaly-log document order (the live loop first)."""
+    lines = content.split("\n")
+    entries: dict[str, tuple[str | None, tuple[str, ...]]] = {}
+    watch_ids: list[str] = []
+    anomaly_ids: list[str] = []
+    for name, start, end in _scan_sections(lines):
+        if name not in WIKI_METADATA_SECTIONS:
+            continue
+        bucket = watch_ids if name == "Watch-list" else anomaly_ids
+        for idx in _scan_section_entries(lines, start, end):
+            pairs = _stats_entry_pairs(lines[idx])
+            if pairs is None:
+                continue
+            entry_id = pairs["id"]
+            if entry_id in entries:
+                continue  # duplicate id: first occurrence in document order
+            status = pairs.get("status")
+            if status not in WIKI_ENTRY_STATUSES:
+                status = None
+            item_end = _item_extent(lines, idx)
+            entries[entry_id] = (status, tuple(lines[idx + 1:item_end]))
+            bucket.append(entry_id)
+    return entries, watch_ids + anomaly_ids
+
+
+def wiki_churn(revisions: list[str]) -> list[str] | None:
+    """Rule 26 (#8): the photocopy-of-a-photocopy detector — pure.
+
+    Over a series of wiki contents oldest→newest (rule 27's revision series):
+    an id is flagged iff it is present in EVERY revision and every adjacent
+    revision-pair is a churn pair for it — the prose differs AND the parsed
+    status values are equal. The comparison is prose-only by design:
+    process stamps (verified_patrol, frontmatter) and meaningful metadata
+    advances (last_verified, recheck rewrites, section moves) never count as
+    rewording; a status change in any pair breaks the flag (resolution and
+    expiry are learning events, never churn). Returns the flagged ids in the
+    newest revision's order, or None when the series has fewer than two
+    revisions (nothing measurable). Entries born or vanished mid-window are
+    never flagged: drift detection lags by design.
+    """
+    if len(revisions) < 2:
+        return None
+    scanned = [_churn_scan(revision) for revision in revisions]
+    common = set(scanned[0][0])
+    for entries, _order in scanned[1:]:
+        common &= set(entries)
+    flagged: list[str] = []
+    for entry_id in scanned[-1][1]:  # the newest revision's order
+        if entry_id not in common:
+            continue
+        if all(scanned[i][0][entry_id][1] != scanned[i + 1][0][entry_id][1]  # prose
+               and scanned[i][0][entry_id][0] == scanned[i + 1][0][entry_id][0]
+               for i in range(len(scanned) - 1)):                            # status
+            flagged.append(entry_id)
+    return flagged
+
+
 # --------------------------------------------------------------------------- wiki git
 # Git-backed wiki persistence (wiki-memory.md rules 4a-4e, #3). Git is process-level
 # durability, never an agent capability: everything here runs in the patrol process
@@ -1086,18 +1262,22 @@ def _git_err(r) -> str:
     return (r.stderr or r.stdout or "unknown git error").strip()
 
 
-def _run_git(wiki_dir: Path, *args: str, timeout: float | None = None):
+def _run_git(wiki_dir: Path, *args: str, timeout: float | None = None,
+             encoding: str | None = None):
     """Run git in wiki_dir with patrol-owned config only (never the user's).
 
     Every invocation passes `safe.directory` for the wiki directory so git does
     not depend on the invoking user's config or HOME (non-root, random-UID safe,
     rule 4d). Returns None when git itself is unusable — callers degrade to
-    file-only mode instead of failing the patrol (rule 4b).
+    file-only mode instead of failing the patrol (rule 4b). `encoding` opts a
+    call into deterministic decoding (the stats history reader decodes UTF-8,
+    the wiki's own encoding, whatever the ambient locale is).
     """
     cmd = ["git", "-C", str(wiki_dir),
            "-c", f"safe.directory={wiki_dir.resolve()}", *args]
     try:
-        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
+                              encoding=encoding)
     except (OSError, subprocess.SubprocessError):
         return None
 
@@ -1224,6 +1404,39 @@ def push_wiki(wiki_dir, remote: str) -> bool:
     print(f"[patrol] WARNING: wiki push gave up after {PUSH_ATTEMPTS} attempts; "
           "local commit stands (source of truth)", file=sys.stderr)
     return False
+
+
+def wiki_history(wiki_path, window: int) -> list[str]:
+    """Rule 27 (#8): the wiki file's blobs at the last `window` commits that
+    changed it, oldest→newest — the churn series.
+
+    Read-only history access under the patrol's own git discipline
+    (per-command config, safe.directory, never a remote call; UTF-8 decoding —
+    the wiki is a UTF-8 text document whatever the ambient locale). No repo,
+    no commits, or any git failure yields an empty list — never a partial
+    window and never an error (degradation, rule 4b's philosophy: reading
+    stats must not mutate anything and must not fail the run).
+    """
+    try:
+        wiki_path = Path(wiki_path).resolve()
+        wiki_dir = wiki_path.parent
+        if not (wiki_dir / ".git").exists():
+            return []  # file-only mode: no history, never init one
+        r = _run_git(wiki_dir, "log", "-n", str(window), "--format=%H", "--",
+                     str(wiki_path))
+        if r is None or r.returncode != 0:
+            return []
+        shas = [line.strip() for line in r.stdout.splitlines() if line.strip()]
+        revisions: list[str] = []
+        for sha in reversed(shas):  # git log is newest-first; the series is oldest-first
+            b = _run_git(wiki_dir, "show", f"{sha}:./{wiki_path.name}",
+                         encoding="utf-8")
+            if b is None or b.returncode != 0:
+                return []  # never a partial window
+            revisions.append(b.stdout)
+        return revisions
+    except Exception:  # noqa: BLE001 — any failure degrades to no history
+        return []
 
 
 # --------------------------------------------------------------------------- one patrol
@@ -1409,6 +1622,63 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
 
 
 # --------------------------------------------------------------------------- main
+def run_wiki_stats(wiki_path: Path) -> None:
+    """Rules 23-24 (#8): the offline stats mode — print the wiki's four
+    health numbers and exit 0.
+
+    Fully offline: no PATROL_* env, no cluster CLI, no repo initialization —
+    reading stats must not mutate anything (the wiki git region is only
+    read). A missing wiki file is a config error (stderr names the path,
+    exit 1). A wiki failing skeleton validation still gets its stats — the
+    parser is defensive — with one stderr warning stating that and the error
+    count. Every degradation (no repo, unusable git, too little history)
+    prints churn n/a and exits 0; the lopsided warning and churn flags are
+    printed hints on the human surface, never gates.
+    """
+    wiki_path = Path(wiki_path)
+    if not wiki_path.exists():
+        die(f"wiki file not found: {wiki_path} (--wiki-stats reads the wiki at "
+            "--wiki; run a patrol first or point --wiki at an existing wiki)")
+    content = wiki_path.read_text()
+    errors = validate_wiki(content)
+    if errors:
+        print(f"[patrol] WARNING: the wiki at {wiki_path} fails skeleton validation "
+              f"({len(errors)} error(s)); stats are parsed defensively from it "
+              "as-is", file=sys.stderr)
+    stats = wiki_stats(content)
+    churn = wiki_churn(wiki_history(wiki_path, WIKI_CHURN_WINDOW))
+
+    # Rule 24: the printed block — exact keywords pinned, spacing and
+    # decoration free, percentages floored integers.
+    p = stats["patrol_count"]
+    print(f"=== wiki stats: cluster {stats['cluster_id']} · patrol_count {p} ===")
+    if stats["watch_total"]:
+        share = int(100 * stats["watch_verified"] / stats["watch_total"])
+        print(f"verification: {stats['watch_verified']}/{stats['watch_total']} "
+              f"watch-list entries verified by patrol {p} ({share}%)")
+    else:
+        print("verification: n/a (empty watch-list)")
+    status = stats["status_counts"]
+    tracked = sum(status.values())
+    print(f"resolution: watching {status['watching']} · resolved {status['resolved']}"
+          f" · expired {status['expired']} ({tracked} tracked)")
+    spread = stats["confidence_counts"]
+    print(f"confidence: high {spread['high']} · medium {spread['medium']}"
+          f" · low {spread['low']}")
+    if churn is None:
+        print("churn: n/a (no wiki history)")
+    elif churn:
+        print(f"churn: {', '.join(churn)}")
+    else:
+        print("churn: none")
+    if stats["lopsided"] is not None:
+        level = stats["lopsided"]
+        graded = sum(spread.values())
+        share = int(100 * spread[level] / graded)
+        print(f"WARNING: lopsided confidence: {spread[level]}/{graded} {level} "
+              f"({share}%) — a grade everyone gets is not a grade")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Cluster Sentinel hacky PoC (deepagents engine)")
     ap.add_argument("--once", action="store_true", help="run a single patrol (default)")
@@ -1426,7 +1696,21 @@ def main() -> None:
                     help="suppress the per-turn output stream (reasoning previews, tool "
                          "calls, results — on by default; findings and notifications "
                          "always print)")
+    ap.add_argument("--wiki-stats", action="store_true",
+                    help="print the wiki's four health numbers (verification rate, "
+                         "resolution ratio, confidence spread, churn) and exit — "
+                         "offline: no PATROL_* env, no cluster, no repo initialization")
     args = ap.parse_args()
+
+    # Rule 23 (#8): the offline stats mode branches right here — before the env
+    # check, kubectl resolution, and repo initialization — and takes precedence
+    # over --once (the default mode). Stats print and exit; they cannot schedule.
+    if args.wiki_stats and args.loop:
+        ap.error("--wiki-stats and --loop cannot be combined: --wiki-stats prints "
+                 "the wiki health numbers and exits, it cannot schedule patrols")
+    if args.wiki_stats:
+        run_wiki_stats(Path(args.wiki))
+        return
 
     if not API_KEY or not BASE_URL or not MODEL:
         die("set PATROL_API_KEY, PATROL_BASE_URL, and PATROL_MODEL in the environment "

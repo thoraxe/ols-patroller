@@ -395,6 +395,132 @@ archaeology).
     frontmatter (the stamp owns the frontmatter, rule 17). The fake-model
     e2e covers the wiring (rule 4f).
 
+### Wiki Health Stats
+
+The wiki's four health numbers [DONE: #8] — "rules without measures drift"
+(the OKF/AIX `--stats` precedent quoted in issue #8): the wiki imposes a
+discipline — verify what you watch (#7's clock), resolve or expire deliberately,
+grade confidence honestly — and the stats measure whether the discipline holds.
+All four numbers are computed by the patroller process, offline, from the wiki
+document and its git history: no model calls, no cluster reads, no patrol, no
+writes. ADR `decisions/0015-wiki-stats-offline-prose-churn.md` records the
+shape.
+
+23. **The stats mode.** `--wiki-stats` prints the four numbers for the wiki at
+    `--wiki` and exits — it never runs a patrol and takes precedence over
+    `--once` (the default mode). The mode is fully offline: it requires no
+    `PATROL_*` environment (the startup env check is skipped), never resolves
+    the cluster CLI, and never creates or initializes the wiki repo — reading
+    stats must not mutate anything (`ensure_wiki_repo` is not called; the wiki
+    git region is only read). A missing wiki file is a config error: a message
+    to stderr naming the path, exit 1. A wiki that fails `validate_wiki` still
+    gets its stats — the parser is defensive — with one stderr warning stating
+    that the wiki fails skeleton validation and the error count; exit stays 0.
+    Degradations never fail the run: no wiki repo (file-only mode, rule 4b),
+    unusable git, or too little history print `n/a` for churn and exit 0.
+    Combining `--wiki-stats` with `--loop` is a usage error (argparse `error()`,
+    exit 2, message naming both flags and stating they cannot be combined):
+    stats print and exit, they cannot schedule.
+24. **The printed block.** `--wiki-stats` prints to stdout one block carrying
+    the four numbers (exact keywords pinned; spacing and decoration free;
+    percentages are floored integers):
+    - a header naming the cluster and the patrol clock: `cluster <cluster_id>`
+      and `patrol_count <P>`;
+    - `verification: <X>/<Y> watch-list entries verified by patrol <P> (<Z>%)`
+      — or `verification: n/a (empty watch-list)` when the Watch-list has no
+      entries;
+    - `resolution: watching <a> · resolved <b> · expired <c> (<N> tracked)`;
+    - `confidence: high <h> · medium <m> · low <l>`;
+    - `churn: <ids>` (comma-separated flagged entry ids, rule 26), `churn:
+      none`, or `churn: n/a (no wiki history)`;
+    - when the lopsided warning fires (rule 25): one warning line carrying
+      the keyword `lopsided`, the dominant level, its share, and the
+      principle — e.g. `WARNING: lopsided confidence: 4/6 high (66%) — a
+      grade everyone gets is not a grade`.
+25. **The document-stats parser (`wiki_stats`).** A pure function
+    `wiki_stats(content) -> dict` — no I/O, no model calls — computing the
+    three numbers that read the wiki document (the fourth, churn, reads git
+    history — rule 27). The parser is defensive: it reads skeleton-valid
+    wikis exactly and hand-edited ones as far as they parse — a top-level list
+    item of a metadata section is an **entry** iff its line parses into
+    ` · `-separated `key: value` pairs carrying an `id`; anything else is
+    invisible to every stat. Each stat uses the field it needs: an entry
+    counts toward a stat iff that field's value is in the stat's vocabulary
+    (garbage or missing values are skipped for that stat only). The dict has
+    exactly eight keys — `patrol_count` (P, the frontmatter `patrol_count`
+    under `frontmatter_patrol_count` semantics: unparseable or absent counts
+    0), `cluster_id` (the frontmatter string, `""` when absent), `watch_total`,
+    `watch_verified`, `verification_rate`, `status_counts`,
+    `confidence_counts`, `lopsided`:
+    - **verification rate** — over the **Watch-list** section's entries:
+      `watch_total` (count), `watch_verified` (entries whose `verified_patrol`
+      pair parses as an integer **equal to P** — missing, garbled, or unequal
+      counts as not verified; Anomaly-log entries are never in the
+      denominator), `verification_rate` = `watch_verified / watch_total` as a
+      float, `None` iff `watch_total == 0`. "Verified this patrol" means
+      verified by the most recent accepted write — rule 20's clock, whose unit
+      is accepted writes, so the stat is exactly as trustworthy as the
+      process-stamped clock (ADR 0014's known gap: a model advancing dates
+      without verifying inflates it; the stat surfaces the clock, it cannot
+      audit it).
+    - **resolution ratio** — `status_counts`: the counts of `watching`,
+      `resolved`, and `expired` over the entries of **both** metadata sections
+      (expired entries are read straight from the Anomaly log, ADR 0014),
+      bucketed by `status` value regardless of section; the three keys are
+      always present (zeros when absent).
+    - **confidence spread** — `confidence_counts`: the counts of `high`,
+      `medium`, and `low` over the entries of both metadata sections (keys
+      always present); plus `lopsided`: the dominant level's name when the
+      warning fires, else `None`. The warning fires iff at least
+      `WIKI_STATS_LOPSIDED_MIN` (5) entries carry a confidence AND one level's
+      count is ≥ `WIKI_STATS_LOPSIDED_SHARE` (2/3) of the graded total — "a
+      grade everyone gets is not a grade", for ANY dominant level, not only
+      `high` (at ≥ 2/3 the dominant level is necessarily unique). Below the
+      minimum the spread is reported without judgment — too little data to
+      call lopsided.
+26. **The churn parser (`wiki_churn`).** A pure function
+    `wiki_churn(revisions) -> list[str] | None` over a series of wiki contents
+    oldest→newest — the photocopy-of-a-photocopy detector: entries the model
+    rewords every patrol with no status change (rewording, not learning).
+    Per revision (fence-aware scanning, rule 11's discipline: fenced lines are
+    prose), every entry of both metadata sections maps `id → (status, prose)`
+    where **prose** is the entry's indented continuation block — the same
+    item extent the expiry pass moves verbatim (rule 21) — compared
+    byte-exact; a duplicate id in one revision resolves to its first
+    occurrence in document order. An id is **flagged** iff it is present in
+    every revision of the series AND every adjacent revision-pair is a
+    **churn pair** for it: prose differs AND the parsed `status` values are
+    equal (absent or garbled status reads as absent on both sides). The
+    comparison is prose-only by design: process stamps (`verified_patrol`,
+    frontmatter) and meaningful metadata advances (`last_verified`, `recheck`
+    rewrites, section moves) never count as rewording — an entry re-verified
+    with stable prose is the healthy case, not drift. A status change in any
+    pair breaks the flag for that entry — resolution, expiry, and #7's
+    auto-expiry flip (status change + annotation + move) are learning events,
+    never churn. Returns the flagged ids in the newest revision's order —
+    Watch-list entries in document order, then Anomaly-log entries in document
+    order (the live loop first) — or `None` when the series has fewer than two
+    revisions (nothing measurable). Entries born mid-window are never flagged:
+    drift detection lags by design — better under-reported than flapping.
+27. **The revision series (`wiki_history`) and the window.** The churn series
+    comes from the wiki repo: `wiki_history(wiki_path, window) -> list[str]`
+    returns the wiki file's content at the last `window` commits that changed
+    it, oldest→newest, read with the same git discipline as the patrol's own
+    wiki git (per-command config, `safe.directory`, never a remote call). No
+    repo, no commits, or any git failure yields an empty list — never a
+    partial window and never an error (degradation, rule 4b's philosophy).
+    `wiki_churn` is then fed `wiki_history(wiki_path, WIKI_CHURN_WINDOW)`;
+    fewer than two revisions (including the empty case) print churn `n/a`.
+    One commit ≈ one accepted write (rules 4d and 17: every accepted write
+    changes the file and commits), so the window counts the same unit as the
+    `verified_patrol` clock. `WIKI_CHURN_WINDOW` is 5 — the same span as the
+    default `PATROL_WIKI_STALE_AFTER` grace: an entry that survives the
+    expiry window because it keeps being re-verified, while rewriting its
+    prose every single time, is exactly the photocopy effect. The stats mode
+    is wired in `main()` right after argparse, before the env check, kubectl
+    resolution, and repo initialization (rule 23); the fake-model e2e is not
+    extended — the mode has no model in it.
+
 ## Configuration Surface
 
 - `--wiki` — path to the wiki file (default `wiki/cluster-wiki.md` beside
@@ -415,6 +541,17 @@ archaeology).
   `verified_patrol` clock is still stamped); read once at startup, and an
   unparseable or negative value fails startup with a config error
   [DONE: #7]
+- `--wiki-stats` — print the wiki's four health numbers (rules 23–27) and
+  exit: verification rate, resolution ratio, confidence spread, churn. Offline
+  — no `PATROL_*` env, no cluster, no repo initialization; a missing wiki file
+  is an error, everything else degrades to `n/a` [DONE: #8]
+- `WIKI_CHURN_WINDOW` — hard-coded constant (not env-configurable), the
+  number of wiki revisions (one per commit) the churn stat examines: 5
+  [DONE: #8]
+- `WIKI_STATS_LOPSIDED_MIN` / `WIKI_STATS_LOPSIDED_SHARE` — hard-coded
+  constants (not env-configurable) for the confidence-lopsided warning (rule
+  25): 5 graded entries minimum, dominant level ≥ 2/3 of the graded total
+  [DONE: #8]
 
 ## Constraints
 
@@ -443,4 +580,4 @@ archaeology).
 | ~~#5~~ | Skeleton schema + validation-on-write (rules 10–19): YAML frontmatter (`wiki_version` == 1, `cluster_id`, `patrol_count`, `last_patrol` — the last three process-stamped on write), fixed section set enforced exactly-once, entry metadata line (`id`, `status` watching/resolved/expired, `first_seen`, `last_verified`, `source`, `confidence` high/medium/low) in Watch-list + Anomaly log, `validate_wiki` gate with one shape-pass repair retry else keep-old-wiki; PyYAML joins the runtime deps (ADR 0011). Impl commit also syncs `ARCHITECTURE.md`'s wiki prose ("Planned next" paragraph) and `AGENTS.md`'s test list |
 | ~~#6~~ | ~~Per-entry `recheck:` commands — every Watch-list entry carries exactly one guard-acceptable `recheck:` pair (rule 12a): the `kubectl_readonly` argument string that re-verifies it, tool-argument form (no `kubectl`/`oc` prefix), judged by the guard's refusal grammar through shared code; optional in the Anomaly log; the report contract asks for it and the patrol prompt consumes it (ADR 0013). Impl commit also syncs `ARCHITECTURE.md`'s wiki prose (the planned-next line) and `AGENTS.md`'s test list~~ |
 | ~~#7~~ | ~~`stale_after`: auto-expire watch-list entries not re-verified within N patrols (flip to `expired`, keep in anomaly log) — process-stamped `verified_patrol` clock + expiry flip (rules 20–22, ADR 0014); impl commit also syncs `ARCHITECTURE.md`'s wiki prose (the planned-next line), `AGENTS.md`'s test list, and `README.md`'s config table (`PATROL_WIKI_STALE_AFTER`)~~ |
-| #8 | `--wiki-stats`: four wiki-health numbers — verification rate, resolution ratio, confidence spread, churn/paraphrase-drift |
+| ~~#8~~ | ~~`--wiki-stats`: the four wiki-health numbers (rules 23–27, ADR 0015) — verification rate (`verified_patrol` == frontmatter `patrol_count` over the Watch-list), resolution ratio (status counts over both metadata sections), confidence spread with the lopsided warning (≥ 2/3 of ≥ 5 graded entries), churn (prose-only comparison over the last `WIKI_CHURN_WINDOW` = 5 commits, flagged when every pair changed with no status change); a fully offline mode (no `PATROL_*` env, no cluster, no repo init) that degrades to `n/a`, never fails. Impl commit also syncs `README.md` (usage + config table), `AGENTS.md`'s test list, and `ARCHITECTURE.md`'s wiki prose (the planned-next line)~~ |

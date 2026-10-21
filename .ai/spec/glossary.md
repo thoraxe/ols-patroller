@@ -42,6 +42,24 @@ redefined here.
   `expired`, the whole item moves to the end of the Anomaly log with an
   `auto-expired` annotation line — history kept, never deleted; housekeeping
   logged to the console, never a finding or notification.
+- **Stats mode** — `--wiki-stats` (#8): the offline command that prints the
+  wiki's four health numbers and exits — no model, no cluster, no `PATROL_*`
+  env, no writes; the three document numbers read the wiki file, churn reads
+  the wiki repo's history.
+- **Verification rate** — health number 1 (#8): the share of Watch-list
+  entries whose `verified_patrol` equals the frontmatter `patrol_count` —
+  verified by the most recent accepted write (rule 20's clock, surfaced).
+- **Resolution ratio** — health number 2 (#8): the watching / resolved /
+  expired counts over the entries of both metadata sections — expired entries
+  read straight from the Anomaly log.
+- **Confidence spread** — health number 3 (#8): the high / medium / low counts
+  over both metadata sections, with a lopsided warning when one level holds
+  ≥ 2/3 of ≥ 5 graded entries — a grade everyone gets is not a grade.
+- **Churn** — health number 4 (#8): paraphrase-drift — entries whose prose
+  changes in every revision of the examined git window with no status change
+  (the photocopy-of-a-photocopy effect: the model rewording rather than
+  learning). Prose-only comparison over the last `WIKI_CHURN_WINDOW` (5)
+  commits; process stamps and date advances never count as rewording.
 - **Stamp** — the patroller's deterministic post-validation rewrite of the
   process-owned frontmatter fields (`patrol_count`, `last_patrol`, `cluster_id`)
   before the atomic write (#5). Models are unreliable counters; the stamp makes

@@ -25,7 +25,9 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
    (`--loop --interval N`); in loop mode a failed patrol is logged and the loop
    continues rather than exiting.
 6. Startup requires `PATROL_API_KEY`, `PATROL_BASE_URL`, and `PATROL_MODEL`; the
-   process exits with an error if any is unset.
+   process exits with an error if any is unset — except in the offline
+   `--wiki-stats` mode, which reads only the wiki and needs no model env
+   [DONE: #8].
 
 ### Component Inventory
 
@@ -41,13 +43,16 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
    entry [DONE: #6] — with one repair pass and process-stamped counters
    [DONE: #5]; entries carry a process-stamped `verified_patrol` clock and
    unverified watch-list entries auto-expire into the Anomaly log
-   [DONE: #7] (`wiki-memory.md`).
+   [DONE: #7] (`wiki-memory.md`). `--wiki-stats` prints the wiki's four
+   health numbers — verification rate, resolution ratio, confidence spread,
+   churn — offline, from the document and its git history [DONE: #8].
 10. **Reporting & notifications** — typed report schema, severity vocabulary,
     console/Slack delivery (`reporting-notifications.md`).
 11. **Safety model** — layered read-only enforcement spanning guard, engine, and
     (planned) in-cluster RBAC (`safety-model.md`).
-12. **CLI & scheduling** — argument parsing, once/loop modes, wiki path selection
-    (Configuration Surface below).
+12. **CLI & scheduling** — argument parsing, once/loop modes, wiki path
+    selection, and the offline `--wiki-stats` mode [DONE: #8] (Configuration
+    Surface below).
 12a. **Container image** — ubi9-minimal image that runs `patrol.py` in-cluster:
      version-pinned OpenShift client, build-time pip install from
      `requirements.txt`, non-root random-UID, default command `--loop --interval
@@ -117,14 +122,18 @@ Environment variables:
 CLI flags: `--once` (default), `--loop`, `--interval`, `--dry-cluster`, `--wiki`
 (default `wiki/cluster-wiki.md` next to `patrol.py` [DONE: #3; was
 `cluster-wiki.md`]), `--max-steps`, `-q/--quiet` (suppress the per-turn output
-stream, on by default [DONE: #27 — was the opt-in `-v/--verbose`]).
+stream, on by default [DONE: #27 — was the opt-in `-v/--verbose`]), and
+`--wiki-stats` (print the wiki's four health numbers and exit — offline, no
+`PATROL_*` env needed, never runs a patrol [DONE: #8]).
 In-cluster, the image's default command is `--loop --interval 21600 --wiki
 /wiki/cluster-wiki.md` [DONE: #1] [DONE: #25] (`container-image.md`).
 
 Hard-coded constants (not env-configurable): `OUT_CAP` = 15,000 chars of tool output
 fed back to the model; model temperature 0.3, `max_tokens` 16000, request timeout
 300 s; wiki push bounds — 3 attempts, 30 s per attempt, 5 s backoff between
-attempts [DONE: #3]; wiki skeleton schema version `WIKI_VERSION` = 1 [DONE: #5].
+attempts [DONE: #3]; wiki skeleton schema version `WIKI_VERSION` = 1 [DONE: #5];
+wiki stats — churn window `WIKI_CHURN_WINDOW` = 5 revisions, lopsided
+thresholds 5 graded entries / 2/3 share [DONE: #8].
 
 In-cluster wiring (Secret keys, the `PATROL_CLUSTER_ID` literal, kustomize image
 override, the CI workflow) is deployment surface, not patrol surface —
