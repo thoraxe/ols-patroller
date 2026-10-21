@@ -64,7 +64,10 @@ under current policy (clean implementation review + `implementation-complete`):
   validation-on-write contract (#5) plus the per-entry recheck-command
   contract (#6); and `tests/test_wiki_expiry.py` covers the stale-entry
   auto-expiry contract (#7: the `verified_patrol` clock matrix and the expiry
-  flip).
+  flip); and `tests/test_wiki_stats.py` covers the wiki health-stats
+  contract (#8: the `wiki_stats` and `wiki_churn` matrices, the
+  `wiki_history` window over a real repo, and the offline `--wiki-stats`
+  mode).
 - `wiki/` (the wiki directory: `cluster-wiki.md` + its git repo) is a runtime
   artifact (gitignored) — never commit it.
 - Roadmap: GitHub issues + milestones, not documents. Spec files mark planned

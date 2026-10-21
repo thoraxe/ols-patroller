@@ -397,7 +397,7 @@ archaeology).
 
 ### Wiki Health Stats
 
-The wiki's four health numbers [PLANNED: #8] — "rules without measures drift"
+The wiki's four health numbers [DONE: #8] — "rules without measures drift"
 (the OKF/AIX `--stats` precedent quoted in issue #8): the wiki imposes a
 discipline — verify what you watch (#7's clock), resolve or expire deliberately,
 grade confidence honestly — and the stats measure whether the discipline holds.
@@ -544,14 +544,14 @@ shape.
 - `--wiki-stats` — print the wiki's four health numbers (rules 23–27) and
   exit: verification rate, resolution ratio, confidence spread, churn. Offline
   — no `PATROL_*` env, no cluster, no repo initialization; a missing wiki file
-  is an error, everything else degrades to `n/a` [PLANNED: #8]
+  is an error, everything else degrades to `n/a` [DONE: #8]
 - `WIKI_CHURN_WINDOW` — hard-coded constant (not env-configurable), the
   number of wiki revisions (one per commit) the churn stat examines: 5
-  [PLANNED: #8]
+  [DONE: #8]
 - `WIKI_STATS_LOPSIDED_MIN` / `WIKI_STATS_LOPSIDED_SHARE` — hard-coded
   constants (not env-configurable) for the confidence-lopsided warning (rule
   25): 5 graded entries minimum, dominant level ≥ 2/3 of the graded total
-  [PLANNED: #8]
+  [DONE: #8]
 
 ## Constraints
 
@@ -580,4 +580,4 @@ shape.
 | ~~#5~~ | Skeleton schema + validation-on-write (rules 10–19): YAML frontmatter (`wiki_version` == 1, `cluster_id`, `patrol_count`, `last_patrol` — the last three process-stamped on write), fixed section set enforced exactly-once, entry metadata line (`id`, `status` watching/resolved/expired, `first_seen`, `last_verified`, `source`, `confidence` high/medium/low) in Watch-list + Anomaly log, `validate_wiki` gate with one shape-pass repair retry else keep-old-wiki; PyYAML joins the runtime deps (ADR 0011). Impl commit also syncs `ARCHITECTURE.md`'s wiki prose ("Planned next" paragraph) and `AGENTS.md`'s test list |
 | ~~#6~~ | ~~Per-entry `recheck:` commands — every Watch-list entry carries exactly one guard-acceptable `recheck:` pair (rule 12a): the `kubectl_readonly` argument string that re-verifies it, tool-argument form (no `kubectl`/`oc` prefix), judged by the guard's refusal grammar through shared code; optional in the Anomaly log; the report contract asks for it and the patrol prompt consumes it (ADR 0013). Impl commit also syncs `ARCHITECTURE.md`'s wiki prose (the planned-next line) and `AGENTS.md`'s test list~~ |
 | ~~#7~~ | ~~`stale_after`: auto-expire watch-list entries not re-verified within N patrols (flip to `expired`, keep in anomaly log) — process-stamped `verified_patrol` clock + expiry flip (rules 20–22, ADR 0014); impl commit also syncs `ARCHITECTURE.md`'s wiki prose (the planned-next line), `AGENTS.md`'s test list, and `README.md`'s config table (`PATROL_WIKI_STALE_AFTER`)~~ |
-| #8 | `--wiki-stats`: the four wiki-health numbers (rules 23–27, ADR 0015) — verification rate (`verified_patrol` == frontmatter `patrol_count` over the Watch-list), resolution ratio (status counts over both metadata sections), confidence spread with the lopsided warning (≥ 2/3 of ≥ 5 graded entries), churn (prose-only comparison over the last `WIKI_CHURN_WINDOW` = 5 commits, flagged when every pair changed with no status change); a fully offline mode (no `PATROL_*` env, no cluster, no repo init) that degrades to `n/a`, never fails. Impl commit also syncs `README.md` (usage + config table), `AGENTS.md`'s test list, and `ARCHITECTURE.md`'s wiki prose (the planned-next line) |
+| ~~#8~~ | ~~`--wiki-stats`: the four wiki-health numbers (rules 23–27, ADR 0015) — verification rate (`verified_patrol` == frontmatter `patrol_count` over the Watch-list), resolution ratio (status counts over both metadata sections), confidence spread with the lopsided warning (≥ 2/3 of ≥ 5 graded entries), churn (prose-only comparison over the last `WIKI_CHURN_WINDOW` = 5 commits, flagged when every pair changed with no status change); a fully offline mode (no `PATROL_*` env, no cluster, no repo init) that degrades to `n/a`, never fails. Impl commit also syncs `README.md` (usage + config table), `AGENTS.md`'s test list, and `ARCHITECTURE.md`'s wiki prose (the planned-next line)~~ |

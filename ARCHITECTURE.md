@@ -90,8 +90,13 @@ process-enforced: every metadata entry carries a patroller-stamped `verified_pat
 clock, and a watching watch-list entry whose `last_verified` has not advanced for
 `PATROL_WIKI_STALE_AFTER` (default 5) accepted writes is auto-expired — flipped to
 `expired` and moved to the end of the Anomaly log with an `auto-expired` annotation,
-history kept, never deleted (`.ai/spec/decisions/0014`). Planned next (v0.2):
-`--wiki-stats` health numbers.
+history kept, never deleted (`.ai/spec/decisions/0014`). Since #8 a fully offline
+`--wiki-stats` mode prints the wiki's four health numbers — verification rate,
+resolution ratio, confidence spread, churn (prose-only comparison over the last
+5 wiki commits; process stamps and date advances never count as rewording) —
+from the document and its git history, with no `PATROL_*` env, cluster access,
+or repo initialization (`.ai/spec/decisions/0015`). Planned next (v0.2):
+efficient-sweep guidance (#20) and the wiki length budget (#40).
 
 ## Deployment topology (current vs planned)
 
