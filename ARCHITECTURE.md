@@ -95,8 +95,12 @@ history kept, never deleted (`.ai/spec/decisions/0014`). Since #8 a fully offlin
 resolution ratio, confidence spread, churn (prose-only comparison over the last
 5 wiki commits; process stamps and date advances never count as rewording) —
 from the document and its git history, with no `PATROL_*` env, cluster access,
-or repo initialization (`.ai/spec/decisions/0015`). Planned next (v0.2):
-the wiki length budget (#40). Since #20 the prompt teaches an efficient
+or repo initialization (`.ai/spec/decisions/0015`). Since #40 the wiki is a
+bounded working set — git history is the archive: the patroller keeps every
+watching Anomaly-log entry plus the last 20 resolved/expired ones (older
+closed entries pruned on write, recoverable from the wiki repo) and warns
+when the whole wiki passes the soft 20,000-character budget
+(`.ai/spec/decisions/0017`). Since #20 the prompt teaches an efficient
 cluster sweep — layered (operators → nodes → namespaces → workload objects →
 problem pods → warning events), field-selected (`--field-selector`,
 jsonpath/custom-columns, single-object drilldowns) over flat enumeration and

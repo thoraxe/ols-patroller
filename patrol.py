@@ -104,6 +104,17 @@ WIKI_CHURN_WINDOW = 5               # revisions (one per commit) churn examines
 WIKI_STATS_LOPSIDED_MIN = 5         # graded entries before a spread can be lopsided
 WIKI_STATS_LOPSIDED_SHARE = 2 / 3   # dominant-level share that fires the warning
 
+# Wiki working-set budgets (wiki-memory.md rules 28-29, #40; ADR 0017). Git
+# history is the archive; the wiki is the working set: the Anomaly log is
+# mechanically bounded (the keep budget — every watching entry plus the last
+# N resolved/expired entries survive each accepted write), and the whole wiki
+# is softly budgeted (the drift alarm — warns, never gates validation).
+# Hard-coded like the stats constants, not env-configurable — retuning them
+# is a spec change, not a config knob. Read at call time (the PUSH_* pattern)
+# so tests can bound them.
+WIKI_ANOMALY_KEEP = 20     # last resolved/expired Anomaly-log entries kept
+WIKI_CHAR_BUDGET = 20_000  # soft whole-wiki character budget (whole file)
+
 
 def _stale_after() -> int:
     """PATROL_WIKI_STALE_AFTER as a non-negative int (rule 21, #7).
@@ -514,7 +525,7 @@ def report_fields(report: object) -> tuple[list[dict], list[str], str]:
     return ([], [], "")
 
 
-REPORT_CONTRACT = """\
+REPORT_CONTRACT = f"""\
 Produce the final PatrolReport for the cluster patrol above:
 - "findings": everything worth recording. severity: "info" (note / baseline /
   expected state), "warn" (drift, degradation, something suspicious), "crit"
@@ -562,7 +573,16 @@ Produce the final PatrolReport for the cluster patrol above:
      keeping; resolve or expire the rest deliberately.
   4. Topology, Baselines, and Open questions are free prose — no metadata lines
      there; keep tagging their entries with (source, timestamp, confidence)
-     inline and expire stale entries rather than deleting history."""
+     inline. Expire stale entries (flip status to expired), never delete them —
+     pruning closed Anomaly-log history is the patroller's job, not yours.
+  5. The wiki is a working set, not a log: git history is the archive, and the
+     wiki is what the next patrol reads. So summarize and prune rather than
+     accumulate — rewrite entries tighter instead of appending new prose on
+     top of old. Keep the whole wiki within the soft budget of {WIKI_CHAR_BUDGET}
+     characters (frontmatter included). The Anomaly log keeps only the
+     last {WIKI_ANOMALY_KEEP} resolved/expired entries (the patroller prunes
+     older closed ones) — never hoard closed history there.
+"""
 
 
 async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
@@ -1190,11 +1210,12 @@ def _stats_entry_pairs(line: str) -> dict[str, str] | None:
 
 
 def wiki_stats(content: str) -> dict:
-    """Rule 25 (#8): the three document health numbers — pure and defensive.
+    """Rule 25 (#8, #40 amendment): the document health numbers — pure and
+    defensive.
 
     Reads skeleton-valid wikis exactly and hand-edited ones as far as they
     parse (the `_stats_entry_pairs` entry test). Returns a dict with exactly
-    eight keys: `patrol_count` (the frontmatter clock under
+    ten keys: `patrol_count` (the frontmatter clock under
     frontmatter_patrol_count semantics: unparseable or absent counts 0),
     `cluster_id` (the frontmatter string, "" when absent), `watch_total` /
     `watch_verified` / `verification_rate` (over Watch-list entries only:
@@ -1202,10 +1223,14 @@ def wiki_stats(content: str) -> dict:
     patrol_count — Anomaly-log entries are never in the denominator; the
     rate is None iff watch_total == 0), `status_counts` and
     `confidence_counts` (over BOTH metadata sections, bucketed by value,
-    keys always present), and `lopsided` (the dominant confidence level when
+    keys always present), `lopsided` (the dominant confidence level when
     the warning fires — at least WIKI_STATS_LOPSIDED_MIN graded entries and
     one level at WIKI_STATS_LOPSIDED_SHARE of the graded total, for ANY
-    level — else None).
+    level — else None), and #40's size pair: `char_count` (the whole
+    document's character count, frontmatter included — always computable,
+    whatever the document's validity) and `over_budget` (True iff
+    char_count exceeds WIKI_CHAR_BUDGET, rule 29 — the working-set drift
+    measure behind rule 24's size line).
     """
     patrol_count = frontmatter_patrol_count(content)
     cluster_id = ""
@@ -1261,6 +1286,8 @@ def wiki_stats(content: str) -> dict:
         "status_counts": status_counts,
         "confidence_counts": confidence_counts,
         "lopsided": lopsided,
+        "char_count": len(content),
+        "over_budget": len(content) > WIKI_CHAR_BUDGET,
     }
 
 
@@ -1327,6 +1354,73 @@ def wiki_churn(revisions: list[str]) -> list[str] | None:
                for i in range(len(scanned) - 1)):                            # status
             flagged.append(entry_id)
     return flagged
+
+
+# ---- working-set budget (wiki-memory.md rules 28-29, #40; ADR 0017) ----
+# The wiki is a working set, not a log: growth taxes every patrol (the wiki
+# is injected whole into the prompt and re-emitted whole by the shape pass
+# under max_tokens), while the wiki repo already retains every accepted
+# write. So the Anomaly log — append-only by nature — gets the mechanical
+# bound, enforced by the process the way expiry is (ADR 0014's rationale:
+# models are unreliable at self-limiting bookkeeping), and everything else
+# gets a soft budget that warns and teaches but never gates (a hard failure
+# would burn repair passes on formatting instead of hypotheses). Everything
+# here is pure: no I/O, no model calls, the same fence-aware section/entry
+# scanning as the validator.
+
+
+def compact_anomaly_log(content: str, keep: int) -> tuple[str, list[str]]:
+    """Rule 28 (#40): the anomaly-log keep budget — pure and deterministic.
+
+    On every accepted write the Anomaly log is bounded: every watching entry
+    stays (live placements, the model's to manage — never counted against the
+    budget) plus the LAST `keep` resolved/expired entries in document order
+    (the section is append-ordered, so "last" means most recent). Closed
+    entries earlier in the section are pruned: the whole list item — metadata
+    line plus indented continuation lines, the same item extent the expiry
+    pass moves verbatim (rule 21) — is removed from the written wiki.
+    Pruning is deletion from the working set, never from history (rule 4d's
+    one commit per accepted write retains it). Returns (rewritten content,
+    [pruned entry ids] in document order). The Watch-list, the prose
+    sections, the frontmatter, and non-item prose are never touched; when
+    nothing is pruned the content is returned unchanged. keep = 0 prunes
+    every closed entry (aggressive but legal — watching entries still stay).
+    """
+    lines = content.split("\n")
+    anomaly = next(((start, end) for name, start, end in _scan_sections(lines)
+                    if name == "Anomaly log"), None)
+    if anomaly is None:
+        return content, []
+    closed: list[tuple[int, str]] = []  # (metadata-line index, entry id)
+    for idx in _scan_section_entries(lines, *anomaly):
+        pairs = _metadata_pairs(lines[idx])
+        if pairs.get("status") in ("resolved", "expired"):
+            closed.append((idx, pairs.get("id", "")))
+    beyond = len(closed) - keep
+    if beyond <= 0:
+        return content, []
+    cut: set[int] = set()
+    for idx, _entry_id in closed[:beyond]:  # whole items, earliest closed first
+        cut.update(range(idx, _item_extent(lines, idx)))
+    out = [line for i, line in enumerate(lines) if i not in cut]
+    return "\n".join(out), [entry_id for _idx, entry_id in closed[:beyond]]
+
+
+def wiki_budget_warnings(content: str) -> list[str]:
+    """Rule 29 (#40): the soft whole-wiki character budget — pure.
+
+    Empty within the budget; otherwise exactly one warning naming the wiki's
+    character count, the budget, and the summarize-and-prune instruction.
+    The budget is deliberately soft — it never gates validation (rule 15)
+    and never blocks a write: the anomaly-log keep budget (rule 28) is the
+    mechanical bound, this one the drift alarm. WIKI_CHAR_BUDGET is read at
+    call time so tests can bound it.
+    """
+    count = len(content)
+    if count <= WIKI_CHAR_BUDGET:
+        return []
+    return [f"wiki over length budget: {count} chars vs {WIKI_CHAR_BUDGET} budget "
+            "— summarize and prune; git history is the archive"]
 
 
 # --------------------------------------------------------------------------- wiki git
@@ -1646,8 +1740,15 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
         if errors:
             print(f"[patrol] WARNING: updated wiki failed skeleton validation "
                   f"({len(errors)} error(s)); running one repair pass", file=sys.stderr)
+            # Rule 18 (#40): when the rejected wiki is over the soft budget,
+            # its budget warning joins the error list carried to the repair
+            # pass — the model is asked to shorten while it fixes structure.
+            # Acceptance stays structural validity alone (rule 29: length
+            # never decides — an over-budget repair still writes, with the
+            # write-path warning below).
             repaired = await shape_report(model, messages, budget_cut,
-                                          repair=(new_wiki, errors))
+                                          repair=(new_wiki,
+                                                  errors + wiki_budget_warnings(new_wiki)))
             final = None
             if repaired is not None:
                 r_findings, r_notifications, r_wiki = report_fields(repaired)
@@ -1686,6 +1787,18 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
         for entry_id, age in flips:
             print(f"[patrol] wiki: entry '{entry_id}' auto-expired "
                   f"(unverified for {age} patrols, stale_after {STALE_AFTER})")
+        # Rule 28 (#40): the compaction pass — pure and deterministic, after
+        # expiry (entries flipped this patrol land at the section's end and
+        # are among the newest — they survive the cut) and before the stamp.
+        # Every watching entry plus the last WIKI_ANOMALY_KEEP resolved/expired
+        # entries stay; earlier closed entries are pruned from the working
+        # set — git history is the archive. One console line per prune:
+        # pruning is wiki housekeeping, never a finding or notification.
+        new_wiki, pruned = compact_anomaly_log(new_wiki, WIKI_ANOMALY_KEEP)
+        for entry_id in pruned:
+            print(f"[patrol] wiki: entry '{entry_id}' pruned from the Anomaly log "
+                  f"(beyond the keep budget {WIKI_ANOMALY_KEEP}; "
+                  "git history retains it)")
         # Rule 17: stamp the process-owned frontmatter fields — patrol_count
         # from the ON-DISK wiki (never the model's guess), last_patrol from this
         # patrol's start, cluster_id from config. Every accepted write advances
@@ -1694,6 +1807,12 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
                              patrol_count=patrol_count,
                              last_patrol=ts,
                              cluster_id=CLUSTER_ID)
+        # Rule 29 (#40): the soft-budget warning — on the final wiki (post
+        # expire → compact → stamp), to stderr (rule 16's channel for wiki
+        # problems). The budget never gates: the write, commit, and push
+        # proceed regardless.
+        for warning in wiki_budget_warnings(stamped):
+            print(f"[patrol] WARNING: {warning}", file=sys.stderr)
         write_wiki_atomic(wiki_path, stamped)
         print(f"[patrol] wiki updated → {wiki_path}")
         if commit_wiki(wiki_path, findings, CLUSTER_ID) and WIKI_REMOTE:
@@ -1704,8 +1823,8 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
 
 # --------------------------------------------------------------------------- main
 def run_wiki_stats(wiki_path: Path) -> None:
-    """Rules 23-24 (#8): the offline stats mode — print the wiki's four
-    health numbers and exit 0.
+    """Rules 23-24 (#8, #40 amendment): the offline stats mode — print the
+    wiki's health numbers (the four of #8 plus #40's size line) and exit 0.
 
     Fully offline: no PATROL_* env, no cluster CLI, no repo initialization —
     reading stats must not mutate anything (the wiki git region is only
@@ -1758,6 +1877,15 @@ def run_wiki_stats(wiki_path: Path) -> None:
         share = int(100 * spread[level] / graded)
         print(f"WARNING: lopsided confidence: {spread[level]}/{graded} {level} "
               f"({share}%) — a grade everyone gets is not a grade")
+    # Rule 24 (#40): the size line — the working-set drift measure (the
+    # character count and its floored share of the soft budget) — and, when
+    # over budget, the rule-29 warning text prefixed WARNING:.
+    size = stats["char_count"]
+    share = int(100 * size / WIKI_CHAR_BUDGET)
+    print(f"size: {size} chars ({share}% of budget)")
+    if stats["over_budget"]:
+        for warning in wiki_budget_warnings(content):
+            print(f"WARNING: {warning}")
 
 
 def main() -> None:
@@ -1778,8 +1906,8 @@ def main() -> None:
                          "calls, results — on by default; findings and notifications "
                          "always print)")
     ap.add_argument("--wiki-stats", action="store_true",
-                    help="print the wiki's four health numbers (verification rate, "
-                         "resolution ratio, confidence spread, churn) and exit — "
+                    help="print the wiki's health numbers (verification rate, "
+                         "resolution ratio, confidence spread, churn, size) and exit — "
                          "offline: no PATROL_* env, no cluster, no repo initialization")
     args = ap.parse_args()
 

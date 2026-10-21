@@ -128,7 +128,8 @@ def test_verification_rate_counts_clock_equal_to_patrol_count():
     s = patrol.wiki_stats(wiki)
     assert set(s) == {"patrol_count", "cluster_id", "watch_total",
                       "watch_verified", "verification_rate", "status_counts",
-                      "confidence_counts", "lopsided"}  # exactly eight keys
+                      "confidence_counts", "lopsided", "char_count",
+                      "over_budget"}  # exactly ten keys (#40 added the size pair)
     assert s["patrol_count"] == 7
     assert s["cluster_id"] == "test-cluster"
     assert s["watch_total"] == 3
