@@ -22,6 +22,13 @@ knowledge base of the observed cluster.
    is left untouched. [DONE: #5 — the replacement is additionally conditioned
    on skeleton validity: validate → one repair pass → else keep the old wiki
    (rules 15–19).]
+   [PLANNED: #51 — an empty `updated_wiki` is no longer read as "no
+   update intended": it is a classified reporting failure
+   (`reporting-notifications.md` rule 7b) — retried once inside the
+   reporting pass, then delivered findings-only with a stderr warning.
+   The write path is unchanged (an empty wiki still writes nothing,
+   commits nothing); what changes is that the no-op is never silent and
+   never mistaken for a deliberate choice.]
 
 ### Git History
 
@@ -278,7 +285,11 @@ attempt, and then the old wiki wins. Persistence problems degrade, never block.
     notifications are delivered: the final one (the repaired report on repair
     success; the first report otherwise: a wiki-format failure never costs the
     patrol's observations). An empty `updated_wiki` (no update intended) skips
-    validation and repair entirely (rule 4 unchanged).
+    validation and repair entirely (rule 4 unchanged) [PLANNED: #51 — by the
+    time an empty wiki reaches this gate it is a twice-failed reporting
+    attempt (already retried and warned about per
+    `reporting-notifications.md` rule 7b); it still skips validation and
+    repair — a classified failure writes nothing].
 17. **Stamping.** After validation and before the atomic write, the patroller
     rewrites the three process-owned frontmatter fields — preserving
     `wiki_version` and the body byte-for-byte:
@@ -736,6 +747,7 @@ load-bearing constraint of #5).
 
 | Ticket | Summary |
 |---|---|
+| #51 | Empty-`updated_wiki` classification (rules 4 + 16 amendments): empty is a failed reporting attempt, not a no-update signal — retried and warned inside the reporting pass (`reporting-notifications.md` rule 7b); the write gate itself is unchanged (empty still writes nothing) |
 | ~~#3~~ | ~~Git-backed wiki: wiki directory is a git repo (init at startup, file-only fallback), atomic write (temp + rename), one commit per wiki-changing patrol (`patrol N: X findings, Y warn`), optional `PATROL_WIKI_REMOTE` push — bounded, best-effort, local-first~~ |
 | ~~#5~~ | Skeleton schema + validation-on-write (rules 10–19): YAML frontmatter (`wiki_version` == 1, `cluster_id`, `patrol_count`, `last_patrol` — the last three process-stamped on write), fixed section set enforced exactly-once, entry metadata line (`id`, `status` watching/resolved/expired, `first_seen`, `last_verified`, `source`, `confidence` high/medium/low) in Watch-list + Anomaly log, `validate_wiki` gate with one shape-pass repair retry else keep-old-wiki; PyYAML joins the runtime deps (ADR 0011). Impl commit also syncs `ARCHITECTURE.md`'s wiki prose ("Planned next" paragraph) and `AGENTS.md`'s test list |
 | ~~#6~~ | ~~Per-entry `recheck:` commands — every Watch-list entry carries exactly one guard-acceptable `recheck:` pair (rule 12a): the `kubectl_readonly` argument string that re-verifies it, tool-argument form (no `kubectl`/`oc` prefix), judged by the guard's refusal grammar through shared code; optional in the Anomaly log; the report contract asks for it and the patrol prompt consumes it (ADR 0013). Impl commit also syncs `ARCHITECTURE.md`'s wiki prose (the planned-next line) and `AGENTS.md`'s test list~~ |

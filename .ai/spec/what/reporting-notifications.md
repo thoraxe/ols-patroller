@@ -47,6 +47,17 @@ in `how/reporting-pipeline.md`.
    stale entries rather than deleting history” sentence is reworded
    accordingly: prose-section entries are still expired, never deleted, by
    the model — pruning closed Anomaly-log history is the patroller's job.]
+   [PLANNED: #51 — the contract also requires the wiki on every report.
+   The contract sentence, verbatim (the executable pins live in
+   `test_empty_report.py`):
+   "updated_wiki is required on every report: return the FULL wiki
+   content even when nothing needs changing — copy unchanged sections
+   verbatim. An empty updated_wiki is never a valid answer: a patrol with
+   nothing to change returns the wiki unchanged."
+   The schema field keeps its lenient default (an omitted field parses
+   to `""`), so a wiki-omitting response still parses and its findings
+   survive: the process, not the parser, enforces the requirement
+   (rule 7b).]
 
 ### Reporting Pass
 
@@ -64,6 +75,39 @@ in `how/reporting-pipeline.md`.
     printing, notification — runs after the validation/repair decision resolves
     and before the physical wiki write, so exactly one report, the final one, is
     delivered [DONE: #5].
+7b. **Empty-wiki classification** [PLANNED: #51]. A parsed result whose
+    `updated_wiki` is empty is a **failed reporting attempt**, not a valid
+    report — the patrol cannot distinguish an omitted field from a
+    deliberate no-op, so the contract removes the no-op meaning entirely
+    (rule 5: "nothing changed" is expressed by returning the wiki
+    unchanged, never by omitting it). The pass retries once with a
+    corrective user message that names the empty `updated_wiki` and
+    demands the full content — a message distinct from rule 7's generic
+    invalid-report corrective. A retry that returns a wiki recovers
+    normally — and that retry's report is the patrol's report: it replaces
+    the first attempt wholesale (findings, notifications, wiki), the same
+    wholesale replacement a successful rule-7a repair uses. When the retry
+    also comes back wiki-less the report is
+    **not discarded**: its findings and notifications still deliver (a
+    wiki omission must never cost the patrol's observations), the wiki is
+    left unchanged, and one stderr warning names the empty-wiki condition
+    — verbatim: `[patrol] WARNING: reporting pass returned an empty
+    updated_wiki; keeping the previous wiki, writing nothing` — the no-op
+    is visible and countable, never silent. The
+    classification keys on the wiki field alone: zero findings is a legal
+    outcome (a clean cluster) and never triggers it. The repair pass
+    (rule 7a) shares the classification — a repaired report with an empty
+    wiki is retried the same way before the keep-old-wiki outcome
+    applies. A repair that stays wiki-less falls to that keep-old-wiki
+    outcome: the first report's findings and notifications deliver and
+    the wiki-rejection warning fires (`wiki-memory.md` rule 16) — the
+    first report's wiki was non-empty (it failed validation, not
+    emission), so the empty-wiki warning does not. Across failure
+    compositions the pass returns the **last
+    result that parsed** — a wiki-less report included — and `None` only
+    when no attempt parsed (rule 7's total failure): an empty-wiki
+    attempt followed by an exception still delivers the parsed report's
+    findings with the empty-wiki warning.
 8. A budget-cut report must cover only what was actually observed; the pass is told
    which commands never executed.
 8a. **Per-call-shape request bounds** [DONE: #49]. The two call shapes
@@ -113,6 +157,7 @@ in `how/reporting-pipeline.md`.
 
 | Ticket | Summary |
 |---|---|
+| #51 | Empty PatrolReport (rules 5 + 7b): the report contract requires `updated_wiki` on every report; an empty one is a failed attempt — one named corrective retry, then findings-only delivery with a stderr warning, wiki unchanged. Impl commit also syncs `AGENTS.md`'s test list |
 | ~~#49~~ | ~~Per-call-shape request bounds (rule 8a): exploration turns `REQUEST_TIMEOUT` 300 s, structured reporting/repair calls `REPORT_TIMEOUT` 900 s — two `make_model` instances through the same seam; the specced constants in `agent-engine.md` / `system-overview.md` updated to the split, bounds pinned by test. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | #9 | Notification dedup: notify on state change, not every patrol — new entry, severity change/escalation, or resolution notify; standing unchanged entries stay wiki-only; optional periodic digest for long-unfixed entries |
 | ~~#40~~ | ~~Report contract states the working-set expectations: the wiki is a working set (git history is the archive), summarize and prune rather than accumulate, the soft character budget, the anomaly-log keep budget (`wiki-memory.md` rules 28–29)~~ |
