@@ -23,7 +23,17 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
    updated wiki (see `reporting-notifications.md`).
 5. The system runs either once (`--once`, the default) or on a fixed interval
    (`--loop --interval N`); in loop mode a failed patrol is logged and the loop
-   continues rather than exiting.
+   continues rather than exiting. When both `--once` and `--loop` are passed,
+   loop mode engages — `--loop` wins. [PLANNED: #51 — in loop mode all patrols
+   of the process run on **one process-lifetime event loop**: a fresh
+   `asyncio.run` per patrol strands loop-bound engine state (cached async
+   clients, keep-alive pools) on a closed loop, which real-cluster
+   validation caught as a one-time "Event loop is closed" failure on the
+   second patrol of a process. One loop for the whole process; a failed
+   patrol is still logged and the loop continues; ctrl-c during a patrol
+   or the inter-patrol wait still stops the process cleanly; `--once`
+   keeps its single `asyncio.run` (ADR
+   `decisions/0020-one-event-loop-per-process.md`).]
 6. Startup requires `PATROL_API_KEY`, `PATROL_BASE_URL`, and `PATROL_MODEL`; the
    process exits with an error if any is unset — except in the offline
    `--wiki-stats` mode, which reads only the wiki and needs no model env
@@ -90,7 +100,11 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
 15. If the reporting pass fails entirely, the patrol ends with a warning and the wiki
     is left unchanged. The same holds when the wiki update fails skeleton
     validation and its repair pass: the old wiki stands and the patrol's findings
-    and notifications still deliver [DONE: #5].
+    and notifications still deliver [DONE: #5]. [PLANNED: #50 — an
+    empty-`updated_wiki` report is the third degradation: retried once
+    inside the reporting pass (`reporting-notifications.md` rule 7b),
+    then delivered findings-only with a stderr warning, the wiki
+    unchanged.]
 16. **Doc-surface consistency for the defaults.** Every committed surface that
     names the default cadence or the output flag states the post-#25/#27 truth:
     the `--interval` help text and `patrol.py`'s module docstring, the
@@ -136,9 +150,12 @@ In-cluster, the image's default command is `--loop --interval 21600 --wiki
 /wiki/cluster-wiki.md` [DONE: #1] [DONE: #25] (`container-image.md`).
 
 Hard-coded constants (not env-configurable): `OUT_CAP` = 15,000 chars of tool output
-fed back to the model; model temperature 0.3, `max_tokens` 16000, request timeout
-300 s; wiki push bounds — 3 attempts, 30 s per attempt, 5 s backoff between
-attempts [DONE: #3]; wiki skeleton schema version `WIKI_VERSION` = 1 [DONE: #5];
+fed back to the model; model temperature 0.3, `max_tokens` 16000, request
+timeout — `REQUEST_TIMEOUT` 300 s per exploration turn, `REPORT_TIMEOUT`
+900 s per structured reporting/repair call
+(`reporting-notifications.md` rule 8a) [PLANNED: #49 — was a flat 300 s on
+the whole client]; wiki push bounds — 3 attempts, 30 s per attempt, 5 s
+backoff between attempts [DONE: #3]; wiki skeleton schema version `WIKI_VERSION` = 1 [DONE: #5];
 wiki stats — churn window `WIKI_CHURN_WINDOW` = 5 revisions, lopsided
 thresholds 5 graded entries / 2/3 share [DONE: #8]; wiki working-set budgets —
 anomaly-log keep `WIKI_ANOMALY_KEEP` = 20 entries, soft length
@@ -165,5 +182,6 @@ documents). Milestone shape:
 |---|---|
 | v0.1 (#1–#4, #9, #11, #24, #25, #27, #28) | In-cluster: Containerfile, manifests (SA + cluster-reader + PVC + Deployment), git-backed wiki, e2e tests in-repo, deployment defaults & observability (6 h cadence, unbuffered + verbose logs, git-safe `/wiki`), guard `--raw` refusal, notification dedup |
 | v0.2 (#5–#8, #20, #39, #40) | Compounding wiki: skeleton schema + validation-on-write, per-entry recheck commands, `stale_after` expiry, `--wiki-stats`, efficient-sweep guidance, deploy-key remote-push wiring, wiki length budget |
+| v0.2.1 (#49, #50, #51) | Real-cluster validation fixes: per-call-shape request bounds (300 s exploration / 900 s structured reporting, #49), empty-`updated_wiki` classification — the contract requires the wiki every report, one named retry + stderr warning (#50), one event loop per `--loop` process (#51). Impl commits sync `AGENTS.md`'s test list |
 | v0.3 (#10, #9 digest) | Operational hardening: cost control, periodic digest reminder for long-unfixed entries |
 | future (#12–#16, #41) | Remediation handoff to AgenticRuns, fleet/multicluster, CRD dispatcher, pluggable investigation engine, MCP-memory decision record, external runbook referencing |

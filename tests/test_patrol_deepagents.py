@@ -45,12 +45,22 @@ Covers (safety-model.md rules 6b-6c, wiki-memory.md rules 4f and 15-19):
   with one stderr warning (the budget never gates), and a repair pass
   carries the rejected wiki's budget warning alongside the structural
   errors
+- v0.2.1 reporting hardening (#49, #50, #51): the two-model wiring of
+  #49 (the agent's instance at the exploration bound, the shape pass's at
+  the reporting bound, both through the make_model seam), the empty-wiki
+  classification of #50 (a wiki-less report is retried once with a
+  corrective message naming it; a good retry recovers; a still-empty
+  retry delivers findings, writes nothing, and warns on stderr), and the
+  one-event-loop loop mode of #51 (two patrols through main() --loop on a
+  single event loop, both writing, clean ctrl-c exit; a failed patrol is
+  logged and the loop continues on the same loop)
 
 The `--raw` guard refusal is not e2e-covered: it is unit-checked in
 test_kubectl_guard.py (kubectl-guard.md rule 6a, #11).
 
 Run: uv run --group dev pytest tests/ -q
 """
+import asyncio
 import json
 import re
 import subprocess
@@ -153,8 +163,12 @@ class ScriptedEndpoint:
             "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
         })
 
-    def model(self) -> ChatOpenAI:
-        """A real ChatOpenAI wired to this endpoint — the make_model seam."""
+    def model(self, timeout: float | None = None) -> ChatOpenAI:
+        """A real ChatOpenAI wired to this endpoint — the make_model seam.
+        Accepts (and ignores) the request-bound kwarg of #49: the bound is
+        client-side config, invisible on the wire, so the fake endpoint
+        never enforces it — the make_model call itself is the assertion
+        surface."""
         transport = httpx.MockTransport(self.handler)
         return ChatOpenAI(
             model="fake-model", base_url="http://fake.test/v1", api_key="test-key",
@@ -323,14 +337,16 @@ def commit_count(cwd) -> int:
     return int(git("rev-list", "--count", "--all", cwd=cwd).stdout.strip() or 0)
 
 
-def run_patrol_cli(monkeypatch, endpoint, wiki, *extra_args, wiki_remote=""):
+def run_patrol_cli(monkeypatch, endpoint, wiki, *extra_args, wiki_remote="",
+                   model_factory=None):
     """Run one full patrol through main() — argparse, env check, startup repo
     ensure, the engine loop, the shape pass, and the wiki git tail — with the
     model pointed at the scripted endpoint. Module-level config read from env
     at import (BASE_URL/MODEL/API_KEY/CLUSTER_ID/SLACK_URL/WIKI_REMOTE) is
     pinned explicitly so an ambient PATROL_*/SLACK_* environment cannot leak
-    network calls into the e2e (rule 6c)."""
-    monkeypatch.setattr(patrol, "make_model", endpoint.model)
+    network calls into the e2e (rule 6c). `model_factory` overrides the
+    make_model patch (e.g. a recording wrapper asserting on the #49 bound)."""
+    monkeypatch.setattr(patrol, "make_model", model_factory or endpoint.model)
     monkeypatch.setattr(patrol, "BASE_URL", "http://fake.test/v1")
     monkeypatch.setattr(patrol, "MODEL", "fake-model")
     monkeypatch.setattr(patrol, "API_KEY", "test-key")
@@ -826,3 +842,136 @@ def test_wiki_flag_default_is_the_wiki_directory():
     m = re.search(r'"--wiki",\s*default=str\(Path\(__file__\)\.parent\s*/\s*"wiki"\s*/\s*"cluster-wiki\.md"\)',
                   source)
     assert m, "--wiki must default to wiki/cluster-wiki.md beside patrol.py"
+
+
+# ------------------------------------------------- reporting hardening (#49, #50, #51)
+
+# A structurally valid report whose updated_wiki is empty — the #50 failure
+# shape observed in real-cluster validation (the field's lenient default
+# parses an omission to "").
+EMPTY_WIKI_REPORT = {
+    "findings": [
+        {"severity": "crit", "summary": "control-plane operators degraded",
+         "evidence": "get clusteroperators: multiple Degraded=True"},
+    ],
+    "notifications": ["control-plane operators degraded"],
+    "updated_wiki": "",
+}
+
+
+def test_shape_pass_model_carries_the_reporting_bound(tmp_path, monkeypatch, capsys):
+    """#49 rule 8a wiring: run_patrol builds two model instances through the
+    make_model seam — the agent's at the exploration bound, the shape pass's
+    at the reporting bound."""
+    endpoint = ScriptedEndpoint(report=REPORT)
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    bounds = []
+    real_model = endpoint.model
+
+    def recording_model(**kwargs):
+        bounds.append(kwargs.get("timeout"))
+        return real_model()
+
+    run_patrol_cli(monkeypatch, endpoint, wiki, model_factory=recording_model)
+    assert len(bounds) == 2
+    assert bounds.count(patrol.REQUEST_TIMEOUT) == 1
+    assert bounds.count(patrol.REPORT_TIMEOUT) == 1
+
+
+def test_empty_wiki_report_retries_and_recovers(tmp_path, monkeypatch, capsys):
+    """#50 rule 7b wiring: a valid-but-wiki-less report is a failed attempt —
+    one retry whose corrective message names the empty updated_wiki; the
+    retry's report replaces the first wholesale (its findings, its wiki)."""
+    endpoint = ScriptedEndpoint(turns=NATURAL_TURNS[:1],
+                                reports=[EMPTY_WIKI_REPORT, REPORT])
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
+
+    shapes = endpoint.shape_requests
+    assert len(shapes) == 2, f"expected report + empty-wiki retry, got {len(shapes)}"
+    corrective = endpoint.last_user_prompt(shapes[1])
+    assert "updated_wiki" in corrective and "empty" in corrective.lower()
+
+    out = capsys.readouterr().out
+    assert "worker-1 NotReady" in out            # the retry's findings deliver
+    assert "control-plane operators degraded" not in out  # first report replaced
+    assert "e2e wiki marker" in wiki.read_text()  # the retry's wiki was written
+    assert commit_count(wiki.parent) == 1
+
+
+def test_still_empty_wiki_warns_and_preserves_findings(tmp_path, monkeypatch, capsys):
+    """#50 rule 7b wiring: when the retry also omits the wiki, the report is
+    not discarded — findings and notifications deliver, nothing is written
+    or committed, and one stderr warning names the empty wiki: the no-op is
+    visible, never silent."""
+    endpoint = ScriptedEndpoint(turns=NATURAL_TURNS[:1],
+                                reports=[EMPTY_WIKI_REPORT, EMPTY_WIKI_REPORT])
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
+
+    assert len(endpoint.shape_requests) == 2     # the retry happened
+    captured = capsys.readouterr()
+    assert "control-plane operators degraded" in captured.out   # findings deliver
+    assert "🔔 NOTIFY: control-plane operators degraded" in captured.out
+    assert not wiki.exists()                     # nothing written
+    assert commit_count(wiki.parent) == 0        # nothing committed
+    assert "empty updated_wiki" in captured.err  # the no-op is visible
+
+
+def test_loop_mode_runs_patrols_on_one_event_loop(tmp_path, monkeypatch, capsys):
+    """#51 (system-overview rule 5) wiring: loop mode runs every patrol of
+    the process on one event loop — a fresh asyncio.run per patrol strands
+    loop-bound engine state on a closed loop (real-cluster validation caught
+    a one-time 'Event loop is closed' failure on the second patrol). Two
+    patrols run through main() --loop; the second completion raises
+    KeyboardInterrupt exactly where ctrl-c would."""
+    endpoint = ScriptedEndpoint(report=REPORT)
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    loops = []
+    real_run = patrol.run_patrol
+
+    async def recording_run(**kw):
+        loops.append(asyncio.get_running_loop())
+        await real_run(**kw)
+        if len(loops) == 2:
+            raise KeyboardInterrupt  # ctrl-c after the second patrol
+
+    monkeypatch.setattr(patrol, "run_patrol", recording_run)
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--loop", "--interval", "0")
+
+    assert len(loops) == 2
+    assert loops[0] is loops[1]                   # one loop for all patrols
+    assert commit_count(wiki.parent) == 2         # both patrols wrote + committed
+    assert frontmatter(wiki.read_text())["patrol_count"] == 2
+    captured = capsys.readouterr()
+    assert "[patrol] stopped." in captured.out    # clean ctrl-c exit
+    assert "Event loop is closed" not in captured.err
+
+
+def test_loop_mode_continues_after_a_failed_patrol(tmp_path, monkeypatch, capsys):
+    """#51 (system-overview rule 5) wiring: the one-loop restructure keeps
+    loop mode's catch-and-continue — a patrol exception is logged and the
+    loop goes on, on the same event loop (the per-patrol try/except must
+    sit inside the loop body, not around it)."""
+    endpoint = ScriptedEndpoint(report=REPORT)
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    loops = []
+    real_run = patrol.run_patrol
+
+    async def recording_run(**kw):
+        loops.append(asyncio.get_running_loop())
+        if len(loops) == 1:
+            raise RuntimeError("boom")            # first patrol fails
+        await real_run(**kw)
+        if len(loops) == 2:
+            raise KeyboardInterrupt                # ctrl-c after the second
+
+    monkeypatch.setattr(patrol, "run_patrol", recording_run)
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--loop", "--interval", "0")
+
+    assert len(loops) == 2                         # the loop continued
+    assert loops[0] is loops[1]                    # ...on the same event loop
+    captured = capsys.readouterr()
+    assert "patrol failed (boom); continuing loop" in captured.err
+    assert "[patrol] stopped." in captured.out    # still a clean ctrl-c exit
+    assert commit_count(wiki.parent) == 1          # only patrol 2 wrote

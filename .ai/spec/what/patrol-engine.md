@@ -156,7 +156,10 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
 
 - `PATROL_MAX_STEPS` / `--max-steps` — LLM-turn budget (default 30)
 - `--dry-cluster` — fixture mode, no cluster needed
-- Engine constants (not configurable): temperature 0.3, `max_tokens` 16000
+- Engine constants (not configurable): temperature 0.3, `max_tokens` 16000, request
+  bounds — `REQUEST_TIMEOUT` 300 s per exploration turn, `REPORT_TIMEOUT` 900 s
+  per structured reporting/repair call (`reporting-notifications.md` rule 8a)
+  [PLANNED: #49 — was a flat 300 s on the whole client]
 
 ## Constraints
 
@@ -174,6 +177,7 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
 |---|---|
 | ~~#6~~ | ~~Prompt consumes recheck commands: run an entry's `recheck` first when re-verifying it, keep it current when the verification path changes (`wiki-memory.md` rule 12a)~~ |
 | #10 | Cost control: scoping (cluster vs per-namespace rounds), token soft-stop, termination tuning, smarter output truncation than hard OUT_CAP |
+| #49 | Per-call-shape request bounds: `REQUEST_TIMEOUT` 300 s exploration / `REPORT_TIMEOUT` 900 s structured reporting — the engine-constants line above; the behavioral rule is `reporting-notifications.md` rule 8a |
 | ~~#20~~ | ~~Efficient cluster sweep: the layered sweep + field-selection teaching in the system prompt (rules 3a–3e), dry-cluster fixtures modeling the taught sweep (rules 13–13a), and the guard truncation marker's recovery hint (`kubectl-guard.md` rule 11) — prompt guidance and fixture data only: no new config surface, no guard refusal changes (ADR 0016). Impl commit also syncs `AGENTS.md`'s test list~~ |
 | #14 | CRD-based dispatcher (`PatrolSchedule`) replacing the `--loop` process |
 | #15 | Pluggable investigation engine — evaluate HolmesGPT as the RCA phase; keep the current loop swappable |
