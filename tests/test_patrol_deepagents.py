@@ -45,6 +45,10 @@ Covers (safety-model.md rules 6b-6c, wiki-memory.md rules 4f and 15-19):
   with one stderr warning (the budget never gates), and a repair pass
   carries the rejected wiki's budget warning alongside the structural
   errors
+- empty-wiki classification wiring of #50 (reporting-notifications.md
+  rule 7b): a wiki-less report is retried once with a corrective message
+  naming it; a good retry recovers; a still-empty retry delivers
+  findings, writes nothing, and warns on stderr
 
 The `--raw` guard refusal is not e2e-covered: it is unit-checked in
 test_kubectl_guard.py (kubectl-guard.md rule 6a, #11).
@@ -826,3 +830,58 @@ def test_wiki_flag_default_is_the_wiki_directory():
     m = re.search(r'"--wiki",\s*default=str\(Path\(__file__\)\.parent\s*/\s*"wiki"\s*/\s*"cluster-wiki\.md"\)',
                   source)
     assert m, "--wiki must default to wiki/cluster-wiki.md beside patrol.py"
+
+
+# --------------------------------------------- empty-wiki classification (#50)
+
+# A structurally valid report whose updated_wiki is empty — the #50 failure
+# shape observed in real-cluster validation (the field's lenient default
+# parses an omission to "").
+EMPTY_WIKI_REPORT = {
+    "findings": [
+        {"severity": "crit", "summary": "control-plane operators degraded",
+         "evidence": "get clusteroperators: multiple Degraded=True"},
+    ],
+    "notifications": ["control-plane operators degraded"],
+    "updated_wiki": "",
+}
+
+
+def test_empty_wiki_report_retries_and_recovers(tmp_path, monkeypatch, capsys):
+    """#50 rule 7b wiring: a valid-but-wiki-less report is a failed attempt —
+    one retry whose corrective message names the empty updated_wiki; the
+    retry's report replaces the first wholesale (its findings, its wiki)."""
+    endpoint = ScriptedEndpoint(turns=NATURAL_TURNS[:1],
+                                reports=[EMPTY_WIKI_REPORT, REPORT])
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
+
+    shapes = endpoint.shape_requests
+    assert len(shapes) == 2, f"expected report + empty-wiki retry, got {len(shapes)}"
+    corrective = endpoint.last_user_prompt(shapes[1])
+    assert "updated_wiki" in corrective and "empty" in corrective.lower()
+
+    out = capsys.readouterr().out
+    assert "worker-1 NotReady" in out            # the retry's findings deliver
+    assert "control-plane operators degraded" not in out  # first report replaced
+    assert "e2e wiki marker" in wiki.read_text()  # the retry's wiki was written
+    assert commit_count(wiki.parent) == 1
+
+
+def test_still_empty_wiki_warns_and_preserves_findings(tmp_path, monkeypatch, capsys):
+    """#50 rule 7b wiring: when the retry also omits the wiki, the report is
+    not discarded — findings and notifications deliver, nothing is written
+    or committed, and one stderr warning names the empty wiki: the no-op is
+    visible, never silent."""
+    endpoint = ScriptedEndpoint(turns=NATURAL_TURNS[:1],
+                                reports=[EMPTY_WIKI_REPORT, EMPTY_WIKI_REPORT])
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
+
+    assert len(endpoint.shape_requests) == 2     # the retry happened
+    captured = capsys.readouterr()
+    assert "control-plane operators degraded" in captured.out   # findings deliver
+    assert "🔔 NOTIFY: control-plane operators degraded" in captured.out
+    assert not wiki.exists()                     # nothing written
+    assert commit_count(wiki.parent) == 0        # nothing committed
+    assert "empty updated_wiki" in captured.err  # the no-op is visible
