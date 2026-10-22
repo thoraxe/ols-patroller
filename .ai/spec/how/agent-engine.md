@@ -7,7 +7,7 @@ gotchas an agent must know before touching this code.
 
 | Symbol | Responsibility |
 |---|---|
-| `make_model` | `ChatOpenAI` (any OpenAI-compatible endpoint; temp 0.3, max_tokens 16000, timeout 300 s) |
+| `make_model` | `ChatOpenAI` (any OpenAI-compatible endpoint; temp 0.3, max_tokens 16000; `timeout` parametrized per call shape — `REQUEST_TIMEOUT` 300 s default, `REPORT_TIMEOUT` 900 s for the shape pass) [PLANNED: #49] |
 | `_disable_default_subagent` | Registers a `HarnessProfile` disabling deepagents' general-purpose `task` subagent |
 | `make_kubectl_tool` | Wraps the guarded `kubectl_readonly` as the single langchain tool |
 | `run_patrol` | Builds the agent, streams it, accounts tokens, handles budget cut, invokes the shape pass |
@@ -45,7 +45,7 @@ shape pass over the accumulated message list.
 | `run_patrol` | deepagents `create_deep_agent` | agent graph construction + `astream` |
 | agent graph | `make_kubectl_tool` | langchain `@tool` (single tool) |
 | `run_patrol` | `shape_report` | message history handoff (see `reporting-pipeline.md`) |
-| agent + shape pass | `make_model` | same `ChatOpenAI` instance shared |
+| agent + shape pass | `make_model` | two `ChatOpenAI` instances from the same seam: the agent's (exploration bound) and the shape pass's (reporting bound, shared by the report and repair calls) [PLANNED: #49 — was one shared instance] |
 
 ## Implementation Notes
 
@@ -81,3 +81,13 @@ shape pass over the accumulated message list.
   a scripted wire-level endpoint behind the `make_model` seam (see
   `project-structure.md` and `decisions/0009-wire-level-fake-endpoint-e2e.md`); it
   exists to catch deepagents/langchain drift on upgrades [DONE: #4].
+- **Two models, two bounds** (#49): the request timeout is a client-level
+  property in `langchain-openai`, so the per-call-shape bounds
+  (`reporting-notifications.md` rule 8a) mean two `ChatOpenAI` instances:
+  `run_patrol` builds the agent's with `make_model(timeout=REQUEST_TIMEOUT)`
+  and the shape pass's with `make_model(timeout=REPORT_TIMEOUT)` (the
+  repair call reuses the shape instance). The e2e seam passes the bound
+  through — `ScriptedEndpoint.model` accepts (and ignores) the `timeout`
+  kwarg. Real-run evidence: a 59-tool-call fresh-cluster patrol's
+  reporting call timed out at 300 s on attempt 1 and succeeded on attempt
+  2; local shape passes ran 4–5 minutes [PLANNED: #49].

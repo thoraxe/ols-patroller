@@ -45,6 +45,9 @@ Covers (safety-model.md rules 6b-6c, wiki-memory.md rules 4f and 15-19):
   with one stderr warning (the budget never gates), and a repair pass
   carries the rejected wiki's budget warning alongside the structural
   errors
+- request-bound wiring of #49 (reporting-notifications.md rule 8a):
+  run_patrol builds the agent's model at the exploration bound and the
+  shape pass's at the reporting bound, both through the make_model seam
 
 The `--raw` guard refusal is not e2e-covered: it is unit-checked in
 test_kubectl_guard.py (kubectl-guard.md rule 6a, #11).
@@ -153,8 +156,12 @@ class ScriptedEndpoint:
             "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
         })
 
-    def model(self) -> ChatOpenAI:
-        """A real ChatOpenAI wired to this endpoint — the make_model seam."""
+    def model(self, timeout: float | None = None) -> ChatOpenAI:
+        """A real ChatOpenAI wired to this endpoint — the make_model seam.
+        Accepts (and ignores) the request-bound kwarg of #49: the bound is
+        client-side config, invisible on the wire, so the fake endpoint
+        never enforces it — the make_model call itself is the assertion
+        surface."""
         transport = httpx.MockTransport(self.handler)
         return ChatOpenAI(
             model="fake-model", base_url="http://fake.test/v1", api_key="test-key",
@@ -323,14 +330,16 @@ def commit_count(cwd) -> int:
     return int(git("rev-list", "--count", "--all", cwd=cwd).stdout.strip() or 0)
 
 
-def run_patrol_cli(monkeypatch, endpoint, wiki, *extra_args, wiki_remote=""):
+def run_patrol_cli(monkeypatch, endpoint, wiki, *extra_args, wiki_remote="",
+                   model_factory=None):
     """Run one full patrol through main() — argparse, env check, startup repo
     ensure, the engine loop, the shape pass, and the wiki git tail — with the
     model pointed at the scripted endpoint. Module-level config read from env
     at import (BASE_URL/MODEL/API_KEY/CLUSTER_ID/SLACK_URL/WIKI_REMOTE) is
     pinned explicitly so an ambient PATROL_*/SLACK_* environment cannot leak
-    network calls into the e2e (rule 6c)."""
-    monkeypatch.setattr(patrol, "make_model", endpoint.model)
+    network calls into the e2e (rule 6c). `model_factory` overrides the
+    make_model patch (e.g. a recording wrapper asserting on the #49 bound)."""
+    monkeypatch.setattr(patrol, "make_model", model_factory or endpoint.model)
     monkeypatch.setattr(patrol, "BASE_URL", "http://fake.test/v1")
     monkeypatch.setattr(patrol, "MODEL", "fake-model")
     monkeypatch.setattr(patrol, "API_KEY", "test-key")
@@ -826,3 +835,49 @@ def test_wiki_flag_default_is_the_wiki_directory():
     m = re.search(r'"--wiki",\s*default=str\(Path\(__file__\)\.parent\s*/\s*"wiki"\s*/\s*"cluster-wiki\.md"\)',
                   source)
     assert m, "--wiki must default to wiki/cluster-wiki.md beside patrol.py"
+
+
+# ---------------------------------------------------- request bounds (#49)
+
+def test_shape_pass_model_carries_the_reporting_bound(tmp_path, monkeypatch, capsys):
+    """#49 rule 8a wiring: run_patrol builds two model instances through the
+    make_model seam — the agent's at the exploration bound, the shape pass's
+    at the reporting bound."""
+    endpoint = ScriptedEndpoint(report=REPORT)
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    bounds = []
+    real_model = endpoint.model
+
+    def recording_model(**kwargs):
+        bounds.append(kwargs.get("timeout"))
+        return real_model()
+
+    run_patrol_cli(monkeypatch, endpoint, wiki, model_factory=recording_model)
+    # order pins the assignment: the agent's model (built first) carries the
+    # exploration bound, the shape pass's the reporting bound — a swap fails
+    assert bounds == [patrol.REQUEST_TIMEOUT, patrol.REPORT_TIMEOUT]
+
+
+def test_repair_reuses_the_shape_pass_model(tmp_path, monkeypatch, capsys):
+    """#49 (agent-engine.md): the repair call reuses the shape pass's model
+    instance — a repair scenario still makes exactly two make_model calls
+    (agent + shape), never a third for the repair."""
+    rejected = wiki_text("REJECTED-WIKI-MARKER").replace(
+        "patrol_count: 9\n", "patrol_count: 9\nbogus_key: 1\n")
+    endpoint = ScriptedEndpoint(
+        turns=NATURAL_TURNS[:1],
+        reports=[dict(REPORT, updated_wiki=rejected),
+                 dict(REPORT, updated_wiki=wiki_text("repaired marker"))])
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    bounds = []
+    real_model = endpoint.model
+
+    def recording_model(**kwargs):
+        bounds.append(kwargs.get("timeout"))
+        return real_model()
+
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8",
+                   model_factory=recording_model)
+    assert len(endpoint.shape_requests) == 2      # the repair pass ran
+    assert bounds == [patrol.REQUEST_TIMEOUT, patrol.REPORT_TIMEOUT]
+    assert "repaired marker" in wiki.read_text()
