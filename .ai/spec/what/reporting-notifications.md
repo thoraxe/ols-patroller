@@ -66,6 +66,20 @@ in `how/reporting-pipeline.md`.
     delivered [DONE: #5].
 8. A budget-cut report must cover only what was actually observed; the pass is told
    which commands never executed.
+8a. **Per-call-shape request bounds** [DONE: #49]. The two call shapes
+    carry different HTTP request bounds, both hard-coded constants (not
+    env-configurable): exploration turns are bounded at `REQUEST_TIMEOUT`
+    (300 s — turns are small and fast, so a hung endpoint fails snappily),
+    while this pass and its repair pass (rule 7a) are bounded at
+    `REPORT_TIMEOUT` (900 s) — the single tool-free structured call
+    carries the entire patrol conversation (real-run evidence: ~100k
+    tokens in, up to 16k out) and legitimately runs minutes on
+    reasoning-capable models. A reporting pass that cannot finish under
+    the bound never writes the wiki, so the next patrol re-explores just
+    as hard and the patroller never converges its memory — a fresh
+    cluster never bootstraps; the shape pass therefore gets the headroom
+    the exploration turns do not need (ADR
+    `decisions/0018-reporting-pass-own-request-bound.md`).
 
 ### Delivery
 
@@ -99,6 +113,7 @@ in `how/reporting-pipeline.md`.
 
 | Ticket | Summary |
 |---|---|
+| ~~#49~~ | ~~Per-call-shape request bounds (rule 8a): exploration turns `REQUEST_TIMEOUT` 300 s, structured reporting/repair calls `REPORT_TIMEOUT` 900 s — two `make_model` instances through the same seam; the specced constants in `agent-engine.md` / `system-overview.md` updated to the split, bounds pinned by test. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | #9 | Notification dedup: notify on state change, not every patrol — new entry, severity change/escalation, or resolution notify; standing unchanged entries stay wiki-only; optional periodic digest for long-unfixed entries |
 | ~~#40~~ | ~~Report contract states the working-set expectations: the wiki is a working set (git history is the archive), summarize and prune rather than accumulate, the soft character budget, the anomaly-log keep budget (`wiki-memory.md` rules 28–29)~~ |
 | ~~#7~~ | ~~Report contract states the staleness clock's model-facing half: `verified_patrol` is process-stamped (never computed by the model), `last_verified` advances only on actual re-verification, and unverified watching entries auto-expire (`wiki-memory.md` rules 20–22)~~ |

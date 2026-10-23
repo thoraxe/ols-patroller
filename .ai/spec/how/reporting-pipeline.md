@@ -70,8 +70,11 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
   natural tool choice and ends on its own; this pass converts the conversation —
   including the patrol's plain-text final summary — into the typed report. One code
   path serves natural termination and budget cut; no salvage special-case.
-- **Shared model:** the same `ChatOpenAI` instance is used for the agent and the
-  shape pass.
+- **Two models, one seam:** the agent and the shape pass use separate
+  `ChatOpenAI` instances from the same `make_model` seam, differing only in
+  request timeout — exploration 300 s, structured calls 900 s
+  (`reporting-notifications.md` rule 8a; see `agent-engine.md`)
+  [DONE: #49 — was one shared instance].
 
 ## Integration Points
 

@@ -74,6 +74,16 @@ KUBECTL    = os.environ.get("KUBECTL", "")  # resolved later
 SLACK_URL  = os.environ.get("SLACK_WEBHOOK_URL", "")
 MAX_STEPS  = int(os.environ.get("PATROL_MAX_STEPS", "30"))  # LLM turns per patrol
 TOOL_TIMEOUT = int(os.environ.get("PATROL_TOOL_TIMEOUT", "60"))
+# Per-call-shape request bounds (reporting-notifications.md rule 8a, #49; ADR
+# 0018). Hard-coded, not env-configurable: exploration turns are small and
+# fast, so a hung endpoint fails snappily at 300 s — while the single
+# tool-free structured reporting call (and its repair pass) carries the
+# entire patrol conversation and legitimately runs minutes on
+# reasoning-capable models, so it gets the 900 s headroom. A reporting pass
+# that cannot finish under the bound never writes the wiki, and a fresh
+# cluster never bootstraps its memory.
+REQUEST_TIMEOUT = 300  # seconds per exploration turn
+REPORT_TIMEOUT  = 900  # seconds per structured reporting/repair call
 OUT_CAP    = 15_000  # max chars of tool output fed back to the model
 CLUSTER_ID = os.environ.get("PATROL_CLUSTER_ID", "local")  # wiki commit identity
 WIKI_REMOTE = os.environ.get("PATROL_WIKI_REMOTE", "")     # optional wiki replication
@@ -457,15 +467,19 @@ def make_kubectl_tool(*, kubectl: str, dry: bool, verbose: bool):
     return _kubectl_tool
 
 
-def make_model() -> ChatOpenAI:
-    """Any OpenAI-compatible endpoint, same env contract as the raw-requests version."""
+def make_model(*, timeout: float = REQUEST_TIMEOUT) -> ChatOpenAI:
+    """Any OpenAI-compatible endpoint, same env contract as the raw-requests
+    version. The request bound is parametrized per call shape (rule 8a, #49):
+    the default is the exploration bound; the shape pass passes the reporting
+    bound. The timeout is a client-level property, so the two call shapes mean
+    two instances from this one seam."""
     return ChatOpenAI(
         model=MODEL,
         base_url=BASE_URL,
         api_key=API_KEY,
         temperature=0.3,
         max_tokens=16000,
-        timeout=300,
+        timeout=timeout,
     )
 
 
@@ -1645,7 +1659,14 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
         f"returns, stop exploring and write your final summary."
     )
 
-    model = make_model()
+    # Two models, two bounds (rule 8a, #49; ADR 0018): the request timeout is a
+    # client-level property in langchain-openai, so the per-call-shape bounds mean
+    # two ChatOpenAI instances from the same make_model seam — the agent's at the
+    # exploration bound (hung endpoints fail snappily) and the shape pass's at the
+    # reporting bound (the structured call carries the whole conversation and
+    # legitimately runs minutes; the repair pass reuses the shape instance).
+    model = make_model(timeout=REQUEST_TIMEOUT)
+    shape_model = make_model(timeout=REPORT_TIMEOUT)
     _disable_default_subagent(model)
     # No response_format here: an in-agent ToolStrategy forces tool_choice="any" on
     # every turn, which removes the model's natural stopping signal (GLM under it
@@ -1722,7 +1743,7 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
         print("[patrol] WARNING: patrol made no observations; skipping wiki write.")
         return
 
-    report = await shape_report(model, messages, budget_cut)
+    report = await shape_report(shape_model, messages, budget_cut)
     if report is None:
         print("[patrol] WARNING: reporting pass produced no report; skipping wiki write.")
         return
@@ -1746,7 +1767,7 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
             # Acceptance stays structural validity alone (rule 29: length
             # never decides — an over-budget repair still writes, with the
             # write-path warning below).
-            repaired = await shape_report(model, messages, budget_cut,
+            repaired = await shape_report(shape_model, messages, budget_cut,
                                           repair=(new_wiki,
                                                   errors + wiki_budget_warnings(new_wiki)))
             final = None

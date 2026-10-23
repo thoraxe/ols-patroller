@@ -136,9 +136,12 @@ In-cluster, the image's default command is `--loop --interval 21600 --wiki
 /wiki/cluster-wiki.md` [DONE: #1] [DONE: #25] (`container-image.md`).
 
 Hard-coded constants (not env-configurable): `OUT_CAP` = 15,000 chars of tool output
-fed back to the model; model temperature 0.3, `max_tokens` 16000, request timeout
-300 s; wiki push bounds — 3 attempts, 30 s per attempt, 5 s backoff between
-attempts [DONE: #3]; wiki skeleton schema version `WIKI_VERSION` = 1 [DONE: #5];
+fed back to the model; model temperature 0.3, `max_tokens` 16000, request
+timeout — `REQUEST_TIMEOUT` 300 s per exploration turn, `REPORT_TIMEOUT`
+900 s per structured reporting/repair call
+(`reporting-notifications.md` rule 8a) [DONE: #49 — was a flat 300 s on
+the whole client]; wiki push bounds — 3 attempts, 30 s per attempt, 5 s
+backoff between attempts [DONE: #3]; wiki skeleton schema version `WIKI_VERSION` = 1 [DONE: #5];
 wiki stats — churn window `WIKI_CHURN_WINDOW` = 5 revisions, lopsided
 thresholds 5 graded entries / 2/3 share [DONE: #8]; wiki working-set budgets —
 anomaly-log keep `WIKI_ANOMALY_KEEP` = 20 entries, soft length
@@ -165,5 +168,6 @@ documents). Milestone shape:
 |---|---|
 | v0.1 (#1–#4, #9, #11, #24, #25, #27, #28) | In-cluster: Containerfile, manifests (SA + cluster-reader + PVC + Deployment), git-backed wiki, e2e tests in-repo, deployment defaults & observability (6 h cadence, unbuffered + verbose logs, git-safe `/wiki`), guard `--raw` refusal, notification dedup |
 | v0.2 (#5–#8, #20, #39, #40) | Compounding wiki: skeleton schema + validation-on-write, per-entry recheck commands, `stale_after` expiry, `--wiki-stats`, efficient-sweep guidance, deploy-key remote-push wiring, wiki length budget |
+| v0.2.1 (#49, #50, #51) | Real-cluster validation fixes: per-call-shape request bounds (300 s exploration / 900 s structured reporting, #49), empty-`updated_wiki` classification — the contract requires the wiki every report, one named retry + stderr warning (#51), one event loop per `--loop` process (#50); in-cluster operational acceptance is deferred to the v0.2.1 release validation. Impl commits sync `AGENTS.md`'s test list |
 | v0.3 (#10, #9 digest) | Operational hardening: cost control, periodic digest reminder for long-unfixed entries |
 | future (#12–#16, #41) | Remediation handoff to AgenticRuns, fleet/multicluster, CRD dispatcher, pluggable investigation engine, MCP-memory decision record, external runbook referencing |
