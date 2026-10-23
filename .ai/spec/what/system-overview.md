@@ -139,7 +139,7 @@ Hard-coded constants (not env-configurable): `OUT_CAP` = 15,000 chars of tool ou
 fed back to the model; model temperature 0.3, `max_tokens` 16000, request
 timeout — `REQUEST_TIMEOUT` 300 s per exploration turn, `REPORT_TIMEOUT`
 900 s per structured reporting/repair call
-(`reporting-notifications.md` rule 8a) [PLANNED: #49 — was a flat 300 s on
+(`reporting-notifications.md` rule 8a) [DONE: #49 — was a flat 300 s on
 the whole client]; wiki push bounds — 3 attempts, 30 s per attempt, 5 s
 backoff between attempts [DONE: #3]; wiki skeleton schema version `WIKI_VERSION` = 1 [DONE: #5];
 wiki stats — churn window `WIKI_CHURN_WINDOW` = 5 revisions, lopsided

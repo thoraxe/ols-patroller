@@ -59,10 +59,12 @@ under current policy (clean implementation review + `implementation-complete`):
   the image contract (#1); `tests/test_kubectl_guard.py` covers the guard
   contract; `tests/test_patrol_deepagents.py` is the fake-model e2e over the
   real engine stack (#4, incl. the wiki-skeleton wiring of #5, the recheck
-  repair path of #6, the stale-entry expiry wiring of #7, and the working-set
+  repair path of #6, the stale-entry expiry wiring of #7, the working-set
   budget wiring of #40 — expire → compact → stamp, prune console lines, the
   soft-budget stderr warning, the repair-pass budget inclusion, and prune
-  recoverability from git history); `tests/test_wiki_schema.py` covers the
+  recoverability from git history — and the request-bound wiring of #49: the
+  agent's model built at the exploration bound, the shape pass's at the
+  reporting bound, the repair reusing the shape instance); `tests/test_wiki_schema.py` covers the
   wiki skeleton schema + validation-on-write contract (#5) plus the
   per-entry recheck-command contract (#6); and `tests/test_wiki_expiry.py`
   covers the stale-entry auto-expiry contract (#7: the `verified_patrol`
@@ -76,7 +78,10 @@ under current policy (clean implementation review + `implementation-complete`):
   `test_kubectl_guard.py`); and `tests/test_wiki_budget.py` covers the wiki
   length-budget contract (#40: the `compact_anomaly_log` and
   `wiki_budget_warnings` matrices, the `wiki_stats` size keys, the
-  `--wiki-stats` size line, and the report contract's working-set pins).
+  `--wiki-stats` size line, and the report contract's working-set pins); and
+  `tests/test_request_bounds.py` covers the per-call-shape request-bound
+  contract (#49: the two bound constants and the `make_model` timeout
+  passthrough).
 - `wiki/` (the wiki directory: `cluster-wiki.md` + its git repo) is a runtime
   artifact (gitignored) — never commit it.
 - Roadmap: GitHub issues + milestones, not documents. Spec files mark planned

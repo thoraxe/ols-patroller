@@ -7,7 +7,7 @@ gotchas an agent must know before touching this code.
 
 | Symbol | Responsibility |
 |---|---|
-| `make_model` | `ChatOpenAI` (any OpenAI-compatible endpoint; temp 0.3, max_tokens 16000; `timeout` parametrized per call shape — `REQUEST_TIMEOUT` 300 s default, `REPORT_TIMEOUT` 900 s for the shape pass) [PLANNED: #49] |
+| `make_model` | `ChatOpenAI` (any OpenAI-compatible endpoint; temp 0.3, max_tokens 16000; `timeout` parametrized per call shape — `REQUEST_TIMEOUT` 300 s default, `REPORT_TIMEOUT` 900 s for the shape pass) [DONE: #49] |
 | `_disable_default_subagent` | Registers a `HarnessProfile` disabling deepagents' general-purpose `task` subagent |
 | `make_kubectl_tool` | Wraps the guarded `kubectl_readonly` as the single langchain tool |
 | `run_patrol` | Builds the agent, streams it, accounts tokens, handles budget cut, invokes the shape pass |
@@ -45,7 +45,7 @@ shape pass over the accumulated message list.
 | `run_patrol` | deepagents `create_deep_agent` | agent graph construction + `astream` |
 | agent graph | `make_kubectl_tool` | langchain `@tool` (single tool) |
 | `run_patrol` | `shape_report` | message history handoff (see `reporting-pipeline.md`) |
-| agent + shape pass | `make_model` | two `ChatOpenAI` instances from the same seam: the agent's (exploration bound) and the shape pass's (reporting bound, shared by the report and repair calls) [PLANNED: #49 — was one shared instance] |
+| agent + shape pass | `make_model` | two `ChatOpenAI` instances from the same seam: the agent's (exploration bound) and the shape pass's (reporting bound, shared by the report and repair calls) [DONE: #49 — was one shared instance] |
 
 ## Implementation Notes
 
@@ -90,4 +90,4 @@ shape pass over the accumulated message list.
   through — `ScriptedEndpoint.model` accepts (and ignores) the `timeout`
   kwarg. Real-run evidence: a 59-tool-call fresh-cluster patrol's
   reporting call timed out at 300 s on attempt 1 and succeeded on attempt
-  2; local shape passes ran 4–5 minutes [PLANNED: #49].
+  2; local shape passes ran 4–5 minutes [DONE: #49].

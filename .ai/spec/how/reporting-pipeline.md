@@ -74,7 +74,7 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
   `ChatOpenAI` instances from the same `make_model` seam, differing only in
   request timeout — exploration 300 s, structured calls 900 s
   (`reporting-notifications.md` rule 8a; see `agent-engine.md`)
-  [PLANNED: #49 — was one shared instance].
+  [DONE: #49 — was one shared instance].
 
 ## Integration Points
 
