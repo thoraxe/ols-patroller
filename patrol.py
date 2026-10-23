@@ -548,8 +548,11 @@ Produce the final PatrolReport for the cluster patrol above:
 - "notifications": ONLY the warn/crit findings a human should actually see (don't
   cry wolf), as human-readable messages.
 - "updated_wiki": the FULL new markdown content of the cluster wiki in the
-  skeleton format. It is validated before it may replace the wiki on disk, and
-  MUST have exactly this structure:
+  skeleton format. updated_wiki is required on every report: return the FULL
+  wiki content even when nothing needs changing — copy unchanged sections verbatim.
+  An empty updated_wiki is never a valid answer: a patrol with nothing to change
+  returns the wiki unchanged. It is validated before it may replace the wiki on
+  disk, and MUST have exactly this structure:
   1. YAML frontmatter at the very top, between '---' fence lines, with exactly
      four keys and no others: wiki_version: 1, cluster_id (this cluster's id),
      patrol_count (a positive integer), last_patrol (an ISO-8601 datetime). The
@@ -615,6 +618,16 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
     wiki failed skeleton validation and carries the error list and the rejected
     wiki, asking for a corrected PatrolReport. At most one repair pass per
     patrol — the caller owns that bound.
+
+    A parsed result whose `updated_wiki` is empty is a failed attempt too
+    (reporting-notifications.md rule 7b, #51) — the patrol cannot distinguish
+    an omitted field from a deliberate no-op, so the contract removes the
+    no-op meaning entirely. It is retried once with a corrective message that
+    names the empty wiki and demands the full content (distinct from the
+    generic invalid-report corrective); the repair pass shares the
+    classification. Across failure compositions the pass returns the LAST
+    result that parsed — a wiki-less report included, so its findings still
+    deliver — and None only when no attempt parsed (rule 7's total failure).
     """
     if repair is None:
         prefix = ("You are the REPORTING PASS for the cluster patrol recorded above. "
@@ -634,20 +647,35 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
                   + "\n\nThe rejected wiki was:\n\n" + rejected_wiki + "\n")
     structured = model.with_structured_output(PatrolReport, method="function_calling")
     msgs: list = [*messages, {"role": "user", "content": prefix + REPORT_CONTRACT}]
+    # Rule 7b (#51): the empty-wiki classification keys on the wiki field alone
+    # (zero findings is legal and never triggers it). A wiki-less parse is a
+    # failed attempt — retried with its own named corrective — and the last
+    # result that parsed is what the patrol keeps, so a wiki omission never
+    # costs the patrol its observations.
+    last_parsed = None
     for attempt in (1, 2):
         reason = None
+        corrective = "That was not a valid PatrolReport. Produce it now."
         try:
             result = await structured.ainvoke(msgs)
             if result is not None:
-                return result
-            reason = "empty result"
+                if report_fields(result)[2]:
+                    return result
+                last_parsed = result
+                reason = "empty wiki"
+                corrective = ("Your report parsed, but its updated_wiki was empty. "
+                              "updated_wiki is required on every report: return the "
+                              "FULL wiki content even when nothing needs changing — "
+                              "copy unchanged sections verbatim. Produce the "
+                              "complete updated_wiki now.")
+            else:
+                reason = "empty result"
         except Exception as e:  # noqa: BLE001
             reason = str(e)
         print(f"[patrol] reporting pass attempt {attempt} failed ({reason})",
               file=sys.stderr)
-        msgs = [*msgs, {"role": "user",
-                        "content": "That was not a valid PatrolReport. Produce it now."}]
-    return None
+        msgs = [*msgs, {"role": "user", "content": corrective}]
+    return last_parsed
 
 
 # --------------------------------------------------------------------------- wiki schema
@@ -1750,12 +1778,25 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
 
     findings, notifications, new_wiki = report_fields(report)
 
+    # Rule 7b (#51): an empty updated_wiki on arrival is a twice-failed
+    # reporting attempt — shape_report already retried it once with the named
+    # corrective. The report is not discarded (a wiki omission must never cost
+    # the patrol's observations): its findings and notifications deliver below,
+    # the wiki is left unchanged, and this one stderr warning makes the no-op
+    # visible and countable, never silent.
+    if not new_wiki:
+        print("[patrol] WARNING: reporting pass returned an empty updated_wiki; "
+              "keeping the previous wiki, writing nothing", file=sys.stderr)
+
     # Wiki gate (#5, rules 15-19): the model's wiki is validated before it may
     # replace memory. Invalid -> exactly one repair pass; a repair whose wiki
     # validates replaces the report wholesale, otherwise the old wiki stands
     # and the FIRST report's findings/notifications still deliver (rule 19: a
     # wiki-format failure never costs the patrol's observations). An empty
-    # updated_wiki skips validation and repair entirely (rule 4 unchanged).
+    # updated_wiki skips validation and repair entirely (rule 4 unchanged) — by
+    # the time it reaches this gate it is a twice-failed reporting attempt,
+    # already retried and warned about above (rule 7b, #51): a classified
+    # failure writes nothing.
     if new_wiki:
         errors = validate_wiki(new_wiki)
         if errors:

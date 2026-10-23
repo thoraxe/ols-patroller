@@ -7,11 +7,11 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
 
 | Symbol | Responsibility |
 |---|---|
-| `REPORT_CONTRACT` | Instructions appended for the reporting pass (field semantics, wiki skeleton format: frontmatter keys, section set, entry metadata line [DONE: #5]; the Watch-list recheck requirement + its tool-argument form [DONE: #6]; the staleness clock's model-facing half — `verified_patrol` is process-stamped, `last_verified` advances only on actual re-verification, unverified watching entries auto-expire [DONE: #7]; the working-set expectations — the wiki is a working set (git history is the archive), summarize and prune within the soft character budget, the Anomaly log keeps the last `WIKI_ANOMALY_KEEP` closed entries [DONE: #40]; the wiki-required instruction — `updated_wiki` is required on every report, full content even when nothing needs changing, an empty one is never a valid answer [PLANNED: #51]) |
-| `shape_report` | Tool-free structured-output pass with one schema retry; `repair=(rejected_wiki, errors)` re-invokes it as the wiki-validation repair pass [DONE: #5]; a parsed result with an empty `updated_wiki` is a failed attempt — retried with a corrective message naming it, a still-empty retry returns the report [PLANNED: #51] |
+| `REPORT_CONTRACT` | Instructions appended for the reporting pass (field semantics, wiki skeleton format: frontmatter keys, section set, entry metadata line [DONE: #5]; the Watch-list recheck requirement + its tool-argument form [DONE: #6]; the staleness clock's model-facing half — `verified_patrol` is process-stamped, `last_verified` advances only on actual re-verification, unverified watching entries auto-expire [DONE: #7]; the working-set expectations — the wiki is a working set (git history is the archive), summarize and prune within the soft character budget, the Anomaly log keeps the last `WIKI_ANOMALY_KEEP` closed entries [DONE: #40]; the wiki-required instruction — `updated_wiki` is required on every report, full content even when nothing needs changing, an empty one is never a valid answer [DONE: #51]) |
+| `shape_report` | Tool-free structured-output pass with one schema retry; `repair=(rejected_wiki, errors)` re-invokes it as the wiki-validation repair pass [DONE: #5]; a parsed result with an empty `updated_wiki` is a failed attempt — retried with a corrective message naming it, a still-empty retry returns the report [DONE: #51] |
 | `report_fields` | Normalizes the result (pydantic model or dict) into plain data |
 | `notify` | Console `🔔 NOTIFY` + optional Slack webhook post |
-| `run_patrol` (tail) | Validates the report's wiki against the skeleton (one repair pass on failure, `validate_wiki`), delivers findings/notifications, expires stale watch-list entries (`expire_stale_entries`) [DONE: #7], compacts the Anomaly log to its keep budget (`compact_anomaly_log`) [DONE: #40], stamps the frontmatter (`stamp_wiki`), then warns on soft-budget overshoot (`wiki_budget_warnings` on the final wiki, stderr — post-stamp, rule 29) [DONE: #40], writes the wiki atomically, commits + pushes it (wiki git persistence — `project-structure.md`) [#3: DONE; validation/repair/stamp: DONE: #5]; an empty `updated_wiki` on arrival (post-retry) logs one stderr warning naming it before delivery — the no-op is never silent [PLANNED: #51] |
+| `run_patrol` (tail) | Validates the report's wiki against the skeleton (one repair pass on failure, `validate_wiki`), delivers findings/notifications, expires stale watch-list entries (`expire_stale_entries`) [DONE: #7], compacts the Anomaly log to its keep budget (`compact_anomaly_log`) [DONE: #40], stamps the frontmatter (`stamp_wiki`), then warns on soft-budget overshoot (`wiki_budget_warnings` on the final wiki, stderr — post-stamp, rule 29) [DONE: #40], writes the wiki atomically, commits + pushes it (wiki git persistence — `project-structure.md`) [#3: DONE; validation/repair/stamp: DONE: #5]; an empty `updated_wiki` on arrival (post-retry) logs one stderr warning naming it before delivery — the no-op is never silent [DONE: #51] |
 
 ## Data Flow
 
@@ -31,7 +31,7 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
    report — the caller delivers its findings and warns. Across failure
    compositions the pass returns the last result that parsed — a wiki-less
    report included — and `None` only when no attempt parsed (rule 7b)
-   [PLANNED: #51].
+   [DONE: #51].
 4. `report_fields` normalizes (pydantic → `model_dump`; dict → `.get()` with falsy
    notifications filtered).
 5. Wiki gate (#5): a non-empty `updated_wiki` is checked by `validate_wiki`
@@ -45,7 +45,7 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
    validates; otherwise the old wiki stands, a warning logs, and the first
    report's findings/notifications deliver. An empty `updated_wiki` — by then a
    twice-failed attempt, already retried in step 3 — reaches no write and logs
-   the empty-wiki warning [PLANNED: #51].
+   the empty-wiki warning [DONE: #51].
 6. Delivery (#5): findings printed (severity column; evidence by default —
    `--quiet` suppresses [DONE: #27]) and `notify` called per notification —
    both after the validation/repair decision resolves and before the physical
@@ -120,4 +120,4 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
   still parses and its findings survive — the parser never enforces the
   requirement, the named retry and the stderr warning do. Zero findings
   alone never triggers it (a clean cluster is legal); the classification
-  keys on the wiki field [PLANNED: #51].
+  keys on the wiki field [DONE: #51].

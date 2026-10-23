@@ -47,7 +47,7 @@ in `how/reporting-pipeline.md`.
    stale entries rather than deleting history” sentence is reworded
    accordingly: prose-section entries are still expired, never deleted, by
    the model — pruning closed Anomaly-log history is the patroller's job.]
-   [PLANNED: #51 — the contract also requires the wiki on every report.
+   [DONE: #51 — the contract also requires the wiki on every report.
    The contract sentence, verbatim (the executable pins live in
    `test_empty_report.py`):
    "updated_wiki is required on every report: return the FULL wiki
@@ -75,7 +75,7 @@ in `how/reporting-pipeline.md`.
     printing, notification — runs after the validation/repair decision resolves
     and before the physical wiki write, so exactly one report, the final one, is
     delivered [DONE: #5].
-7b. **Empty-wiki classification** [PLANNED: #51]. A parsed result whose
+7b. **Empty-wiki classification** [DONE: #51]. A parsed result whose
     `updated_wiki` is empty is a **failed reporting attempt**, not a valid
     report — the patrol cannot distinguish an omitted field from a
     deliberate no-op, so the contract removes the no-op meaning entirely
@@ -157,7 +157,7 @@ in `how/reporting-pipeline.md`.
 
 | Ticket | Summary |
 |---|---|
-| #51 | Empty PatrolReport (rules 5 + 7b): the report contract requires `updated_wiki` on every report; an empty one is a failed attempt — one named corrective retry, then findings-only delivery with a stderr warning, wiki unchanged. Impl commit also syncs `AGENTS.md`'s test list |
+| ~~#51~~ | ~~Empty PatrolReport (rules 5 + 7b): the report contract requires `updated_wiki` on every report; an empty one is a failed attempt — one named corrective retry, then findings-only delivery with a stderr warning, wiki unchanged. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#49~~ | ~~Per-call-shape request bounds (rule 8a): exploration turns `REQUEST_TIMEOUT` 300 s, structured reporting/repair calls `REPORT_TIMEOUT` 900 s — two `make_model` instances through the same seam; the specced constants in `agent-engine.md` / `system-overview.md` updated to the split, bounds pinned by test. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | #9 | Notification dedup: notify on state change, not every patrol — new entry, severity change/escalation, or resolution notify; standing unchanged entries stay wiki-only; optional periodic digest for long-unfixed entries |
 | ~~#40~~ | ~~Report contract states the working-set expectations: the wiki is a working set (git history is the archive), summarize and prune rather than accumulate, the soft character budget, the anomaly-log keep budget (`wiki-memory.md` rules 28–29)~~ |

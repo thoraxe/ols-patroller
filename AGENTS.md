@@ -64,7 +64,11 @@ under current policy (clean implementation review + `implementation-complete`):
   soft-budget stderr warning, the repair-pass budget inclusion, and prune
   recoverability from git history — and the request-bound wiring of #49: the
   agent's model built at the exploration bound, the shape pass's at the
-  reporting bound, the repair reusing the shape instance); `tests/test_wiki_schema.py` covers the
+  reporting bound, the repair reusing the shape instance — and the
+  empty-wiki classification wiring of #51: retry-and-recover with the named
+  corrective, the still-empty stderr warning with findings preserved, and
+  the repair-still-empty fall to the keep-old-wiki outcome);
+  `tests/test_wiki_schema.py` covers the
   wiki skeleton schema + validation-on-write contract (#5) plus the
   per-entry recheck-command contract (#6); and `tests/test_wiki_expiry.py`
   covers the stale-entry auto-expiry contract (#7: the `verified_patrol`
@@ -81,7 +85,11 @@ under current policy (clean implementation review + `implementation-complete`):
   `--wiki-stats` size line, and the report contract's working-set pins); and
   `tests/test_request_bounds.py` covers the per-call-shape request-bound
   contract (#49: the two bound constants and the `make_model` timeout
-  passthrough).
+  passthrough); and `tests/test_empty_report.py` covers the empty-report
+  contract (#51: the report contract's wiki-required pins and the
+  empty-wiki classification matrix over `shape_report` — the named
+  corrective retry, the double-empty return, the composition and repair
+  sharing, and the generic-retry and zero-findings guards).
 - `wiki/` (the wiki directory: `cluster-wiki.md` + its git repo) is a runtime
   artifact (gitignored) — never commit it.
 - Roadmap: GitHub issues + milestones, not documents. Spec files mark planned

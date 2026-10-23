@@ -90,7 +90,7 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
 15. If the reporting pass fails entirely, the patrol ends with a warning and the wiki
     is left unchanged. The same holds when the wiki update fails skeleton
     validation and its repair pass: the old wiki stands and the patrol's findings
-    and notifications still deliver [DONE: #5]. [PLANNED: #51 — an
+    and notifications still deliver [DONE: #5]. [DONE: #51 — an
     empty-`updated_wiki` report is the third degradation: retried once
     inside the reporting pass (`reporting-notifications.md` rule 7b),
     then delivered findings-only with a stderr warning, the wiki
