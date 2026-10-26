@@ -37,7 +37,10 @@ issue number. Resolve with `gh pr view` / `gh pr diff` as needed.
   marker flips (`[PLANNED: #N]` → `[DONE: #N]`) and Planned Changes table
   strikethroughs.
 - Exactly one additional commit on the PR branch. Never amend, rebase, or otherwise
-  touch commit 1.
+  touch commit 1. A **sync merge** of `main` may sit between commit 1 and the impl
+  commit when the branch is CONFLICTING because it was cut before its siblings
+  merged (see step 2b) — it does not count against the one-impl-commit rule, and it
+  is the only permitted merge into the branch.
 - Never add the `spec-approved` label — that gate stays human-only. Merging is
   agent-owned under current policy, but only in step 5 and only when the review
   loop returned APPROVED with zero BLOCKING findings and the PR carries the
@@ -65,6 +68,18 @@ ask the user rather than guessing.
 - Stay within `constraints.md` (read-only cluster access, no OLS code imports,
   wiki stays a document, …).
 
+### 2b. Sync with `main` when the branch conflicts
+
+If the PR is CONFLICTING (siblings merged after this branch was cut): `git merge
+main`, resolve only append-only conflicts to the **union** of both sides (index
+rows, list rows, docstring bullets, and separately-appended test blocks — the
+sibling's additions plus this PR's, never dropping either), commit that merge on
+its own, then re-run the suite. The gate: after the sync merge, exactly the PR's own
+new tests must fail — anything else means a resolution lost content. Never resolve a
+conflict by rewriting commit 1 or by taking one side wholesale for a file both sides
+touched. If the conflict is *not* append-only (a sibling changed the same contract
+text), stop and surface it.
+
 ### 3. Verify locally
 
 - The previously failing tests pass; the full test suite passes.
@@ -81,7 +96,10 @@ Dispatch an independent reviewer — a separate `pi` process with no session con
 (procedure below; template: `reviewer-prompt.md` in this skill's directory). Inputs,
 inline and labeled by path: the approved spec files in full, the complete PR diff
 (commit 1 + commit 2), the passing test output, the rule-by-rule walk, constraints,
-glossary.
+glossary. When step 2b added a sync merge, say so in the prompt and give both the
+net diff against `main` (what merging adds) and the impl-only diff (for the
+spec-integrity pass) — otherwise the reviewer cannot tell the merge from a
+contract change.
 
 - Address every finding in the code (or, if the finding reveals a spec defect, stop
   per the non-negotiables). Repeat until the reviewer returns APPROVED with zero
