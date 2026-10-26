@@ -24,7 +24,7 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
 5. The system runs either once (`--once`, the default) or on a fixed interval
    (`--loop --interval N`); in loop mode a failed patrol is logged and the loop
    continues rather than exiting. When both `--once` and `--loop` are passed,
-   loop mode engages — `--loop` wins. [PLANNED: #50 — in loop mode all patrols
+   loop mode engages — `--loop` wins. [DONE: #50 — in loop mode all patrols
    of the process run on **one process-lifetime event loop**: a fresh
    `asyncio.run` per patrol strands loop-bound engine state (cached async
    clients, keep-alive pools) on a closed loop, which real-cluster

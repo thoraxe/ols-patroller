@@ -67,7 +67,10 @@ under current policy (clean implementation review + `implementation-complete`):
   reporting bound, the repair reusing the shape instance — and the
   empty-wiki classification wiring of #51: retry-and-recover with the named
   corrective, the still-empty stderr warning with findings preserved, and
-  the repair-still-empty fall to the keep-old-wiki outcome);
+  the repair-still-empty fall to the keep-old-wiki outcome — and the
+  one-event-loop loop-mode wiring of #50: two patrols through `main()
+  --loop` on a single process-lifetime event loop, the failed-patrol
+  catch-and-continue on that same loop, and a clean ctrl-c exit);
   `tests/test_wiki_schema.py` covers the
   wiki skeleton schema + validation-on-write contract (#5) plus the
   per-entry recheck-command contract (#6); and `tests/test_wiki_expiry.py`

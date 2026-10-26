@@ -1999,25 +1999,37 @@ def main() -> None:
     # from the --quiet opt-out, never a standalone opt-in flag.
     verbose = not args.quiet
 
-    def one(fatal: bool) -> None:
-        try:
-            asyncio.run(run_patrol(kubectl=kubectl, wiki_path=wiki_path, dry=args.dry_cluster,
-                                   verbose=verbose, max_steps=args.max_steps))
-        except Exception as e:  # noqa: BLE001
-            if fatal:
-                raise
-            print(f"[patrol] patrol failed ({e}); continuing loop", file=sys.stderr)
+    async def patrol_once() -> None:
+        await run_patrol(kubectl=kubectl, wiki_path=wiki_path, dry=args.dry_cluster,
+                         verbose=verbose, max_steps=args.max_steps)
+
+    def one() -> None:
+        asyncio.run(patrol_once())
 
     if args.loop:
         print(f"[patrol] loop mode: every {args.interval}s (ctrl-c to stop)")
-        try:
+
+        # #50: every patrol of the process runs on one process-lifetime event
+        # loop — a fresh asyncio.run per patrol stranding loop-bound engine
+        # state (cached async clients, keep-alive pools) on a closed loop
+        # (ADR 0020). The inter-patrol wait is a deliberate blocking
+        # time.sleep: the loop has no concurrent work while idle, and a
+        # blocking sleep is trivially ctrl-c-interruptible.
+        async def loop() -> None:
             while True:
-                one(fatal=False)
+                try:
+                    await patrol_once()
+                except Exception as e:  # noqa: BLE001
+                    print(f"[patrol] patrol failed ({e}); continuing loop",
+                          file=sys.stderr)
                 time.sleep(args.interval)
+
+        try:
+            asyncio.run(loop())
         except KeyboardInterrupt:
             print("\n[patrol] stopped.")
     else:
-        one(fatal=True)
+        one()
 
 
 if __name__ == "__main__":
