@@ -45,6 +45,10 @@ Covers (safety-model.md rules 6b-6c, wiki-memory.md rules 4f and 15-19):
   with one stderr warning (the budget never gates), and a repair pass
   carries the rejected wiki's budget warning alongside the structural
   errors
+- one-event-loop loop mode of #50 (system-overview rule 5): two patrols
+  through main() --loop on a single event loop, both writing, clean
+  ctrl-c exit; a failed patrol is logged and the loop continues on the
+  same loop
 - request-bound wiring of #49 (reporting-notifications.md rule 8a):
   run_patrol builds the agent's model at the exploration bound and the
   shape pass's at the reporting bound, both through the make_model seam
@@ -58,6 +62,7 @@ test_kubectl_guard.py (kubectl-guard.md rule 6a, #11).
 
 Run: uv run --group dev pytest tests/ -q
 """
+import asyncio
 import json
 import re
 import subprocess
@@ -840,6 +845,66 @@ def test_wiki_flag_default_is_the_wiki_directory():
                   source)
     assert m, "--wiki must default to wiki/cluster-wiki.md beside patrol.py"
 
+
+# ------------------------------------------------- one event loop per process (#50)
+
+def test_loop_mode_runs_patrols_on_one_event_loop(tmp_path, monkeypatch, capsys):
+    """#50 (system-overview rule 5) wiring: loop mode runs every patrol of
+    the process on one event loop — a fresh asyncio.run per patrol strands
+    loop-bound engine state on a closed loop (real-cluster validation caught
+    a one-time 'Event loop is closed' failure on the second patrol). Two
+    patrols run through main() --loop; the second completion raises
+    KeyboardInterrupt exactly where ctrl-c would."""
+    endpoint = ScriptedEndpoint(report=REPORT)
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    loops = []
+    real_run = patrol.run_patrol
+
+    async def recording_run(**kw):
+        loops.append(asyncio.get_running_loop())
+        await real_run(**kw)
+        if len(loops) == 2:
+            raise KeyboardInterrupt  # ctrl-c after the second patrol
+
+    monkeypatch.setattr(patrol, "run_patrol", recording_run)
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--loop", "--interval", "0")
+
+    assert len(loops) == 2
+    assert loops[0] is loops[1]                   # one loop for all patrols
+    assert commit_count(wiki.parent) == 2         # both patrols wrote + committed
+    assert frontmatter(wiki.read_text())["patrol_count"] == 2
+    captured = capsys.readouterr()
+    assert "[patrol] stopped." in captured.out    # clean ctrl-c exit
+    assert "Event loop is closed" not in captured.err
+
+
+def test_loop_mode_continues_after_a_failed_patrol(tmp_path, monkeypatch, capsys):
+    """#50 (system-overview rule 5) wiring: the one-loop restructure keeps
+    loop mode's catch-and-continue — a patrol exception is logged and the
+    loop goes on, on the same event loop (the per-patrol try/except must
+    sit inside the loop body, not around it)."""
+    endpoint = ScriptedEndpoint(report=REPORT)
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    loops = []
+    real_run = patrol.run_patrol
+
+    async def recording_run(**kw):
+        loops.append(asyncio.get_running_loop())
+        if len(loops) == 1:
+            raise RuntimeError("boom")            # first patrol fails
+        await real_run(**kw)
+        if len(loops) == 2:
+            raise KeyboardInterrupt                # ctrl-c after the second
+
+    monkeypatch.setattr(patrol, "run_patrol", recording_run)
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--loop", "--interval", "0")
+
+    assert len(loops) == 2                         # the loop continued
+    assert loops[0] is loops[1]                    # ...on the same event loop
+    captured = capsys.readouterr()
+    assert "patrol failed (boom); continuing loop" in captured.err
+    assert "[patrol] stopped." in captured.out    # still a clean ctrl-c exit
+    assert commit_count(wiki.parent) == 1          # only patrol 2 wrote
 
 # ---------------------------------------------------- request bounds (#49)
 

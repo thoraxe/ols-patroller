@@ -23,7 +23,17 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
    updated wiki (see `reporting-notifications.md`).
 5. The system runs either once (`--once`, the default) or on a fixed interval
    (`--loop --interval N`); in loop mode a failed patrol is logged and the loop
-   continues rather than exiting.
+   continues rather than exiting. When both `--once` and `--loop` are passed,
+   loop mode engages — `--loop` wins. [DONE: #50 — in loop mode all patrols
+   of the process run on **one process-lifetime event loop**: a fresh
+   `asyncio.run` per patrol strands loop-bound engine state (cached async
+   clients, keep-alive pools) on a closed loop, which real-cluster
+   validation caught as a one-time "Event loop is closed" failure on the
+   second patrol of a process. One loop for the whole process; a failed
+   patrol is still logged and the loop continues; ctrl-c during a patrol
+   or the inter-patrol wait still stops the process cleanly; `--once` is
+   unchanged — one patrol per process run (ADR
+   `decisions/0020-one-event-loop-per-process.md`).]
 6. Startup requires `PATROL_API_KEY`, `PATROL_BASE_URL`, and `PATROL_MODEL`; the
    process exits with an error if any is unset — except in the offline
    `--wiki-stats` mode, which reads only the wiki and needs no model env
