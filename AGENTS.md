@@ -32,7 +32,11 @@ under current policy (clean implementation review + `implementation-complete`):
 | `implementation-complete` | Fully AI-reviewed — the implementing agent merges the PR at this point (current policy, revocable) |
 
 - Every feature PR has exactly **two commits**: (1) specs + failing tests,
-  (2) implementation.
+  (2) implementation. A **sync merge** of `main` may sit between them when the
+  branch is cut before its siblings merge: it is mechanical and content-neutral
+  (append-only conflicts resolved to the union of both sides, commit 1 never
+  rewritten), and the suite after it must still fail only the PR's own new
+  tests — the spec→impl pair stays the PR's diff against `main`.
 - Review loops dispatch an independent reviewer — a separate `pi` process with no
   session context; reports land in `.ai/spec/verification/` (gitignored).
 - Implementation never changes contract rules — only `[PLANNED: #N]` → `[DONE: #N]`
