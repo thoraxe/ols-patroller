@@ -42,4 +42,6 @@ Date: YYYY-MM-DD · Status: proposed | accepted | superseded by NNNN
 | [0015](0015-wiki-stats-offline-prose-churn.md) | Wiki stats: an offline command; churn is prose-keyed over a bounded git window |
 | [0016](0016-sweep-taught-not-guard-enforced.md) | Sweep efficiency is taught, not guard-enforced |
 | [0017](0017-working-set-wiki-not-log.md) | The wiki is a working set; git history is the archive |
+| [0018](0018-reporting-pass-own-request-bound.md) | Per-call-shape request bounds: 300 s exploration, 900 s structured reporting |
+| [0019](0019-empty-wiki-is-a-failed-report.md) | An empty `updated_wiki` is a failed report, not a no-op signal |
 | [0020](0020-one-event-loop-per-process.md) | One event loop per process in loop mode |

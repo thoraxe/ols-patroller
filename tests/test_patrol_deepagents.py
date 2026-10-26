@@ -49,6 +49,13 @@ Covers (safety-model.md rules 6b-6c, wiki-memory.md rules 4f and 15-19):
   through main() --loop on a single event loop, both writing, clean
   ctrl-c exit; a failed patrol is logged and the loop continues on the
   same loop
+- request-bound wiring of #49 (reporting-notifications.md rule 8a):
+  run_patrol builds the agent's model at the exploration bound and the
+  shape pass's at the reporting bound, both through the make_model seam
+- empty-wiki classification wiring of #51 (reporting-notifications.md
+  rule 7b): a wiki-less report is retried once with a corrective message
+  naming it; a good retry recovers; a still-empty retry delivers
+  findings, writes nothing, and warns on stderr
 
 The `--raw` guard refusal is not e2e-covered: it is unit-checked in
 test_kubectl_guard.py (kubectl-guard.md rule 6a, #11).
@@ -158,8 +165,12 @@ class ScriptedEndpoint:
             "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
         })
 
-    def model(self) -> ChatOpenAI:
-        """A real ChatOpenAI wired to this endpoint — the make_model seam."""
+    def model(self, timeout: float | None = None) -> ChatOpenAI:
+        """A real ChatOpenAI wired to this endpoint — the make_model seam.
+        Accepts (and ignores) the request-bound kwarg of #49: the bound is
+        client-side config, invisible on the wire, so the fake endpoint
+        never enforces it — the make_model call itself is the assertion
+        surface."""
         transport = httpx.MockTransport(self.handler)
         return ChatOpenAI(
             model="fake-model", base_url="http://fake.test/v1", api_key="test-key",
@@ -328,14 +339,16 @@ def commit_count(cwd) -> int:
     return int(git("rev-list", "--count", "--all", cwd=cwd).stdout.strip() or 0)
 
 
-def run_patrol_cli(monkeypatch, endpoint, wiki, *extra_args, wiki_remote=""):
+def run_patrol_cli(monkeypatch, endpoint, wiki, *extra_args, wiki_remote="",
+                   model_factory=None):
     """Run one full patrol through main() — argparse, env check, startup repo
     ensure, the engine loop, the shape pass, and the wiki git tail — with the
     model pointed at the scripted endpoint. Module-level config read from env
     at import (BASE_URL/MODEL/API_KEY/CLUSTER_ID/SLACK_URL/WIKI_REMOTE) is
     pinned explicitly so an ambient PATROL_*/SLACK_* environment cannot leak
-    network calls into the e2e (rule 6c)."""
-    monkeypatch.setattr(patrol, "make_model", endpoint.model)
+    network calls into the e2e (rule 6c). `model_factory` overrides the
+    make_model patch (e.g. a recording wrapper asserting on the #49 bound)."""
+    monkeypatch.setattr(patrol, "make_model", model_factory or endpoint.model)
     monkeypatch.setattr(patrol, "BASE_URL", "http://fake.test/v1")
     monkeypatch.setattr(patrol, "MODEL", "fake-model")
     monkeypatch.setattr(patrol, "API_KEY", "test-key")
@@ -892,3 +905,129 @@ def test_loop_mode_continues_after_a_failed_patrol(tmp_path, monkeypatch, capsys
     assert "patrol failed (boom); continuing loop" in captured.err
     assert "[patrol] stopped." in captured.out    # still a clean ctrl-c exit
     assert commit_count(wiki.parent) == 1          # only patrol 2 wrote
+
+# ---------------------------------------------------- request bounds (#49)
+
+def test_shape_pass_model_carries_the_reporting_bound(tmp_path, monkeypatch, capsys):
+    """#49 rule 8a wiring: run_patrol builds two model instances through the
+    make_model seam — the agent's at the exploration bound, the shape pass's
+    at the reporting bound."""
+    endpoint = ScriptedEndpoint(report=REPORT)
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    bounds = []
+    real_model = endpoint.model
+
+    def recording_model(**kwargs):
+        bounds.append(kwargs.get("timeout"))
+        return real_model()
+
+    run_patrol_cli(monkeypatch, endpoint, wiki, model_factory=recording_model)
+    # order pins the assignment: the agent's model (built first) carries the
+    # exploration bound, the shape pass's the reporting bound — a swap fails
+    assert bounds == [patrol.REQUEST_TIMEOUT, patrol.REPORT_TIMEOUT]
+
+
+def test_repair_reuses_the_shape_pass_model(tmp_path, monkeypatch, capsys):
+    """#49 (agent-engine.md): the repair call reuses the shape pass's model
+    instance — a repair scenario still makes exactly two make_model calls
+    (agent + shape), never a third for the repair."""
+    rejected = wiki_text("REJECTED-WIKI-MARKER").replace(
+        "patrol_count: 9\n", "patrol_count: 9\nbogus_key: 1\n")
+    endpoint = ScriptedEndpoint(
+        turns=NATURAL_TURNS[:1],
+        reports=[dict(REPORT, updated_wiki=rejected),
+                 dict(REPORT, updated_wiki=wiki_text("repaired marker"))])
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    bounds = []
+    real_model = endpoint.model
+
+    def recording_model(**kwargs):
+        bounds.append(kwargs.get("timeout"))
+        return real_model()
+
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8",
+                   model_factory=recording_model)
+    assert len(endpoint.shape_requests) == 2      # the repair pass ran
+    assert bounds == [patrol.REQUEST_TIMEOUT, patrol.REPORT_TIMEOUT]
+    assert "repaired marker" in wiki.read_text()
+
+
+# --------------------------------------------- empty-wiki classification (#51)
+
+# A structurally valid report whose updated_wiki is empty — the #51 failure
+# shape observed in real-cluster validation (the field's lenient default
+# parses an omission to "").
+EMPTY_WIKI_REPORT = {
+    "findings": [
+        {"severity": "crit", "summary": "control-plane operators degraded",
+         "evidence": "get clusteroperators: multiple Degraded=True"},
+    ],
+    "notifications": ["control-plane operators degraded"],
+    "updated_wiki": "",
+}
+
+
+def test_empty_wiki_report_retries_and_recovers(tmp_path, monkeypatch, capsys):
+    """#51 rule 7b wiring: a valid-but-wiki-less report is a failed attempt —
+    one retry whose corrective message names the empty updated_wiki; the
+    retry's report replaces the first wholesale (its findings, its wiki)."""
+    endpoint = ScriptedEndpoint(turns=NATURAL_TURNS[:1],
+                                reports=[EMPTY_WIKI_REPORT, REPORT])
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
+
+    shapes = endpoint.shape_requests
+    assert len(shapes) == 2, f"expected report + empty-wiki retry, got {len(shapes)}"
+    corrective = endpoint.last_user_prompt(shapes[1])
+    assert "updated_wiki" in corrective and "empty" in corrective.lower()
+
+    out = capsys.readouterr().out
+    assert "worker-1 NotReady" in out            # the retry's findings deliver
+    assert "control-plane operators degraded" not in out  # first report replaced
+    assert "e2e wiki marker" in wiki.read_text()  # the retry's wiki was written
+    assert commit_count(wiki.parent) == 1
+
+
+def test_still_empty_wiki_warns_and_preserves_findings(tmp_path, monkeypatch, capsys):
+    """#51 rule 7b wiring: when the retry also omits the wiki, the report is
+    not discarded — findings and notifications deliver, nothing is written
+    or committed, and one stderr warning names the empty wiki: the no-op is
+    visible, never silent."""
+    endpoint = ScriptedEndpoint(turns=NATURAL_TURNS[:1],
+                                reports=[EMPTY_WIKI_REPORT, EMPTY_WIKI_REPORT])
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
+
+    assert len(endpoint.shape_requests) == 2     # the retry happened
+    captured = capsys.readouterr()
+    assert "control-plane operators degraded" in captured.out   # findings deliver
+    assert "🔔 NOTIFY: control-plane operators degraded" in captured.out
+    assert not wiki.exists()                     # nothing written
+    assert commit_count(wiki.parent) == 0        # nothing committed
+    # rule 7b's verbatim warning — the no-op is visible, never silent
+    assert ("[patrol] WARNING: reporting pass returned an empty updated_wiki; "
+            "keeping the previous wiki, writing nothing") in captured.err
+
+
+def test_repair_that_stays_wiki_less_falls_to_keep_old_wiki(tmp_path, monkeypatch, capsys):
+    """#51 rule 7b's repair clause, still-empty leg: a repair that stays
+    wiki-less after its named retry falls to rule 16's keep-old-wiki
+    outcome — the first report's findings deliver, the old wiki stands,
+    and the wiki-rejection warning fires (the first report's wiki was
+    non-empty; it failed validation, not emission)."""
+    rejected = wiki_text("REJECTED-WIKI-MARKER").replace(
+        "patrol_count: 9\n", "patrol_count: 9\nbogus_key: 1\n")
+    endpoint = ScriptedEndpoint(turns=NATURAL_TURNS[:1],
+                                reports=[dict(REPORT, updated_wiki=rejected),
+                                         EMPTY_WIKI_REPORT, EMPTY_WIKI_REPORT])
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
+
+    shapes = endpoint.shape_requests
+    assert len(shapes) == 3  # report + repair + the repair's empty-wiki retry
+    captured = capsys.readouterr()
+    assert "worker-1 NotReady" in captured.out    # the FIRST report's findings
+    assert "control-plane operators degraded" not in captured.out
+    assert not wiki.exists()                      # the old wiki stands
+    assert "wiki update rejected" in captured.err # rule 16's warning
+    assert "empty updated_wiki" not in captured.err  # NOT rule 7b's

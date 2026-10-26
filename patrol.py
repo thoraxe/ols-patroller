@@ -74,6 +74,16 @@ KUBECTL    = os.environ.get("KUBECTL", "")  # resolved later
 SLACK_URL  = os.environ.get("SLACK_WEBHOOK_URL", "")
 MAX_STEPS  = int(os.environ.get("PATROL_MAX_STEPS", "30"))  # LLM turns per patrol
 TOOL_TIMEOUT = int(os.environ.get("PATROL_TOOL_TIMEOUT", "60"))
+# Per-call-shape request bounds (reporting-notifications.md rule 8a, #49; ADR
+# 0018). Hard-coded, not env-configurable: exploration turns are small and
+# fast, so a hung endpoint fails snappily at 300 s — while the single
+# tool-free structured reporting call (and its repair pass) carries the
+# entire patrol conversation and legitimately runs minutes on
+# reasoning-capable models, so it gets the 900 s headroom. A reporting pass
+# that cannot finish under the bound never writes the wiki, and a fresh
+# cluster never bootstraps its memory.
+REQUEST_TIMEOUT = 300  # seconds per exploration turn
+REPORT_TIMEOUT  = 900  # seconds per structured reporting/repair call
 OUT_CAP    = 15_000  # max chars of tool output fed back to the model
 CLUSTER_ID = os.environ.get("PATROL_CLUSTER_ID", "local")  # wiki commit identity
 WIKI_REMOTE = os.environ.get("PATROL_WIKI_REMOTE", "")     # optional wiki replication
@@ -457,15 +467,19 @@ def make_kubectl_tool(*, kubectl: str, dry: bool, verbose: bool):
     return _kubectl_tool
 
 
-def make_model() -> ChatOpenAI:
-    """Any OpenAI-compatible endpoint, same env contract as the raw-requests version."""
+def make_model(*, timeout: float = REQUEST_TIMEOUT) -> ChatOpenAI:
+    """Any OpenAI-compatible endpoint, same env contract as the raw-requests
+    version. The request bound is parametrized per call shape (rule 8a, #49):
+    the default is the exploration bound; the shape pass passes the reporting
+    bound. The timeout is a client-level property, so the two call shapes mean
+    two instances from this one seam."""
     return ChatOpenAI(
         model=MODEL,
         base_url=BASE_URL,
         api_key=API_KEY,
         temperature=0.3,
         max_tokens=16000,
-        timeout=300,
+        timeout=timeout,
     )
 
 
@@ -534,8 +548,11 @@ Produce the final PatrolReport for the cluster patrol above:
 - "notifications": ONLY the warn/crit findings a human should actually see (don't
   cry wolf), as human-readable messages.
 - "updated_wiki": the FULL new markdown content of the cluster wiki in the
-  skeleton format. It is validated before it may replace the wiki on disk, and
-  MUST have exactly this structure:
+  skeleton format. updated_wiki is required on every report: return the FULL
+  wiki content even when nothing needs changing — copy unchanged sections verbatim.
+  An empty updated_wiki is never a valid answer: a patrol with nothing to change
+  returns the wiki unchanged. It is validated before it may replace the wiki on
+  disk, and MUST have exactly this structure:
   1. YAML frontmatter at the very top, between '---' fence lines, with exactly
      four keys and no others: wiki_version: 1, cluster_id (this cluster's id),
      patrol_count (a positive integer), last_patrol (an ISO-8601 datetime). The
@@ -601,6 +618,16 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
     wiki failed skeleton validation and carries the error list and the rejected
     wiki, asking for a corrected PatrolReport. At most one repair pass per
     patrol — the caller owns that bound.
+
+    A parsed result whose `updated_wiki` is empty is a failed attempt too
+    (reporting-notifications.md rule 7b, #51) — the patrol cannot distinguish
+    an omitted field from a deliberate no-op, so the contract removes the
+    no-op meaning entirely. It is retried once with a corrective message that
+    names the empty wiki and demands the full content (distinct from the
+    generic invalid-report corrective); the repair pass shares the
+    classification. Across failure compositions the pass returns the LAST
+    result that parsed — a wiki-less report included, so its findings still
+    deliver — and None only when no attempt parsed (rule 7's total failure).
     """
     if repair is None:
         prefix = ("You are the REPORTING PASS for the cluster patrol recorded above. "
@@ -620,20 +647,35 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
                   + "\n\nThe rejected wiki was:\n\n" + rejected_wiki + "\n")
     structured = model.with_structured_output(PatrolReport, method="function_calling")
     msgs: list = [*messages, {"role": "user", "content": prefix + REPORT_CONTRACT}]
+    # Rule 7b (#51): the empty-wiki classification keys on the wiki field alone
+    # (zero findings is legal and never triggers it). A wiki-less parse is a
+    # failed attempt — retried with its own named corrective — and the last
+    # result that parsed is what the patrol keeps, so a wiki omission never
+    # costs the patrol its observations.
+    last_parsed = None
     for attempt in (1, 2):
         reason = None
+        corrective = "That was not a valid PatrolReport. Produce it now."
         try:
             result = await structured.ainvoke(msgs)
             if result is not None:
-                return result
-            reason = "empty result"
+                if report_fields(result)[2]:
+                    return result
+                last_parsed = result
+                reason = "empty wiki"
+                corrective = ("Your report parsed, but its updated_wiki was empty. "
+                              "updated_wiki is required on every report: return the "
+                              "FULL wiki content even when nothing needs changing — "
+                              "copy unchanged sections verbatim. Produce the "
+                              "complete updated_wiki now.")
+            else:
+                reason = "empty result"
         except Exception as e:  # noqa: BLE001
             reason = str(e)
         print(f"[patrol] reporting pass attempt {attempt} failed ({reason})",
               file=sys.stderr)
-        msgs = [*msgs, {"role": "user",
-                        "content": "That was not a valid PatrolReport. Produce it now."}]
-    return None
+        msgs = [*msgs, {"role": "user", "content": corrective}]
+    return last_parsed
 
 
 # --------------------------------------------------------------------------- wiki schema
@@ -1645,7 +1687,14 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
         f"returns, stop exploring and write your final summary."
     )
 
-    model = make_model()
+    # Two models, two bounds (rule 8a, #49; ADR 0018): the request timeout is a
+    # client-level property in langchain-openai, so the per-call-shape bounds mean
+    # two ChatOpenAI instances from the same make_model seam — the agent's at the
+    # exploration bound (hung endpoints fail snappily) and the shape pass's at the
+    # reporting bound (the structured call carries the whole conversation and
+    # legitimately runs minutes; the repair pass reuses the shape instance).
+    model = make_model(timeout=REQUEST_TIMEOUT)
+    shape_model = make_model(timeout=REPORT_TIMEOUT)
     _disable_default_subagent(model)
     # No response_format here: an in-agent ToolStrategy forces tool_choice="any" on
     # every turn, which removes the model's natural stopping signal (GLM under it
@@ -1722,19 +1771,32 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
         print("[patrol] WARNING: patrol made no observations; skipping wiki write.")
         return
 
-    report = await shape_report(model, messages, budget_cut)
+    report = await shape_report(shape_model, messages, budget_cut)
     if report is None:
         print("[patrol] WARNING: reporting pass produced no report; skipping wiki write.")
         return
 
     findings, notifications, new_wiki = report_fields(report)
 
+    # Rule 7b (#51): an empty updated_wiki on arrival is a twice-failed
+    # reporting attempt — shape_report already retried it once with the named
+    # corrective. The report is not discarded (a wiki omission must never cost
+    # the patrol's observations): its findings and notifications deliver below,
+    # the wiki is left unchanged, and this one stderr warning makes the no-op
+    # visible and countable, never silent.
+    if not new_wiki:
+        print("[patrol] WARNING: reporting pass returned an empty updated_wiki; "
+              "keeping the previous wiki, writing nothing", file=sys.stderr)
+
     # Wiki gate (#5, rules 15-19): the model's wiki is validated before it may
     # replace memory. Invalid -> exactly one repair pass; a repair whose wiki
     # validates replaces the report wholesale, otherwise the old wiki stands
     # and the FIRST report's findings/notifications still deliver (rule 19: a
     # wiki-format failure never costs the patrol's observations). An empty
-    # updated_wiki skips validation and repair entirely (rule 4 unchanged).
+    # updated_wiki skips validation and repair entirely (rule 4 unchanged) — by
+    # the time it reaches this gate it is a twice-failed reporting attempt,
+    # already retried and warned about above (rule 7b, #51): a classified
+    # failure writes nothing.
     if new_wiki:
         errors = validate_wiki(new_wiki)
         if errors:
@@ -1746,7 +1808,7 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
             # Acceptance stays structural validity alone (rule 29: length
             # never decides — an over-budget repair still writes, with the
             # write-path warning below).
-            repaired = await shape_report(model, messages, budget_cut,
+            repaired = await shape_report(shape_model, messages, budget_cut,
                                           repair=(new_wiki,
                                                   errors + wiki_budget_warnings(new_wiki)))
             final = None
