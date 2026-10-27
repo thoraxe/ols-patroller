@@ -156,7 +156,11 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
 
 - `PATROL_MAX_STEPS` / `--max-steps` — LLM-turn budget (default 30)
 - `--dry-cluster` — fixture mode, no cluster needed
-- Engine constants (not configurable): temperature 0.3, `max_tokens` 16000, request
+- Engine constants (not configurable): temperature 0.3, completion-token
+  bounds — `REQUEST_MAX_TOKENS` 16000 per exploration turn,
+  `REPORT_MAX_TOKENS` 64000 per structured reporting/repair call
+  (`reporting-notifications.md` rule 8b) [PLANNED: #63 — was a flat
+  `max_tokens` 16000 on the whole client], request
   bounds — `REQUEST_TIMEOUT` 300 s per exploration turn, `REPORT_TIMEOUT` 900 s
   per structured reporting/repair call (`reporting-notifications.md` rule 8a)
   [DONE: #49 — was a flat 300 s on the whole client]

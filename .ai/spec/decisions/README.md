@@ -45,3 +45,4 @@ Date: YYYY-MM-DD · Status: proposed | accepted | superseded by NNNN
 | [0018](0018-reporting-pass-own-request-bound.md) | Per-call-shape request bounds: 300 s exploration, 900 s structured reporting |
 | [0019](0019-empty-wiki-is-a-failed-report.md) | An empty `updated_wiki` is a failed report, not a no-op signal |
 | [0020](0020-one-event-loop-per-process.md) | One event loop per process in loop mode |
+| [0021](0021-reporting-pass-own-token-bound.md) | Per-call-shape completion-token bounds: 16k exploration, 64k structured reporting |
