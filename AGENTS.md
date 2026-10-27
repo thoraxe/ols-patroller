@@ -69,6 +69,9 @@ under current policy (clean implementation review + `implementation-complete`):
   recoverability from git history — and the request-bound wiring of #49: the
   agent's model built at the exploration bound, the shape pass's at the
   reporting bound, the repair reusing the shape instance — and the
+  token-bound wiring of #63: the same two `make_model` calls carrying the
+  per-call-shape `max_tokens` pair, agent at the exploration bound, shape
+  pass at the reporting bound — and the
   empty-wiki classification wiring of #51: retry-and-recover with the named
   corrective, the still-empty stderr warning with findings preserved, and
   the repair-still-empty fall to the keep-old-wiki outcome — and the
@@ -91,12 +94,17 @@ under current policy (clean implementation review + `implementation-complete`):
   `wiki_budget_warnings` matrices, the `wiki_stats` size keys, the
   `--wiki-stats` size line, and the report contract's working-set pins); and
   `tests/test_request_bounds.py` covers the per-call-shape request-bound
-  contract (#49: the two bound constants and the `make_model` timeout
-  passthrough); and `tests/test_empty_report.py` covers the empty-report
+  contract (#49 and #63: the two timeout constants, the two completion-token
+  bound constants, and the `make_model` timeout + `max_tokens` passthrough);
+  and `tests/test_empty_report.py` covers the empty-report
   contract (#51: the report contract's wiki-required pins and the
   empty-wiki classification matrix over `shape_report` — the named
   corrective retry, the double-empty return, the composition and repair
-  sharing, and the generic-retry and zero-findings guards).
+  sharing, and the generic-retry and zero-findings guards — and the
+  empty-result reason classification of #63: the pure
+  `classify_empty_result` matrix over fake raw responses and the shape
+  pass's attempt-failure log lines carrying the classified reasons via the
+  include_raw envelope, with the envelope parsing-error path).
 - `wiki/` (the wiki directory: `cluster-wiki.md` + its git repo) is a runtime
   artifact (gitignored) — never commit it.
 - Roadmap: GitHub issues + milestones, not documents. Spec files mark planned

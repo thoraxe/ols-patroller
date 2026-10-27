@@ -581,7 +581,7 @@ The wiki is a **working set**, not a log [DONE: #40]: growth taxes every
 patrol — the wiki is injected whole into the prompt (rule 3) and re-emitted
 whole by the shape pass under its completion-token bound
 (`REPORT_MAX_TOKENS` 64000, `reporting-notifications.md` rule 8b
-[PLANNED: #63]; before it, the flat 16000 was the de-facto ceiling) — an
+[DONE: #63]; before it, the flat 16000 was the de-facto ceiling) — an
 over-long wiki fails the reporting pass rather than being trimmed — while
 the wiki repo already retains every accepted write (rule 4d). The stance:
 **git history is the archive; the wiki is the working set** (ADR
@@ -649,7 +649,7 @@ load-bearing constraint of #5).
     (20,000 — roughly a third of the shape pass's completion-token output
     ceiling as it stood at #40's writing; the ceiling has since been raised
     to `REPORT_MAX_TOKENS` 64,000 for the shape pass
-    (`reporting-notifications.md` rule 8b) [PLANNED: #63], so the budget is
+    (`reporting-notifications.md` rule 8b) [DONE: #63], so the budget is
     now set by drift-alarm judgment, not output-ceiling arithmetic — leaving
     room for findings and notifications in the same structured output
     regardless; the unit is characters, the wiki being UTF-8 text).

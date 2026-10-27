@@ -108,7 +108,7 @@ in `how/reporting-pipeline.md`.
     when no attempt parsed (rule 7's total failure): an empty-wiki
     attempt followed by an exception still delivers the parsed report's
     findings with the empty-wiki warning.
-7c. **Visible empty-result reasons** [PLANNED: #63]. A failed attempt's
+7c. **Visible empty-result reasons** [DONE: #63]. A failed attempt's
     log line names its cause. The pass invokes the structured output with
     `include_raw=True`, so a `None`/unparsed result carries the raw model
     response — and the reason string in the attempt-failure log line
@@ -149,7 +149,7 @@ in `how/reporting-pipeline.md`.
     cluster never bootstraps; the shape pass therefore gets the headroom
     the exploration turns do not need (ADR
     `decisions/0018-reporting-pass-own-request-bound.md`).
-8b. **Per-call-shape completion-token bounds** [PLANNED: #63]. The two
+8b. **Per-call-shape completion-token bounds** [DONE: #63]. The two
     call shapes carry different `max_tokens` bounds too, both hard-coded
     constants (not env-configurable): exploration turns keep
     `REQUEST_MAX_TOKENS` (16000 — turns are small), while this pass and
@@ -200,7 +200,7 @@ in `how/reporting-pipeline.md`.
 
 | Ticket | Summary |
 |---|---|
-| #63 | Per-call-shape completion-token bounds + visible empty-result reasons (rules 7c + 8b): exploration `REQUEST_MAX_TOKENS` 16000, structured reporting/repair calls `REPORT_MAX_TOKENS` 64000 through the `make_model` seam; the attempt-failure log line names its cause (`truncated at max_tokens` vs `no tool call`) via a pure classifier over the raw response. Impl commit also syncs `AGENTS.md`'s test list and the stale `max_tokens` prose in `patrol.py`'s code comments (e.g. the working-set comment near the shape-pass budget) |
+| ~~#63~~ | ~~Per-call-shape completion-token bounds + visible empty-result reasons (rules 7c + 8b): exploration `REQUEST_MAX_TOKENS` 16000, structured reporting/repair calls `REPORT_MAX_TOKENS` 64000 through the `make_model` seam; the attempt-failure log line names its cause (`truncated at max_tokens` vs `no tool call`) via a pure classifier over the raw response. Impl commit also syncs `AGENTS.md`'s test list and the stale `max_tokens` prose in `patrol.py`'s code comments (e.g. the working-set comment near the shape-pass budget)~~ |
 | ~~#51~~ | ~~Empty PatrolReport (rules 5 + 7b): the report contract requires `updated_wiki` on every report; an empty one is a failed attempt — one named corrective retry, then findings-only delivery with a stderr warning, wiki unchanged. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#49~~ | ~~Per-call-shape request bounds (rule 8a): exploration turns `REQUEST_TIMEOUT` 300 s, structured reporting/repair calls `REPORT_TIMEOUT` 900 s — two `make_model` instances through the same seam; the specced constants in `agent-engine.md` / `system-overview.md` updated to the split, bounds pinned by test. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | #9 | Notification dedup: notify on state change, not every patrol — new entry, severity change/escalation, or resolution notify; standing unchanged entries stay wiki-only; optional periodic digest for long-unfixed entries |

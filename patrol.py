@@ -84,6 +84,8 @@ TOOL_TIMEOUT = int(os.environ.get("PATROL_TOOL_TIMEOUT", "60"))
 # cluster never bootstraps its memory.
 REQUEST_TIMEOUT = 300  # seconds per exploration turn
 REPORT_TIMEOUT  = 900  # seconds per structured reporting/repair call
+REQUEST_MAX_TOKENS = 16_000  # completion tokens per exploration turn
+REPORT_MAX_TOKENS  = 64_000  # completion tokens per structured reporting/repair call
 OUT_CAP    = 15_000  # max chars of tool output fed back to the model
 CLUSTER_ID = os.environ.get("PATROL_CLUSTER_ID", "local")  # wiki commit identity
 WIKI_REMOTE = os.environ.get("PATROL_WIKI_REMOTE", "")     # optional wiki replication
@@ -467,18 +469,19 @@ def make_kubectl_tool(*, kubectl: str, dry: bool, verbose: bool):
     return _kubectl_tool
 
 
-def make_model(*, timeout: float = REQUEST_TIMEOUT) -> ChatOpenAI:
+def make_model(*, timeout: float = REQUEST_TIMEOUT,
+               max_tokens: int = REQUEST_MAX_TOKENS) -> ChatOpenAI:
     """Any OpenAI-compatible endpoint, same env contract as the raw-requests
-    version. The request bound is parametrized per call shape (rule 8a, #49):
-    the default is the exploration bound; the shape pass passes the reporting
-    bound. The timeout is a client-level property, so the two call shapes mean
-    two instances from this one seam."""
+    version. The request bounds are parametrized per call shape (rules 8a
+    + 8b, #49/#63): the defaults are the exploration bounds; the shape pass
+    passes the reporting pair. Both are client-level properties, so the two
+    call shapes mean two instances from this one seam."""
     return ChatOpenAI(
         model=MODEL,
         base_url=BASE_URL,
         api_key=API_KEY,
         temperature=0.3,
-        max_tokens=16000,
+        max_tokens=max_tokens,
         timeout=timeout,
     )
 
@@ -602,6 +605,24 @@ Produce the final PatrolReport for the cluster patrol above:
 """
 
 
+def classify_empty_result(raw, *, max_tokens: int = REPORT_MAX_TOKENS) -> str:
+    """Rule 7c (#63): classify a None/unparsed structured result's failure
+    cause from its raw model response. Pure (no I/O, no model calls) and
+    duck-typed over the langchain message shape: the finish reason lives in
+    response_metadata, the completion-token count (reasoning included) in
+    usage_metadata's output_tokens. Returns the reason string for the
+    attempt-failure log line — never raises; missing/garbled metadata
+    defaults to no-tool-call."""
+    metadata = getattr(raw, "response_metadata", None) or {}
+    usage = getattr(raw, "usage_metadata", None) or {}
+    finish_reason = metadata.get("finish_reason")
+    output_tokens = usage.get("output_tokens")
+    if finish_reason == "length" or (
+            isinstance(output_tokens, int) and output_tokens >= max_tokens):
+        return "empty result (truncated at max_tokens)"
+    return "empty result (no tool call)"
+
+
 async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
                        repair: tuple[str, list[str]] | None = None):
     """Tool-free structured-output pass over the finished patrol conversation.
@@ -628,6 +649,15 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
     classification. Across failure compositions the pass returns the LAST
     result that parsed — a wiki-less report included, so its findings still
     deliver — and None only when no attempt parsed (rule 7's total failure).
+
+    A None/unparsed result's failure reason is classified from the raw model
+    response (reporting-notifications.md rule 7c, #63): the structured output
+    is invoked with include_raw=True, so an unparsed result is observed
+    alongside its raw response — `classify_empty_result` names the cause
+    (truncated at max_tokens vs no tool call). Exceptions and structured-
+    output parsing errors reported in the envelope (rather than raised) keep
+    their own message as the reason. Read-only diagnostics: the retry, the
+    corrective message, and the keep-old-wiki outcomes are untouched.
     """
     if repair is None:
         prefix = ("You are the REPORTING PASS for the cluster patrol recorded above. "
@@ -645,7 +675,6 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
                   "whose updated_wiki fixes EVERY validation error below:\n"
                   + "\n".join(f"- {e}" for e in wiki_errors)
                   + "\n\nThe rejected wiki was:\n\n" + rejected_wiki + "\n")
-    structured = model.with_structured_output(PatrolReport, method="function_calling")
     msgs: list = [*messages, {"role": "user", "content": prefix + REPORT_CONTRACT}]
     # Rule 7b (#51): the empty-wiki classification keys on the wiki field alone
     # (zero findings is legal and never triggers it). A wiki-less parse is a
@@ -656,8 +685,23 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
     for attempt in (1, 2):
         reason = None
         corrective = "That was not a valid PatrolReport. Produce it now."
+        structured = model.with_structured_output(
+            PatrolReport, method="function_calling", include_raw=True)
         try:
             result = await structured.ainvoke(msgs)
+            # include_raw envelope (rule 7c, #63): a dict carrying a 'parsed'
+            # key is the raw envelope — its parsed value is the report, its
+            # raw response feeds the classifier, its parsing_error (if any) is
+            # treated as the exception it replaces. Anything else is the
+            # directly-parsed value (older stubs, direct pydantic results).
+            if isinstance(result, dict) and "parsed" in result:
+                parsing_error = result.get("parsing_error")
+                raw = result.get("raw")
+                result = result.get("parsed")
+                if parsing_error is not None:
+                    reason = str(parsing_error)
+                elif result is None:
+                    reason = classify_empty_result(raw)
             if result is not None:
                 if report_fields(result)[2]:
                     return result
@@ -669,7 +713,8 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
                               "copy unchanged sections verbatim. Produce the "
                               "complete updated_wiki now.")
             else:
-                reason = "empty result"
+                if reason is None:
+                    reason = "empty result"
         except Exception as e:  # noqa: BLE001
             reason = str(e)
         print(f"[patrol] reporting pass attempt {attempt} failed ({reason})",
@@ -1401,7 +1446,8 @@ def wiki_churn(revisions: list[str]) -> list[str] | None:
 # ---- working-set budget (wiki-memory.md rules 28-29, #40; ADR 0017) ----
 # The wiki is a working set, not a log: growth taxes every patrol (the wiki
 # is injected whole into the prompt and re-emitted whole by the shape pass
-# under max_tokens), while the wiki repo already retains every accepted
+# under its completion-token bound, REPORT_MAX_TOKENS), while the wiki repo
+# already retains every accepted
 # write. So the Anomaly log — append-only by nature — gets the mechanical
 # bound, enforced by the process the way expiry is (ADR 0014's rationale:
 # models are unreliable at self-limiting bookkeeping), and everything else
@@ -1687,14 +1733,18 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
         f"returns, stop exploring and write your final summary."
     )
 
-    # Two models, two bounds (rule 8a, #49; ADR 0018): the request timeout is a
-    # client-level property in langchain-openai, so the per-call-shape bounds mean
-    # two ChatOpenAI instances from the same make_model seam — the agent's at the
-    # exploration bound (hung endpoints fail snappily) and the shape pass's at the
-    # reporting bound (the structured call carries the whole conversation and
-    # legitimately runs minutes; the repair pass reuses the shape instance).
-    model = make_model(timeout=REQUEST_TIMEOUT)
-    shape_model = make_model(timeout=REPORT_TIMEOUT)
+    # Two models, two bounds (rules 8a + 8b, #49/#63; ADRs 0018 + 0021): the
+    # request timeout and the completion-token bound are both client-level
+    # properties in langchain-openai, so the per-call-shape bounds mean two
+    # ChatOpenAI instances from the same make_model seam — the agent's at the
+    # exploration bounds (hung endpoints fail snappily, runaway turns fail
+    # cheaply) and the shape pass's at the reporting bounds (the structured
+    # call carries the whole conversation and must emit the entire wiki,
+    # reasoning tokens included — legitimately running minutes and ~20k
+    # tokens on reasoning-capable models; the repair pass reuses the shape
+    # instance).
+    model = make_model(timeout=REQUEST_TIMEOUT, max_tokens=REQUEST_MAX_TOKENS)
+    shape_model = make_model(timeout=REPORT_TIMEOUT, max_tokens=REPORT_MAX_TOKENS)
     _disable_default_subagent(model)
     # No response_format here: an in-agent ToolStrategy forces tool_choice="any" on
     # every turn, which removes the model's natural stopping signal (GLM under it

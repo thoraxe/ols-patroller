@@ -8,7 +8,7 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
 | Symbol | Responsibility |
 |---|---|
 | `REPORT_CONTRACT` | Instructions appended for the reporting pass (field semantics, wiki skeleton format: frontmatter keys, section set, entry metadata line [DONE: #5]; the Watch-list recheck requirement + its tool-argument form [DONE: #6]; the staleness clock's model-facing half — `verified_patrol` is process-stamped, `last_verified` advances only on actual re-verification, unverified watching entries auto-expire [DONE: #7]; the working-set expectations — the wiki is a working set (git history is the archive), summarize and prune within the soft character budget, the Anomaly log keeps the last `WIKI_ANOMALY_KEEP` closed entries [DONE: #40]; the wiki-required instruction — `updated_wiki` is required on every report, full content even when nothing needs changing, an empty one is never a valid answer [DONE: #51]) |
-| `shape_report` | Tool-free structured-output pass with one schema retry; `repair=(rejected_wiki, errors)` re-invokes it as the wiki-validation repair pass [DONE: #5]; a parsed result with an empty `updated_wiki` is a failed attempt — retried with a corrective message naming it, a still-empty retry returns the report [DONE: #51]; a `None`/unparsed result's failure reason is classified from the raw response (`classify_empty_result`: truncated-at-max_tokens vs no-tool-call) [PLANNED: #63] |
+| `shape_report` | Tool-free structured-output pass with one schema retry; `repair=(rejected_wiki, errors)` re-invokes it as the wiki-validation repair pass [DONE: #5]; a parsed result with an empty `updated_wiki` is a failed attempt — retried with a corrective message naming it, a still-empty retry returns the report [DONE: #51]; a `None`/unparsed result's failure reason is classified from the raw response (`classify_empty_result`: truncated-at-max_tokens vs no-tool-call) [DONE: #63] |
 | `report_fields` | Normalizes the result (pydantic model or dict) into plain data |
 | `notify` | Console `🔔 NOTIFY` + optional Slack webhook post |
 | `run_patrol` (tail) | Validates the report's wiki against the skeleton (one repair pass on failure, `validate_wiki`), delivers findings/notifications, expires stale watch-list entries (`expire_stale_entries`) [DONE: #7], compacts the Anomaly log to its keep budget (`compact_anomaly_log`) [DONE: #40], stamps the frontmatter (`stamp_wiki`), then warns on soft-budget overshoot (`wiki_budget_warnings` on the final wiki, stderr — post-stamp, rule 29) [DONE: #40], writes the wiki atomically, commits + pushes it (wiki git persistence — `project-structure.md`) [#3: DONE; validation/repair/stamp: DONE: #5]; an empty `updated_wiki` on arrival (post-retry) logs one stderr warning naming it before delivery — the no-op is never silent [DONE: #51] |
@@ -37,7 +37,7 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
    `empty result (truncated at max_tokens)` vs `empty result (no tool
    call)`, by the pure `classify_empty_result` (rule 7c); exceptions and
    structured-output parsing errors keep their own message as the reason
-   [PLANNED: #63].
+   [DONE: #63].
 4. `report_fields` normalizes (pydantic → `model_dump`; dict → `.get()` with falsy
    notifications filtered).
 5. Wiki gate (#5): a non-empty `updated_wiki` is checked by `validate_wiki`
@@ -91,7 +91,7 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
   (`reporting-notifications.md` rule 8a; see `agent-engine.md`)
   [DONE: #49 — was one shared instance] — and in completion-token bound:
   exploration 16000, structured calls 64000
-  (`reporting-notifications.md` rule 8b) [PLANNED: #63 — was one flat
+  (`reporting-notifications.md` rule 8b) [DONE: #63 — was one flat
   16000].
 
 ## Integration Points
@@ -134,7 +134,7 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
   `include_raw=True` changes how the pass observes a failure, never what
   it does about one — the retry, the corrective message, and the
   keep-old-wiki outcomes are untouched; only the reason string in the
-  attempt-failure log line gains its cause [PLANNED: #63]. Envelope
+  attempt-failure log line gains its cause [DONE: #63]. Envelope
   handling is defensive, like `report_fields`: a result that is a dict
   carrying a `parsed` key is the include_raw envelope (its `parsed` is
   the report, its `raw` feeds the classifier); anything else is the
