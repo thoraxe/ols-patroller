@@ -20,13 +20,17 @@ parser never enforces — findings survive a wiki-omitting parse).
 
 Driven here against `shape_report` directly with a stub structured
 model; the wiring-level e2e (warning, no write, findings preserved)
-lives in test_patrol_deepagents.py.
+lives in test_patrol_deepagents.py. The empty-result reason
+classification (#63, rule 7c) is also driven here: the pure classifier
+matrix over fake raw responses, and the shape pass's attempt-failure
+log lines carrying the classified reason.
 
 Run: uv run --group dev pytest tests/ -q
 """
 import asyncio
 
 import patrol
+from langchain_core.messages import AIMessage
 
 
 # ------------------------------------------------------ contract pins
@@ -45,14 +49,19 @@ def test_report_contract_requires_the_wiki():
 class _StubShapeModel:
     """A model stub for shape_report: with_structured_output returns a
     structured runnable whose ainvoke serves scripted results (an entry
-    may be an exception, raised) and records every prompt it received."""
+    may be an exception, raised) and records every prompt it received.
+    It accepts (and records) the include_raw kwarg of #63 — the pass's
+    observability seam. A served dict with a "parsed" key is an
+    include_raw envelope; anything else is a directly-parsed result."""
 
     def __init__(self, results):
         self.results = list(results)
         self.prompts = []
+        self.include_raw = []
 
-    def with_structured_output(self, schema, method=None):
+    def with_structured_output(self, schema, method=None, include_raw=None):
         stub = self
+        stub.include_raw.append(include_raw)
 
         class _Structured:
             async def ainvoke(self, msgs):
@@ -144,3 +153,75 @@ def test_parse_failure_keeps_the_generic_retry_message():
     assert result.updated_wiki == "full wiki"
     assert len(stub.prompts) == 2
     assert "not a valid PatrolReport" in stub.prompts[1][-1]["content"]
+
+
+# --------------------------------------- empty-result reasons (#63, rule 7c)
+
+def _raw(finish_reason, output_tokens):
+    """A fake raw model response in langchain's message shape: the finish
+    reason lives in response_metadata, the completion-token count (reasoning
+    included) in usage_metadata's output_tokens."""
+    return AIMessage(
+        content="",
+        response_metadata={"finish_reason": finish_reason},
+        usage_metadata={"input_tokens": 43_500, "output_tokens": output_tokens,
+                        "total_tokens": 43_500 + output_tokens},
+    )
+
+
+def _envelope(raw, parsed=None, parsing_error=None):
+    """An include_raw structured-output envelope: the pass observes the raw
+    response alongside the (missing) parse."""
+    return {"raw": raw, "parsed": parsed, "parsing_error": parsing_error}
+
+
+def test_classify_empty_result_matrix():
+    """Rule 7c: the pure classifier over the raw response — truncated at
+    max_tokens (finish_reason 'length', or the completion-token count
+    reached the bound) vs no tool call (everything else)."""
+    classify = patrol.classify_empty_result
+    # The #63 root cause, verbatim shape: all tokens spent reasoning.
+    assert classify(_raw("length", 16_000)) == \
+        "empty result (truncated at max_tokens)"
+    # Tokens at the bound even with a non-length finish reason (the
+    # bound in force is the parameter, here the exploration one).
+    assert classify(_raw("stop", 16_000), max_tokens=16_000) == \
+        "empty result (truncated at max_tokens)"
+    # Under the bound, finished, no tool call emitted.
+    assert classify(_raw("stop", 200)) == "empty result (no tool call)"
+    # The bound is a parameter — the reporting bound is the default.
+    assert classify(_raw("stop", 64_000)) == \
+        "empty result (truncated at max_tokens)"
+    assert classify(_raw("stop", 64_000), max_tokens=128_000) == \
+        "empty result (no tool call)"
+    # Missing/garbled metadata defaults to no-tool-call, never crashes.
+    assert classify(AIMessage(content="")) == "empty result (no tool call)"
+
+
+def test_shape_pass_classifies_the_empty_result_reason(capsys):
+    """Rule 7c: a None parse invoked with include_raw=True — the
+    attempt-failure log line names the cause, on every attempt, and the
+    pass still returns None only when nothing parsed."""
+    stub = _StubShapeModel([_envelope(_raw("length", 64_000)),
+                            _envelope(_raw("stop", 100))])
+    result = _shape(stub)
+    assert result is None                      # nothing parsed, twice
+    assert len(stub.prompts) == 2              # the one-retry bound holds
+    assert stub.include_raw == [True, True]    # invoked with the raw envelope
+    err = capsys.readouterr().err
+    assert "attempt 1 failed (empty result (truncated at max_tokens))" in err
+    assert "attempt 2 failed (empty result (no tool call))" in err
+
+
+def test_shape_pass_parsing_error_keeps_its_message(capsys):
+    """Rule 7c: a parsing error reported in the envelope (rather than
+    raised) is treated as the exception it replaces — its message is the
+    reason, not a classified guess."""
+    stub = _StubShapeModel([
+        _envelope(_raw("stop", 100), parsing_error=ValueError("bad tool args"),
+                  ),
+        _report("full wiki")])
+    result = _shape(stub)
+    assert result.updated_wiki == "full wiki"
+    err = capsys.readouterr().err
+    assert "attempt 1 failed (bad tool args)" in err

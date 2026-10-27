@@ -108,6 +108,30 @@ in `how/reporting-pipeline.md`.
     when no attempt parsed (rule 7's total failure): an empty-wiki
     attempt followed by an exception still delivers the parsed report's
     findings with the empty-wiki warning.
+7c. **Visible empty-result reasons** [DONE: #63]. A failed attempt's
+    log line names its cause. The pass invokes the structured output with
+    `include_raw=True`, so a `None`/unparsed result carries the raw model
+    response — and the reason string in the attempt-failure log line
+    (`[patrol] reporting pass attempt N failed (<reason>)`, rules 7/7b)
+    is derived from it by a pure classifier,
+    `classify_empty_result(raw, *, max_tokens=REPORT_MAX_TOKENS)`:
+    - `empty result (truncated at max_tokens)` — the raw response's
+      `finish_reason` is `"length"`, or its completion-token count
+      (`usage_metadata`'s output tokens, reasoning included) reached the
+      bound: the model ran out of budget before emitting the tool call
+      (the #63 frozen-wiki root cause — on a reasoning model the entire
+      combined reasoning+output budget can be spent thinking).
+    - `empty result (no tool call)` — the model finished
+      (`finish_reason` anything else, tokens under the bound) without
+      emitting the PatrolReport tool call.
+    The classifier is pure (no I/O, no model calls) and duck-typed over
+    the raw message (`response_metadata["finish_reason"]`,
+    `usage_metadata["output_tokens"]`). Exceptions keep today's behavior
+    — the reason is the exception's string — and a structured-output
+    parsing error reported in the raw envelope (rather than raised) is
+    treated as the exception it replaces. The empty-wiki classification
+    (rule 7b) is untouched: a parsed report with an empty wiki keeps its
+    `empty wiki` reason.
 8. A budget-cut report must cover only what was actually observed; the pass is told
    which commands never executed.
 8a. **Per-call-shape request bounds** [DONE: #49]. The two call shapes
@@ -117,13 +141,32 @@ in `how/reporting-pipeline.md`.
     while this pass and its repair pass (rule 7a) are bounded at
     `REPORT_TIMEOUT` (900 s) — the single tool-free structured call
     carries the entire patrol conversation (real-run evidence: ~100k
-    tokens in, up to 16k out) and legitimately runs minutes on
+    tokens in, up to 16k out at the time — 64k since #63, rule 8b) and
+    legitimately runs minutes on
     reasoning-capable models. A reporting pass that cannot finish under
     the bound never writes the wiki, so the next patrol re-explores just
     as hard and the patroller never converges its memory — a fresh
     cluster never bootstraps; the shape pass therefore gets the headroom
     the exploration turns do not need (ADR
     `decisions/0018-reporting-pass-own-request-bound.md`).
+8b. **Per-call-shape completion-token bounds** [DONE: #63]. The two
+    call shapes carry different `max_tokens` bounds too, both hard-coded
+    constants (not env-configurable): exploration turns keep
+    `REQUEST_MAX_TOKENS` (16000 — turns are small), while this pass and
+    its repair pass (rule 7a) are bounded at `REPORT_MAX_TOKENS`
+    (64000). The shape pass must emit the entire wiki — ~15 KB of
+    markdown — in one structured response, and on a reasoning model the
+    reasoning tokens come out of the same `max_tokens` allowance
+    (real-run evidence, the frozen-wiki root cause: a 43.5k-token report
+    prompt spent all 16000 completion tokens reasoning,
+    `finish_reason=length`, zero content, twice per patrol — no wiki
+    write for ~14 patrols; the same run with a 64k reporting budget
+    completed at ~20k completion tokens and committed). `max_tokens` is
+    a client-level property like the timeout, so it parametrizes the
+    same `make_model` seam (default the exploration bound; the shape
+    pass passes the reporting bound) — the reporting model carries both
+    reporting bounds (ADR
+    `decisions/0021-reporting-pass-own-token-bound.md`).
 
 ### Delivery
 
@@ -157,6 +200,7 @@ in `how/reporting-pipeline.md`.
 
 | Ticket | Summary |
 |---|---|
+| ~~#63~~ | ~~Per-call-shape completion-token bounds + visible empty-result reasons (rules 7c + 8b): exploration `REQUEST_MAX_TOKENS` 16000, structured reporting/repair calls `REPORT_MAX_TOKENS` 64000 through the `make_model` seam; the attempt-failure log line names its cause (`truncated at max_tokens` vs `no tool call`) via a pure classifier over the raw response. Impl commit also syncs `AGENTS.md`'s test list and the stale `max_tokens` prose in `patrol.py`'s code comments (e.g. the working-set comment near the shape-pass budget)~~ |
 | ~~#51~~ | ~~Empty PatrolReport (rules 5 + 7b): the report contract requires `updated_wiki` on every report; an empty one is a failed attempt — one named corrective retry, then findings-only delivery with a stderr warning, wiki unchanged. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#49~~ | ~~Per-call-shape request bounds (rule 8a): exploration turns `REQUEST_TIMEOUT` 300 s, structured reporting/repair calls `REPORT_TIMEOUT` 900 s — two `make_model` instances through the same seam; the specced constants in `agent-engine.md` / `system-overview.md` updated to the split, bounds pinned by test. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | #9 | Notification dedup: notify on state change, not every patrol — new entry, severity change/escalation, or resolution notify; standing unchanged entries stay wiki-only; optional periodic digest for long-unfixed entries |

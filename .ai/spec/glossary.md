@@ -120,8 +120,10 @@ redefined here.
   compounding wiki (#5–#8, #20, #39, #40), v0.2.1 real-cluster validation
   fixes (#49: per-call-shape request bounds; #51: empty-report
   classification; #50: one event loop per loop-mode process), v0.3 operational
-  hardening (#10 plus #9's digest), future (#12–#16, #41). Plans live in
+  hardening (#10 plus #9's digest and #63's reporting token bound + visible
+  empty-result reasons), future (#12–#16, #41). Plans live in
   GitHub issues; #9/#11 were promoted into v0.1 and #20 slotted into v0.2
   after the first in-cluster acceptance run (PR #29 discussion); #39–#41
   were filed from the #5 spec review (PR #38 discussion); #49–#51 were
-  filed from the v0.2 real-cluster validation runs.
+  filed from the v0.2 real-cluster validation runs; #63 was filed from the
+  same runs and slotted into v0.3.

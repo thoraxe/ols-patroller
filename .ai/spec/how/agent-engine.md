@@ -7,7 +7,7 @@ gotchas an agent must know before touching this code.
 
 | Symbol | Responsibility |
 |---|---|
-| `make_model` | `ChatOpenAI` (any OpenAI-compatible endpoint; temp 0.3, max_tokens 16000; `timeout` parametrized per call shape — `REQUEST_TIMEOUT` 300 s default, `REPORT_TIMEOUT` 900 s for the shape pass) [DONE: #49] |
+| `make_model` | `ChatOpenAI` (any OpenAI-compatible endpoint; temp 0.3; `timeout` and `max_tokens` parametrized per call shape — `REQUEST_TIMEOUT` 300 s / `REQUEST_MAX_TOKENS` 16000 defaults, `REPORT_TIMEOUT` 900 s / `REPORT_MAX_TOKENS` 64000 for the shape pass) [DONE: #49; max_tokens split: DONE: #63 — was a flat 16000] |
 | `_disable_default_subagent` | Registers a `HarnessProfile` disabling deepagents' general-purpose `task` subagent |
 | `make_kubectl_tool` | Wraps the guarded `kubectl_readonly` as the single langchain tool |
 | `run_patrol` | Builds the agent, streams it, accounts tokens, handles budget cut, invokes the shape pass |
@@ -81,13 +81,21 @@ shape pass over the accumulated message list.
   a scripted wire-level endpoint behind the `make_model` seam (see
   `project-structure.md` and `decisions/0009-wire-level-fake-endpoint-e2e.md`); it
   exists to catch deepagents/langchain drift on upgrades [DONE: #4].
-- **Two models, two bounds** (#49): the request timeout is a client-level
-  property in `langchain-openai`, so the per-call-shape bounds
-  (`reporting-notifications.md` rule 8a) mean two `ChatOpenAI` instances:
-  `run_patrol` builds the agent's with `make_model(timeout=REQUEST_TIMEOUT)`
-  and the shape pass's with `make_model(timeout=REPORT_TIMEOUT)` (the
-  repair call reuses the shape instance). The e2e seam passes the bound
-  through — `ScriptedEndpoint.model` accepts (and ignores) the `timeout`
-  kwarg. Real-run evidence: a 59-tool-call fresh-cluster patrol's
+- **Two models, two bounds** (#49; #63 extends one layer down): the request
+  timeout and the completion-token bound are both client-level properties in
+  `langchain-openai`, so the per-call-shape bounds
+  (`reporting-notifications.md` rules 8a + 8b) mean two `ChatOpenAI`
+  instances: `run_patrol` builds the agent's with
+  `make_model(timeout=REQUEST_TIMEOUT)` (max_tokens defaults to
+  `REQUEST_MAX_TOKENS`) and the shape pass's with
+  `make_model(timeout=REPORT_TIMEOUT, max_tokens=REPORT_MAX_TOKENS)` (the
+  repair call reuses the shape instance). The e2e seam passes the bounds
+  through — `ScriptedEndpoint.model` accepts (and ignores) the `timeout` and
+  `max_tokens` kwargs. Real-run evidence: a 59-tool-call fresh-cluster patrol's
   reporting call timed out at 300 s on attempt 1 and succeeded on attempt
-  2; local shape passes ran 4–5 minutes [DONE: #49].
+  2; local shape passes ran 4–5 minutes [DONE: #49]. Token-bound evidence:
+  a 43.5k-token report prompt spent all 16000 completion tokens on
+  reasoning (`finish_reason=length`, zero content) on both attempts — no
+  wiki write for ~14 patrols; the same run at a 64k reporting budget
+  completed at ~20k completion tokens and committed
+  [DONE: #63].

@@ -52,6 +52,10 @@ Covers (safety-model.md rules 6b-6c, wiki-memory.md rules 4f and 15-19):
 - request-bound wiring of #49 (reporting-notifications.md rule 8a):
   run_patrol builds the agent's model at the exploration bound and the
   shape pass's at the reporting bound, both through the make_model seam
+- token-bound wiring of #63 (reporting-notifications.md rule 8b): the
+  same two make_model calls carry the per-call-shape max_tokens too —
+  the agent's at the exploration bound, the shape pass's at the
+  reporting bound
 - empty-wiki classification wiring of #51 (reporting-notifications.md
   rule 7b): a wiki-less report is retried once with a corrective message
   naming it; a good retry recovers; a still-empty retry delivers
@@ -165,11 +169,13 @@ class ScriptedEndpoint:
             "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
         })
 
-    def model(self, timeout: float | None = None) -> ChatOpenAI:
+    def model(self, timeout: float | None = None,
+             max_tokens: int | None = None) -> ChatOpenAI:
         """A real ChatOpenAI wired to this endpoint — the make_model seam.
-        Accepts (and ignores) the request-bound kwarg of #49: the bound is
-        client-side config, invisible on the wire, so the fake endpoint
-        never enforces it — the make_model call itself is the assertion
+        Accepts (and ignores) the per-call-shape bound kwargs of #49/#63
+        (timeout, max_tokens): both are client-side config, invisible on
+        the wire, so the fake endpoint never enforces them — the
+        make_model call itself is the assertion
         surface."""
         transport = httpx.MockTransport(self.handler)
         return ChatOpenAI(
@@ -950,6 +956,26 @@ def test_repair_reuses_the_shape_pass_model(tmp_path, monkeypatch, capsys):
     assert len(endpoint.shape_requests) == 2      # the repair pass ran
     assert bounds == [patrol.REQUEST_TIMEOUT, patrol.REPORT_TIMEOUT]
     assert "repaired marker" in wiki.read_text()
+
+
+def test_shape_pass_model_carries_the_reporting_token_bound(tmp_path, monkeypatch, capsys):
+    """#63 rule 8b wiring: the same two make_model calls, both bounds —
+    the agent's model carries the exploration timeout AND token bound, the
+    shape pass's the reporting pair."""
+    endpoint = ScriptedEndpoint(report=REPORT)
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    calls = []
+    real_model = endpoint.model
+
+    def recording_model(**kwargs):
+        calls.append((kwargs.get("timeout"), kwargs.get("max_tokens")))
+        return real_model(**kwargs)
+
+    run_patrol_cli(monkeypatch, endpoint, wiki, model_factory=recording_model)
+    # order pins the assignment: agent first, shape pass second — a swap or
+    # a missing token bound fails
+    assert calls == [(patrol.REQUEST_TIMEOUT, patrol.REQUEST_MAX_TOKENS),
+                     (patrol.REPORT_TIMEOUT, patrol.REPORT_MAX_TOKENS)]
 
 
 # --------------------------------------------- empty-wiki classification (#51)

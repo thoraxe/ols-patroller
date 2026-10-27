@@ -579,8 +579,10 @@ shape.
 
 The wiki is a **working set**, not a log [DONE: #40]: growth taxes every
 patrol — the wiki is injected whole into the prompt (rule 3) and re-emitted
-whole by the shape pass under `max_tokens` (today's de-facto ceiling: an
-over-long wiki fails the reporting pass rather than being trimmed) — while
+whole by the shape pass under its completion-token bound
+(`REPORT_MAX_TOKENS` 64000, `reporting-notifications.md` rule 8b
+[DONE: #63]; before it, the flat 16000 was the de-facto ceiling) — an
+over-long wiki fails the reporting pass rather than being trimmed — while
 the wiki repo already retains every accepted write (rule 4d). The stance:
 **git history is the archive; the wiki is the working set** (ADR
 `decisions/0017-working-set-wiki-not-log.md`). The Anomaly log is append-only
@@ -644,9 +646,13 @@ load-bearing constraint of #5).
       prune a burst of legacy entries at once — one line each, once,
       honest.
 29. **Soft length budget.** A whole-wiki character budget `WIKI_CHAR_BUDGET`
-    (20,000 — roughly a third of the shape pass's 16,000-token output
-    ceiling, leaving room for findings and notifications in the same
-    structured output; the unit is characters, the wiki being UTF-8 text).
+    (20,000 — roughly a third of the shape pass's completion-token output
+    ceiling as it stood at #40's writing; the ceiling has since been raised
+    to `REPORT_MAX_TOKENS` 64,000 for the shape pass
+    (`reporting-notifications.md` rule 8b) [DONE: #63], so the budget is
+    now set by drift-alarm judgment, not output-ceiling arithmetic — leaving
+    room for findings and notifications in the same structured output
+    regardless; the unit is characters, the wiki being UTF-8 text).
     **Soft**: `validate_wiki` (rule 15) never judges length, and a
     structurally valid over-budget wiki is accepted, written, committed,
     and pushed exactly like any other — the anomaly-log budget (rule 28)
