@@ -10,7 +10,8 @@ wiki persists across pod restarts) is a documented procedure —
 .ai/spec/what/in-cluster-deployment.md rule 17 — not part of this suite.
 
 Contract: .ai/spec/what/in-cluster-deployment.md [PLANNED: #2]
-[deploy-key wiring: rules 16a-16d, PLANNED: #39].
+[deploy-key wiring: rules 16a-16d, PLANNED: #39]
+[pull policy: rule 8a, PLANNED: #61].
 
 Run: uv run --group dev pytest tests/ -q
 """
@@ -292,6 +293,36 @@ def test_image_key_and_kustomize_override():
     assert entry.get("newTag") == "main", (
         "the images override must default to the rolling :main tag (rule 8)"
     )
+
+
+def test_container_pulls_always_for_the_rolling_tag():
+    # Rule 8a (#61): the deployed tag is rolling (:main) — under the
+    # k8s-default IfNotPresent, every rollout restart on a node with the
+    # tag cached is a silent no-op that keeps the stale image.
+    assert _container().get("imagePullPolicy") == "Always", (
+        "the patrol container must set imagePullPolicy: Always while the "
+        "kustomization tag is rolling (:main) — IfNotPresent makes every "
+        "rollout restart silently keep the cached stale image (rule 8a, #61)"
+    )
+
+
+def test_mutable_image_tag_requires_always_pull_policy():
+    # Rule 8a (#61), the invariant rather than the current value: whenever
+    # the kustomization images tag is mutable (not a sha-… pin, not a
+    # digest), the container must pull Always. Pinning the tag is the
+    # other legal form — an operator who pins may drop the policy.
+    entry = next((e for e in (_kustomization().get("images") or [])
+                  if e.get("name") == IMAGE_KEY), None)
+    assert entry, "the kustomization must carry the images override (rule 8)"
+    tag = str(entry.get("newTag") or "")
+    digest = str(entry.get("digest") or "")
+    pinned = bool(digest) or tag.startswith("sha-") or tag.startswith("sha256:")
+    if not pinned:
+        assert _container().get("imagePullPolicy") == "Always", (
+            f"the kustomization tag {tag!r} is mutable — the container must "
+            f"set imagePullPolicy: Always (rule 8a, #61), or the tag must "
+            f"be pinned to sha-…/digest"
+        )
 
 
 def test_args_loop_interval_wiki():

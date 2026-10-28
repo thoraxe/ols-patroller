@@ -46,3 +46,4 @@ Date: YYYY-MM-DD · Status: proposed | accepted | superseded by NNNN
 | [0019](0019-empty-wiki-is-a-failed-report.md) | An empty `updated_wiki` is a failed report, not a no-op signal |
 | [0020](0020-one-event-loop-per-process.md) | One event loop per process in loop mode |
 | [0021](0021-reporting-pass-own-token-bound.md) | Per-call-shape completion-token bounds: 16k exploration, 64k structured reporting |
+| [0022](0022-minimal-write-advances-the-clock.md) | The minimal-write fallback advances the patrol clock |

@@ -60,6 +60,12 @@ Covers (safety-model.md rules 6b-6c, wiki-memory.md rules 4f and 15-19):
   rule 7b): a wiki-less report is retried once with a corrective message
   naming it; a good retry recovers; a still-empty retry delivers
   findings, writes nothing, and warns on stderr
+- still-empty safety net wiring of #60 (wiki-memory.md rules 30-32): the
+  wiki-repair pass's prompt carries the old wiki verbatim plus the
+  observed findings and its own findings are never delivered; a valid
+  repaired wiki writes through the standard tail; a wiki-repair failure
+  minimal-writes the old wiki with the clock advanced; a legacy
+  no-frontmatter wiki writes nothing at all
 
 The `--raw` guard refusal is not e2e-covered: it is unit-checked in
 test_kubectl_guard.py (kubectl-guard.md rule 6a, #11).
@@ -1016,23 +1022,29 @@ def test_empty_wiki_report_retries_and_recovers(tmp_path, monkeypatch, capsys):
 
 def test_still_empty_wiki_warns_and_preserves_findings(tmp_path, monkeypatch, capsys):
     """#51 rule 7b wiring: when the retry also omits the wiki, the report is
-    not discarded — findings and notifications deliver, nothing is written
-    or committed, and one stderr warning names the empty wiki: the no-op is
-    visible, never silent."""
+    not discarded — findings and notifications deliver, the rule-7b warning
+    fires first, and then the #60 safety net takes over: the wiki-repair
+    pass runs (with its own retry), and its double failure minimal-writes
+    the stamped seed (a fresh deployment — no file on disk)."""
     endpoint = ScriptedEndpoint(turns=NATURAL_TURNS[:1],
-                                reports=[EMPTY_WIKI_REPORT, EMPTY_WIKI_REPORT])
+                                reports=[EMPTY_WIKI_REPORT, EMPTY_WIKI_REPORT,
+                                         EMPTY_WIKI_REPORT, EMPTY_WIKI_REPORT])
     wiki = tmp_path / "wiki" / "cluster-wiki.md"
     run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
 
-    assert len(endpoint.shape_requests) == 2     # the retry happened
+    # report + empty-wiki retry + wiki-repair pass + its empty-wiki retry
+    assert len(endpoint.shape_requests) == 4
     captured = capsys.readouterr()
     assert "control-plane operators degraded" in captured.out   # findings deliver
     assert "🔔 NOTIFY: control-plane operators degraded" in captured.out
-    assert not wiki.exists()                     # nothing written
-    assert commit_count(wiki.parent) == 0        # nothing committed
-    # rule 7b's verbatim warning — the no-op is visible, never silent
+    # rule 7b's verbatim warning still fires first (rule 32) — visible, never silent
     assert ("[patrol] WARNING: reporting pass returned an empty updated_wiki; "
             "keeping the previous wiki, writing nothing") in captured.err
+    # rule 31's file-absent clause: the fallback stamps-and-writes the seed
+    assert "minimal write" in captured.out
+    assert wiki.exists()
+    assert frontmatter(wiki.read_text())["patrol_count"] == 1
+    assert commit_count(wiki.parent) == 1
 
 
 def test_repair_that_stays_wiki_less_falls_to_keep_old_wiki(tmp_path, monkeypatch, capsys):
@@ -1057,3 +1069,120 @@ def test_repair_that_stays_wiki_less_falls_to_keep_old_wiki(tmp_path, monkeypatc
     assert not wiki.exists()                      # the old wiki stands
     assert "wiki update rejected" in captured.err # rule 16's warning
     assert "empty updated_wiki" not in captured.err  # NOT rule 7b's
+
+
+# ------------------------------------------- still-empty safety net (#60)
+
+# The wiki-repair pass's report: only its wiki is used — its findings and
+# notifications are NEVER delivered (the call never saw the cluster).
+WIKI_REPAIR_REPORT = {
+    "findings": [
+        {"severity": "info", "summary": "wiki-repair-only finding",
+         "evidence": "never observed"},
+    ],
+    "notifications": ["wiki-repair-only notification"],
+    "updated_wiki": wiki_text("wiki-repair-marker"),
+}
+
+
+def test_still_empty_runs_the_wiki_repair_pass(tmp_path, monkeypatch, capsys):
+    """#60 rule 30 wiring: after the still-empty outcome (two wiki-less
+    reports) the tail runs one wiki-repair pass whose prompt carries the
+    old wiki verbatim and the observed findings; the observed report's
+    findings deliver (the repair's never do), and the repaired wiki
+    writes through the standard tail."""
+    endpoint = ScriptedEndpoint(turns=NATURAL_TURNS[:1],
+                                reports=[EMPTY_WIKI_REPORT, EMPTY_WIKI_REPORT,
+                                         WIKI_REPAIR_REPORT])
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
+
+    shapes = endpoint.shape_requests
+    assert len(shapes) == 3, (f"expected report + retry + wiki-repair pass, "
+                              f"got {len(shapes)}")
+    prompt = endpoint.last_user_prompt(shapes[2])
+    # the old wiki (the seed — no file on disk) rides verbatim (rule 30)
+    assert "No patrols have run yet." in prompt
+    # the observed report's findings ride (rule 30)
+    assert "control-plane operators degraded" in prompt
+    captured = capsys.readouterr()
+    # the OBSERVED findings deliver; the repair's never do (rule 30)
+    assert "control-plane operators degraded" in captured.out
+    assert "wiki-repair-only finding" not in captured.out
+    assert "wiki-repair-only notification" not in captured.out
+    # rule 7b's warning still fires first (rule 32)
+    assert ("[patrol] WARNING: reporting pass returned an empty updated_wiki; "
+            "keeping the previous wiki, writing nothing") in captured.err
+    # the repaired wiki writes through the standard tail (expire → compact
+    # → stamp → write → commit)
+    assert "wiki-repair-marker" in wiki.read_text()
+    assert frontmatter(wiki.read_text())["patrol_count"] == 1
+    assert commit_count(wiki.parent) == 1
+
+
+def test_wiki_repair_failure_minimal_writes_the_old_wiki(tmp_path, monkeypatch, capsys):
+    """#60 rule 31 wiring: when the wiki-repair pass also comes back
+    wiki-less (after its own retry), the minimal-write fallback runs the
+    accepted-write tail on the old wiki — body preserved, patrol_count
+    advanced, last_patrol refreshed, one commit, one console line."""
+    old = wiki_text("on-disk-marker", patrol_count=3)
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    wiki.parent.mkdir(parents=True)
+    wiki.write_text(old)
+    endpoint = ScriptedEndpoint(turns=NATURAL_TURNS[:1],
+                                reports=[EMPTY_WIKI_REPORT] * 4)
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
+
+    # report + empty-wiki retry + wiki-repair pass + its empty-wiki retry
+    assert len(endpoint.shape_requests) == 4
+    captured = capsys.readouterr()
+    assert "control-plane operators degraded" in captured.out  # findings deliver
+    assert "minimal write" in captured.out                      # rule 32's line
+    written = wiki.read_text()
+    assert "on-disk-marker" in written          # the old body stands (rule 31)
+    fm = frontmatter(written)
+    assert fm["patrol_count"] == 4              # the clock advanced (rule 31)
+    assert fm["last_patrol"] != "2026-10-16T00:00:00+00:00"  # refreshed
+    assert fm["cluster_id"] == "e2e-cluster"    # stamped (rule 17)
+    assert commit_count(wiki.parent) == 1
+
+
+def test_minimal_write_on_a_legacy_wiki_writes_nothing(tmp_path, monkeypatch, capsys):
+    """#60 rule 31's legacy clause: a wiki with no frontmatter block has
+    no clock to advance — the fallback is a no-op and the keep-old-wiki
+    outcome stands (rule 4), the rule-7b warning alone."""
+    legacy = "# Just markdown\n\n## Topology\n- old notes\n"
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    wiki.parent.mkdir(parents=True)
+    wiki.write_text(legacy)
+    endpoint = ScriptedEndpoint(turns=NATURAL_TURNS[:1],
+                                reports=[EMPTY_WIKI_REPORT] * 4)
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
+
+    captured = capsys.readouterr()
+    assert "control-plane operators degraded" in captured.out
+    assert wiki.read_text() == legacy           # untouched (rule 31)
+    assert commit_count(wiki.parent) == 0
+
+
+def test_minimal_write_on_a_fresh_deployment_writes_the_stamped_seed(
+        tmp_path, monkeypatch, capsys):
+    """#60 rule 31's file-absent clause + rule 14a's exception: a brand-new
+    deployment whose first patrol double-fails minimal-writes the seed —
+    stamped (gate-clean content, honest clock), the one case where the
+    seed reaches disk."""
+    endpoint = ScriptedEndpoint(turns=NATURAL_TURNS[:1],
+                                reports=[EMPTY_WIKI_REPORT] * 4)
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
+
+    assert len(endpoint.shape_requests) == 4
+    captured = capsys.readouterr()
+    assert "minimal write" in captured.out
+    assert wiki.exists(), "the stamped seed must be written (rule 31)"
+    written = wiki.read_text()
+    assert "No patrols have run yet." in written   # the seed body
+    fm = frontmatter(written)
+    assert fm["patrol_count"] == 1                  # stamped, honest clock
+    assert fm["cluster_id"] == "e2e-cluster"
+    assert commit_count(wiki.parent) == 1

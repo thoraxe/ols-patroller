@@ -225,3 +225,36 @@ def test_shape_pass_parsing_error_keeps_its_message(capsys):
     assert result.updated_wiki == "full wiki"
     err = capsys.readouterr().err
     assert "attempt 1 failed (bad tool args)" in err
+
+
+# ------------------------------------------- wiki-repair mode (rule 7d, #60)
+
+def test_wiki_repair_mode_carries_old_wiki_and_findings():
+    """Rule 7d (#60): the wiki-repair prompt states the reporting pass
+    could not emit the wiki, carries the old wiki verbatim and the
+    observed findings/notifications, and asks for a minimal merge."""
+    stub = _StubShapeModel([_report("merged wiki")])
+    result = asyncio.run(patrol.shape_report(
+        stub, [{"role": "user", "content": "patrol transcript"}], budget_cut=False,
+        wiki_repair=("OLD WIKI BODY", ["finding one"], ["notify one"])))
+    assert result.updated_wiki == "merged wiki"
+    assert len(stub.prompts) == 1
+    prompt = stub.prompts[0][-1]["content"]
+    assert "OLD WIKI BODY" in prompt, "the old wiki must ride verbatim (rule 7d)"
+    assert "finding one" in prompt, "the observed findings must ride (rule 7d)"
+    assert "notify one" in prompt, "the observed notifications must ride (rule 7d)"
+    assert "minimal" in prompt.lower(), "the ask must be a minimal rewrite (rule 7d)"
+
+
+def test_wiki_repair_mode_empty_wiki_is_retried():
+    """Rule 7d: the mode shares the empty-wiki classification — one named
+    corrective retry before the caller's fallback applies."""
+    stub = _StubShapeModel([_report(""), _report("merged wiki")])
+    result = asyncio.run(patrol.shape_report(
+        stub, [{"role": "user", "content": "patrol transcript"}], budget_cut=False,
+        wiki_repair=("OLD WIKI BODY", [], [])))
+    assert result.updated_wiki == "merged wiki"
+    assert len(stub.prompts) == 2
+    corrective = stub.prompts[1][-1]["content"]
+    assert "updated_wiki" in corrective
+    assert "empty" in corrective.lower()

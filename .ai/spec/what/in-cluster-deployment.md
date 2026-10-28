@@ -86,6 +86,25 @@ layer 3 (RBAC boundary) real, and what the CI-published image
    That entry is the single override point for clusters that must pull from
    elsewhere (private registry, the cluster's internal registry) [DONE:
    #2].
+8a. **Mutable tag, `imagePullPolicy: Always`** [DONE: #61]. The patrol
+   container sets `imagePullPolicy: Always` while the deployed tag is
+   rolling (`:main` — CI republishes it on every merge, rule 8 /
+   `container-image.md` rule 15). A rolling tag under the k8s-default
+   `IfNotPresent` makes every `rollout restart` a silent no-op whenever
+   the node has the tag cached: the rollout succeeds, the pod runs
+   healthy, and the cluster keeps the stale image — exactly how a fixed
+   cluster keeps running a broken build (real-run evidence, #61: a
+   rollout after merging three fixes came up on the pre-fix image; the
+   deployment had to be pinned to a `sha-<full SHA>` tag by hand, and the
+   live Deployment then no longer matched the committed manifest).
+   `Always` costs one registry round-trip per restart and makes the
+   documented release path (rule 17 step 6) actually roll. The invariant
+   is pinned by the static suite (`test_manifests.py`): whenever the
+   kustomization `images:` tag is mutable — not a `sha-…` pin and not a
+   digest — the container must set `imagePullPolicy: Always`. Pinning
+   the tag to `sha-<full SHA>` (or a digest) is the other legal form
+   (immutable, reproducible); an operator who pins may drop the policy
+   back to the default.
 9. The container args are exactly `--loop --interval 21600 --wiki
    /wiki/cluster-wiki.md` (identical to the image's default CMD; stated
    explicitly so the manifests are self-describing) [DONE: #2] [DONE:
@@ -233,7 +252,11 @@ layer 3 (RBAC boundary) real, and what the CI-published image
        across the restart);
     6. updating after a merge: `oc apply -k manifests/ && oc -n ols-patroller
        rollout restart deployment/ols-patroller` (the rolling `:main` tag —
-       an unchanged template alone does not restart the running pod);
+       an unchanged template alone does not restart the running pod)
+       [DONE: #61 — this step's premise is rule 8a: with the rolling
+       `:main` tag the container must pull `Always`, or the restart reuses
+       the node's cached tag and the rollout silently keeps the stale
+       image];
     7. optional, with the deploy-key wiring enabled (rule 16c): the next
        patrol's push lands — the remote's copy of the wiki advances one
        commit. Verify in the git host's web view (the patrol pushes to the
@@ -247,6 +270,9 @@ layer 3 (RBAC boundary) real, and what the CI-published image
 - `manifests/` — the kustomize root (files per rule 1); namespace and object
   names are per-file literals kept consistent by tests (rule 2)
 - kustomization `images:` entry — the image override point (rule 8)
+- container `imagePullPolicy` — `Always` while the deployed tag is rolling
+  (rule 8a); may be dropped when the tag is pinned to `sha-…` or a digest
+  [DONE: #61]
 - `PATROL_CLUSTER_ID` — literal env in the Deployment, edit to the real
   cluster name (rule 10)
 - `PYTHONUNBUFFERED` — literal env `1`; unbuffered stdout so pod logs show
@@ -298,6 +324,7 @@ layer 3 (RBAC boundary) real, and what the CI-published image
 
 | Ticket | Summary |
 |---|---|
+| ~~#61~~ | ~~`imagePullPolicy: Always` on the patrol container while the kustomization tag is rolling (rule 8a), the static-suite invariant (mutable tag → Always; `sha-…`/digest pin is the other legal form), and rule 17 step 6's image-pull premise stated. Impl commit also syncs `AGENTS.md`'s test list~~
 | ~~#2~~ | This file's contract: manifests (rules 1–17) + the CI workflow that publishes the deployed image (`container-image.md` rules 13–16) |
 | ~~#24~~ | `PYTHONUNBUFFERED=1` literal env — unbuffered stdout for pod-log visibility (rule 10a) |
 | ~~#25~~ | Default cadence 6 h: args `--interval 21600` (rule 9), with the image CMD (`container-image.md` rule 9) and the `patrol.py` env default kept identical |

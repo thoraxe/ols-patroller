@@ -39,6 +39,12 @@ spec:
           # Rule 8: literal key, no registry, no tag — the kustomization's
           # images override maps it to the CI-published GHCR image.
           image: ols-patroller
+          # Rule 8a (#61): the kustomization deploys the rolling :main tag —
+          # under the k8s-default IfNotPresent, every `rollout restart` on a
+          # node with the tag cached is a silent no-op that keeps the stale
+          # image. Always pulls on restart; an operator who pins the tag to
+          # sha-…/digest may drop this back to the default.
+          imagePullPolicy: Always
           # Rule 9: identical to the image's default CMD — stated explicitly
           # so the manifests are self-describing.
           args:
