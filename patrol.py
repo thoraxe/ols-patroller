@@ -46,7 +46,7 @@ import shlex
 import subprocess
 import sys
 import time
-from datetime import date, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
@@ -623,8 +623,22 @@ def classify_empty_result(raw, *, max_tokens: int = REPORT_MAX_TOKENS) -> str:
     return "empty result (no tool call)"
 
 
+def _render_observed(items: list) -> str:
+    """Rule 7d (#60): render the observed findings/notifications for the
+    wiki-repair prompt — a bullet per item, a finding dict as
+    '[severity] summary'."""
+    lines = []
+    for item in items:
+        if isinstance(item, dict):
+            lines.append(f"- [{item.get('severity', '?')}] {item.get('summary', '')}")
+        else:
+            lines.append(f"- {item}")
+    return "\n".join(lines) if lines else "- (none)"
+
+
 async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
-                       repair: tuple[str, list[str]] | None = None):
+                       repair: tuple[str, list[str]] | None = None,
+                       wiki_repair: tuple[str, list, list] | None = None):
     """Tool-free structured-output pass over the finished patrol conversation.
 
     Same pattern as the OLS agentic sandbox's "shape pass": the agent explores
@@ -639,6 +653,17 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
     wiki failed skeleton validation and carries the error list and the rejected
     wiki, asking for a corrected PatrolReport. At most one repair pass per
     patrol — the caller owns that bound.
+
+    `wiki_repair=(old_wiki, findings, notifications)` re-invokes this pass as
+    the wiki-repair pass (reporting-notifications.md rule 7d, #60): the user
+    message states the reporting pass could not emit the wiki and carries the
+    old on-disk wiki verbatim plus the observed report's findings and
+    notifications, asking for the old wiki rewritten minimally — the findings
+    merged in, everything else preserved. At most one wiki-repair invocation
+    per patrol — the caller owns that bound; the mode shares everything else
+    (the PatrolReport binding, the internal parse/empty retry of rules 7/7b).
+    The caller never delivers this call's own findings or notifications (it
+    never saw the cluster) — only its wiki is used.
 
     A parsed result whose `updated_wiki` is empty is a failed attempt too
     (reporting-notifications.md rule 7b, #51) — the patrol cannot distinguish
@@ -659,7 +684,7 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
     their own message as the reason. Read-only diagnostics: the retry, the
     corrective message, and the keep-old-wiki outcomes are untouched.
     """
-    if repair is None:
+    if repair is None and wiki_repair is None:
         prefix = ("You are the REPORTING PASS for the cluster patrol recorded above. "
                   "The patrol completed and wrote its final summary. "
                   if not budget_cut else
@@ -667,6 +692,20 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
                   "The patrol was CUT OFF by its step budget mid-exploration; commands "
                   "marked 'not executed' never ran. Report only on what was actually "
                   "observed. ")
+    elif wiki_repair is not None:
+        old_wiki, obs_findings, obs_notifications = wiki_repair
+        prefix = ("You are the REPORTING PASS for the cluster patrol recorded above. "
+                  "The reporting pass could not emit the updated_wiki — it returned "
+                  "an empty one even after its retry. Produce a corrected PatrolReport "
+                  "whose updated_wiki is the old wiki below rewritten MINIMALLY: fold "
+                  "the observed findings in, preserve everything else verbatim.\n\n"
+                  "The old on-disk wiki is:\n\n" + old_wiki + "\n\n"
+                  "The patrol's observed findings were:\n"
+                  + _render_observed(obs_findings)
+                  + "\n\nThe patrol's notifications were:\n"
+                  + _render_observed(obs_notifications)
+                  + "\n\nDo not invent new findings — merge the observed ones above "
+                    "into the old wiki.")
     else:
         rejected_wiki, wiki_errors = repair
         prefix = ("You are the REPORTING PASS for the cluster patrol recorded above. "
@@ -748,19 +787,6 @@ def _is_calendar_date(value: object) -> bool:
         return False
 
 
-def _is_iso_datetime(value: object) -> bool:
-    """Rule 10: an ISO-8601 datetime string, or a YAML-parsed timestamp."""
-    if isinstance(value, (datetime, date)):  # PyYAML typed an unquoted scalar
-        return True
-    if not isinstance(value, str):
-        return False
-    try:
-        datetime.fromisoformat(value)
-        return True
-    except ValueError:
-        return False
-
-
 def _split_frontmatter(content: str) -> tuple[list[str], list[str]] | None:
     """(frontmatter-lines, body-lines), or None when no well-formed block.
 
@@ -799,17 +825,13 @@ def _frontmatter_errors(fm_text: str) -> tuple[list[str], dict | None]:
             errors.append(f"frontmatter: wiki_version must be an integer (got {v!r})")
         elif v != WIKI_VERSION:
             errors.append(f"frontmatter: wiki_version must be {WIKI_VERSION} (got {v!r})")
-    if "cluster_id" in fm:
-        v = fm["cluster_id"]
-        if not isinstance(v, str) or not v:
-            errors.append(f"frontmatter: cluster_id must be a non-empty string (got {v!r})")
-    if "patrol_count" in fm:
-        v = fm["patrol_count"]
-        if isinstance(v, bool) or not isinstance(v, int) or v < 1:
-            errors.append(f"frontmatter: patrol_count must be a positive integer (got {v!r})")
-    if "last_patrol" in fm and not _is_iso_datetime(fm["last_patrol"]):
-        errors.append(f"frontmatter: last_patrol must be an ISO-8601 datetime "
-                      f"(got {fm['last_patrol']!r})")
+    # Rule 10b (#62): the gate does not judge the process-owned values —
+    # cluster_id, patrol_count, and last_patrol pass with any YAML value.
+    # The stamp (rule 17) discards those values before writing, and the
+    # model is told the counters are process-owned (the seed says so), so a
+    # model faithfully echoing the seed's placeholders must not be rejected.
+    # Presence stays checked (a missing key is a malformed skeleton), the
+    # closed key set stays, and wiki_version keeps its value check.
     return errors, fm
 
 
@@ -1832,9 +1854,11 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
     # reporting attempt — shape_report already retried it once with the named
     # corrective. The report is not discarded (a wiki omission must never cost
     # the patrol's observations): its findings and notifications deliver below,
-    # the wiki is left unchanged, and this one stderr warning makes the no-op
-    # visible and countable, never silent.
-    if not new_wiki:
+    # and this one stderr warning makes the no-op visible and countable, never
+    # silent.
+    still_empty = not new_wiki
+    minimal_write = False
+    if still_empty:
         print("[patrol] WARNING: reporting pass returned an empty updated_wiki; "
               "keeping the previous wiki, writing nothing", file=sys.stderr)
 
@@ -1873,6 +1897,36 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
                       "still fails skeleton validation; keeping the previous wiki, "
                       "writing nothing", file=sys.stderr)
                 new_wiki = ""
+
+    # Still-empty safety net (wiki-memory.md rules 30-32, #60; ADR 0022): only
+    # the reporting-pass still-empty outcome triggers it — the rule-18 repair
+    # pass's own wiki-less leg (still_empty False above) keeps its
+    # keep-old-wiki outcome unchanged.
+    if still_empty:
+        # Rule 30: one wiki-repair pass — the old on-disk wiki (the seed when
+        # the file is absent) plus the observed findings/notifications, asking
+        # for a minimal merge. Its own findings/notifications are NEVER
+        # delivered (it never saw the cluster); only its wiki is used, gated
+        # by validate_wiki with no further repair.
+        print("[patrol] wiki-repair pass: reporting pass could not emit the wiki; "
+              "asking for a minimal merge of the findings into the old wiki",
+              file=sys.stderr)
+        repaired = await shape_report(shape_model, messages, budget_cut,
+                                      wiki_repair=(wiki, findings, notifications))
+        if repaired is not None:
+            r_wiki = report_fields(repaired)[2]
+            if r_wiki and not validate_wiki(r_wiki):
+                new_wiki = r_wiki
+        if not new_wiki:
+            # Rule 31: the minimal-write fallback — the accepted-write tail on
+            # the old on-disk wiki verbatim (the seed when the file is absent;
+            # rule 14a's deliberate exception). The stamp makes the clock
+            # honest; the content stays stale. A legacy wiki with no
+            # frontmatter block has no clock to advance: nothing written,
+            # nothing committed, the rule-7b warning alone.
+            if _split_frontmatter(wiki) is not None:
+                new_wiki = wiki
+                minimal_write = True
 
     # Delivery (rule 16): findings and notifications are delivered after the
     # validation/repair decision resolves and before the physical write, so
@@ -1926,6 +1980,11 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
         for warning in wiki_budget_warnings(stamped):
             print(f"[patrol] WARNING: {warning}", file=sys.stderr)
         write_wiki_atomic(wiki_path, stamped)
+        if minimal_write:
+            # Rule 32 (#60): one console line naming the fallback outcome —
+            # wiki housekeeping, never a finding or a notification.
+            print("[patrol] wiki: minimal write — memory content unchanged, "
+                  "patrol clock advanced")
         print(f"[patrol] wiki updated → {wiki_path}")
         if commit_wiki(wiki_path, findings, CLUSTER_ID) and WIKI_REMOTE:
             push_wiki(wiki_path.parent, WIKI_REMOTE)

@@ -1022,23 +1022,29 @@ def test_empty_wiki_report_retries_and_recovers(tmp_path, monkeypatch, capsys):
 
 def test_still_empty_wiki_warns_and_preserves_findings(tmp_path, monkeypatch, capsys):
     """#51 rule 7b wiring: when the retry also omits the wiki, the report is
-    not discarded — findings and notifications deliver, nothing is written
-    or committed, and one stderr warning names the empty wiki: the no-op is
-    visible, never silent."""
+    not discarded — findings and notifications deliver, the rule-7b warning
+    fires first, and then the #60 safety net takes over: the wiki-repair
+    pass runs (with its own retry), and its double failure minimal-writes
+    the stamped seed (a fresh deployment — no file on disk)."""
     endpoint = ScriptedEndpoint(turns=NATURAL_TURNS[:1],
-                                reports=[EMPTY_WIKI_REPORT, EMPTY_WIKI_REPORT])
+                                reports=[EMPTY_WIKI_REPORT, EMPTY_WIKI_REPORT,
+                                         EMPTY_WIKI_REPORT, EMPTY_WIKI_REPORT])
     wiki = tmp_path / "wiki" / "cluster-wiki.md"
     run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
 
-    assert len(endpoint.shape_requests) == 2     # the retry happened
+    # report + empty-wiki retry + wiki-repair pass + its empty-wiki retry
+    assert len(endpoint.shape_requests) == 4
     captured = capsys.readouterr()
     assert "control-plane operators degraded" in captured.out   # findings deliver
     assert "🔔 NOTIFY: control-plane operators degraded" in captured.out
-    assert not wiki.exists()                     # nothing written
-    assert commit_count(wiki.parent) == 0        # nothing committed
-    # rule 7b's verbatim warning — the no-op is visible, never silent
+    # rule 7b's verbatim warning still fires first (rule 32) — visible, never silent
     assert ("[patrol] WARNING: reporting pass returned an empty updated_wiki; "
             "keeping the previous wiki, writing nothing") in captured.err
+    # rule 31's file-absent clause: the fallback stamps-and-writes the seed
+    assert "minimal write" in captured.out
+    assert wiki.exists()
+    assert frontmatter(wiki.read_text())["patrol_count"] == 1
+    assert commit_count(wiki.parent) == 1
 
 
 def test_repair_that_stays_wiki_less_falls_to_keep_old_wiki(tmp_path, monkeypatch, capsys):

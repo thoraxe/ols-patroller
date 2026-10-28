@@ -78,13 +78,13 @@ redefined here.
 - **Repair pass** — the single allowed re-invocation of the shape pass when a
   report's `updated_wiki` fails skeleton validation; it carries the validation
   errors and the rejected wiki back to the model (#5).
-- **Wiki-repair pass** — the shape pass's third mode (#60, planned): after the
+- **Wiki-repair pass** — the shape pass's third mode (#60): after the
   #51 still-empty outcome, one structured call carrying the old on-disk wiki
   verbatim plus the observed report's findings, asking for a minimal merge —
   the old wiki rewritten with the findings folded in. Its own findings are
   never delivered (it never saw the cluster); only its wiki is used.
 - **Minimal write** — the model-free fallback behind the wiki-repair pass
-  (#60, planned, ADR 0022): when both model attempts fail to emit a wiki, the
+  (#60, ADR 0022): when both model attempts fail to emit a wiki, the
   patrol runs the accepted-write tail on the old wiki verbatim — content
   stale, `patrol_count`/`last_patrol`/`verified_patrol` clocks honest, so
   #7's expiry keeps working instead of freezing. No frontmatter block in the

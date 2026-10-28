@@ -29,7 +29,7 @@ knowledge base of the observed cluster.
    The write path is unchanged (an empty wiki still writes nothing,
    commits nothing); what changes is that the no-op is never silent and
    never mistaken for a deliberate choice.]
-   [PLANNED: #60 — "writes nothing" is no longer the empty-wiki path's
+   [DONE: #60 — "writes nothing" is no longer the empty-wiki path's
    last word: the wiki-repair pass and minimal-write fallback behind it
    (rules 30–32; `reporting-notifications.md` rule 7d) give the tail a
    recoverable next step; the fallback is the only path by which an
@@ -160,7 +160,7 @@ the history #7 expires into) carry per-entry structure; everything else is prose
     stamps them authoritatively before writing (rule 17), so the model's
     values are never trusted (models are unreliable counters) — and never
     judged either (rule 10b).
-10b. **The gate does not judge the owned values** [PLANNED: #62]. The
+10b. **The gate does not judge the owned values** [DONE: #62]. The
     write gate (rule 15) checks the presence of all four keys, the closed
     key set, and the `wiki_version` value alone; the **values** of
     `cluster_id`, `patrol_count`, and `last_patrol` are entirely unjudged —
@@ -263,14 +263,14 @@ the history #7 expires into) carry per-entry structure; everything else is prose
     the written value correct whatever the seed showed) — and the five sections
     with placeholder contents. The seed is prompt context only (rule 2): never
     written to disk, never run through the write-path gate.
-14a. **The seed passes the gate** [PLANNED: #62]. `WIKI_SEED` must itself
+14a. **The seed passes the gate** [DONE: #62]. `WIKI_SEED` must itself
     satisfy `validate_wiki` (rule 15 as narrowed by rule 10b): the seed and
     the gate share one source of truth, so a fresh deployment's first patrol
     can never be rejected for echoing the seed it was handed. Pinned by
     test — `validate_wiki(WIKI_SEED)` is empty. This is an invariant of the
     two constants, not a runtime check on the patrol path: the seed is
     still never written to disk and still never validated by the write path
-    (rule 14's clause stands) — with one deliberate exception [PLANNED:
+    (rule 14's clause stands) — with one deliberate exception [DONE:
     #60]: the minimal-write fallback (rule 31) may stamp-and-write the
     seed when the wiki file is absent, precisely because this rule makes
     the seed gate-clean and the stamp (rule 17) overwrites its
@@ -301,7 +301,7 @@ attempt, and then the old wiki wins. Persistence problems degrade, never block.
     clock joins the process-stamped set (rule 20): still never judged,
     always overwritten] [DONE: #40 — document length is equally
     unjudged: the soft budget (rule 29) never gates validation]
-    [PLANNED: #62 — made literal for the frontmatter: the gate narrows to
+    [DONE: #62 — made literal for the frontmatter: the gate narrows to
     presence of all four keys, the closed key set, and the `wiki_version`
     value (rule 10b). The value checks on `cluster_id` (non-empty string),
     `patrol_count` (positive integer), and `last_patrol` (ISO-8601) are
@@ -335,7 +335,7 @@ attempt, and then the old wiki wins. Persistence problems degrade, never block.
     attempt (already retried and warned about per
     `reporting-notifications.md` rule 7b); it still skips validation and
     repair — a classified failure writes nothing].
-    [PLANNED: #60 — the empty-wiki leg of the write path gains a safety net
+    [DONE: #60 — the empty-wiki leg of the write path gains a safety net
     beyond the retry: the wiki-repair pass and, behind it, the minimal-write
     fallback (rules 30–32; `reporting-notifications.md` rule 7d).]
 17. **Stamping.** After validation and before the atomic write, the patroller
@@ -729,7 +729,7 @@ load-bearing constraint of #5).
 
 ### Still-Empty Safety Net
 
-The recoverable tail of the #51 still-empty outcome [PLANNED: #60]. #51
+The recoverable tail of the #51 still-empty outcome [DONE: #60]. #51
 made the empty `updated_wiki` visible — one named retry, one stderr
 warning, findings preserved — and deliberately terminal: correct for a
 single patrol, not survivable when it recurs. Real-run evidence (#60's
@@ -895,8 +895,8 @@ write.
 
 | Ticket | Summary |
 |---|---|
-| #60 | Still-empty safety net (rules 30–32, ADR 0022; the call shape is `reporting-notifications.md` rule 7d): after the #51 still-empty outcome, one wiki-repair pass — the shape pass carrying the old wiki verbatim plus the observed findings, asking for a minimal merge; its findings are never delivered — and, when that fails too, a minimal-write fallback that runs the accepted-write tail on the old wiki (clock advanced, body preserved; no-op on a legacy no-frontmatter wiki). Impl commit also syncs `AGENTS.md`'s test list and `ARCHITECTURE.md`'s wiki prose if it mentions the terminal still-empty outcome |
-| #62 | The gate does not judge the owned values (rules 10b + 14a + the rule-15 narrowing): frontmatter validation drops the value checks on `cluster_id`/`patrol_count`/`last_patrol` (presence, closed set, and `wiki_version` value stay), and `WIKI_SEED` must itself pass `validate_wiki` — the seed/gate single source of truth, pinned by test. Impl commit also syncs `AGENTS.md`'s test list |
+| ~~#60~~ | ~~Still-empty safety net (rules 30–32, ADR 0022; the call shape is `reporting-notifications.md` rule 7d): after the #51 still-empty outcome, one wiki-repair pass — the shape pass carrying the old wiki verbatim plus the observed findings, asking for a minimal merge; its findings are never delivered — and, when that fails too, a minimal-write fallback that runs the accepted-write tail on the old wiki (clock advanced, body preserved; no-op on a legacy no-frontmatter wiki). Impl commit also syncs `AGENTS.md`'s test list and `ARCHITECTURE.md`'s wiki prose if it mentions the terminal still-empty outcome~~
+| ~~#62~~ | ~~The gate does not judge the owned values (rules 10b + 14a + the rule-15 narrowing): frontmatter validation drops the value checks on `cluster_id`/`patrol_count`/`last_patrol` (presence, closed set, and `wiki_version` value stay), and `WIKI_SEED` must itself pass `validate_wiki` — the seed/gate single source of truth, pinned by test. Impl commit also syncs `AGENTS.md`'s test list~~
 | ~~#51~~ | ~~Empty-`updated_wiki` classification (rules 4 + 16 amendments): empty is a failed reporting attempt, not a no-update signal — retried and warned inside the reporting pass (`reporting-notifications.md` rule 7b); the write gate itself is unchanged (empty still writes nothing)~~ |
 | ~~#3~~ | ~~Git-backed wiki: wiki directory is a git repo (init at startup, file-only fallback), atomic write (temp + rename), one commit per wiki-changing patrol (`patrol N: X findings, Y warn`), optional `PATROL_WIKI_REMOTE` push — bounded, best-effort, local-first~~ |
 | ~~#5~~ | Skeleton schema + validation-on-write (rules 10–19): YAML frontmatter (`wiki_version` == 1, `cluster_id`, `patrol_count`, `last_patrol` — the last three process-stamped on write), fixed section set enforced exactly-once, entry metadata line (`id`, `status` watching/resolved/expired, `first_seen`, `last_verified`, `source`, `confidence` high/medium/low) in Watch-list + Anomaly log, `validate_wiki` gate with one shape-pass repair retry else keep-old-wiki; PyYAML joins the runtime deps (ADR 0011). Impl commit also syncs `ARCHITECTURE.md`'s wiki prose ("Planned next" paragraph) and `AGENTS.md`'s test list |

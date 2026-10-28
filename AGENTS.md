@@ -80,7 +80,13 @@ under current policy (clean implementation review + `implementation-complete`):
   catch-and-continue on that same loop, and a clean ctrl-c exit);
   `tests/test_wiki_schema.py` covers the
   wiki skeleton schema + validation-on-write contract (#5) plus the
-  per-entry recheck-command contract (#6); and `tests/test_wiki_expiry.py`
+  per-entry recheck-command contract (#6) plus the process-owned-value
+  gate contract of #62 (any value for `cluster_id`/`patrol_count`/
+  `last_patrol` passes; `WIKI_SEED` itself passes `validate_wiki`); and
+  `tests/test_manifests.py` covers the kustomize manifest contract
+  (incl. the deploy-key wiring of #39 and the pull-policy invariant of
+  #61: a mutable kustomization tag requires `imagePullPolicy: Always`);
+  and `tests/test_wiki_expiry.py`
   covers the stale-entry auto-expiry contract (#7: the `verified_patrol`
   clock matrix and the expiry flip); and `tests/test_wiki_stats.py` covers
   the wiki health-stats contract (#8: the `wiki_stats` and `wiki_churn`
@@ -100,7 +106,9 @@ under current policy (clean implementation review + `implementation-complete`):
   contract (#51: the report contract's wiki-required pins and the
   empty-wiki classification matrix over `shape_report` — the named
   corrective retry, the double-empty return, the composition and repair
-  sharing, and the generic-retry and zero-findings guards — and the
+  sharing, and the generic-retry and zero-findings guards, and the wiki-repair
+  mode of #60 (the prompt carrying the old wiki verbatim plus the observed
+  findings, the minimal-merge ask, the shared empty-wiki retry) — and the
   empty-result reason classification of #63: the pure
   `classify_empty_result` matrix over fake raw responses and the shape
   pass's attempt-failure log lines carrying the classified reasons via the
