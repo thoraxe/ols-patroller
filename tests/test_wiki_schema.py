@@ -14,7 +14,9 @@ pinned set). They fail before implementation (AttributeError on the missing
 symbols, AssertionError on the missing surfaces) and must pass after.
 Contract: .ai/spec/what/wiki-memory.md rules 10-19 [PLANNED: #5]; rule 12a
 (the recheck pair: required and guard-acceptable on every Watch-list entry,
-optional in the Anomaly log) [PLANNED: #6].
+optional in the Anomaly log) [PLANNED: #6]; rules 10b + 14a (the gate does
+not judge the process-owned frontmatter values; the seed passes the gate)
+[PLANNED: #62].
 
 Scope note: these tests pin the pure validator/stamper. The wiring into the
 patrol tail (validate -> one repair pass -> stamp -> write, keep-old-wiki on
@@ -221,23 +223,44 @@ def test_validate_rejects_non_integer_wiki_version():
                                                'last_patrol: "2026-10-14T18:44:00+0000"']))
 
 
-@pytest.mark.parametrize("count", [0, -1, '"3"'])
-def test_validate_rejects_bad_patrol_count(count):
-    assert patrol.validate_wiki(build_wiki(fm=["wiki_version: 1", "cluster_id: c",
-                                               f"patrol_count: {count}",
-                                               'last_patrol: "2026-10-14T18:44:00+0000"']))
+# --------------------------- process-owned values unjudged (rule 10b, #62)
+
+# Real-run evidence (#62): every fresh deployment's first patrol was
+# rejected on exactly these echoed seed placeholders — the model is TOLD
+# the counters are process-owned, so echoing them is correct behavior,
+# and the stamp discards the values anyway.
+@pytest.mark.parametrize("fm", [
+    # the seed's own placeholders, verbatim
+    ["wiki_version: 1", "cluster_id: local", "patrol_count: 0",
+     "last_patrol: null"],
+    ["wiki_version: 1", "cluster_id: c", "patrol_count: -1",
+     'last_patrol: "2026-10-14T18:44:00+0000"'],
+    ["wiki_version: 1", "cluster_id: c", "patrol_count: null",
+     'last_patrol: "2026-10-14T18:44:00+0000"'],
+    ["wiki_version: 1", "cluster_id: c", 'patrol_count: "3"',
+     'last_patrol: "2026-10-14T18:44:00+0000"'],
+    ["wiki_version: 1", "cluster_id: c", "patrol_count: 3",
+     "last_patrol: null"],
+    ["wiki_version: 1", "cluster_id: c", "patrol_count: 3",
+     'last_patrol: "yesterday"'],
+    ["wiki_version: 1", 'cluster_id: ""', "patrol_count: 3",
+     'last_patrol: "2026-10-14T18:44:00+0000"'],
+    ["wiki_version: 1", "cluster_id: null", "patrol_count: 3",
+     'last_patrol: "2026-10-14T18:44:00+0000"'],
+])
+def test_validate_accepts_any_process_owned_value(fm):
+    """Rule 10b (#62): the gate judges presence of all four keys, the
+    closed key set, and the wiki_version value alone — any YAML value for
+    cluster_id / patrol_count / last_patrol passes (the stamp discards
+    it); a missing key and a wrong wiki_version still fail (below)."""
+    assert patrol.validate_wiki(build_wiki(fm=fm)) == []
 
 
-def test_validate_rejects_empty_cluster_id():
-    assert patrol.validate_wiki(build_wiki(fm=["wiki_version: 1", 'cluster_id: ""',
-                                               "patrol_count: 3",
-                                               'last_patrol: "2026-10-14T18:44:00+0000"']))
-
-
-def test_validate_rejects_unparseable_last_patrol():
-    assert patrol.validate_wiki(build_wiki(fm=["wiki_version: 1", "cluster_id: c",
-                                               "patrol_count: 3",
-                                               'last_patrol: "yesterday"']))
+def test_seed_passes_the_gate():
+    """Rule 14a (#62): the seed and the validator share one source of
+    truth — validate_wiki(WIKI_SEED) is empty, so a fresh deployment's
+    first patrol is never rejected for echoing the seed it was handed."""
+    assert patrol.validate_wiki(patrol.WIKI_SEED) == []
 
 
 # ------------------------------------------------------------ validate: sections

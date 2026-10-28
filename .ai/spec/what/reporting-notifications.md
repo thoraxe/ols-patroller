@@ -108,6 +108,10 @@ in `how/reporting-pipeline.md`.
     when no attempt parsed (rule 7's total failure): an empty-wiki
     attempt followed by an exception still delivers the parsed report's
     findings with the empty-wiki warning.
+    [PLANNED: #60 — the still-empty outcome is no longer the end of the
+    write path: the patrol tail runs the wiki-repair pass (rule 7d) and,
+    behind it, the minimal-write fallback (`wiki-memory.md` rules 30–32).
+    The warning above still fires first, verbatim.]
 7c. **Visible empty-result reasons** [DONE: #63]. A failed attempt's
     log line names its cause. The pass invokes the structured output with
     `include_raw=True`, so a `None`/unparsed result carries the raw model
@@ -132,6 +136,21 @@ in `how/reporting-pipeline.md`.
     treated as the exception it replaces. The empty-wiki classification
     (rule 7b) is untouched: a parsed report with an empty wiki keeps its
     `empty wiki` reason.
+7d. **Wiki-repair pass** [PLANNED: #60]. The shape pass's third
+    invocation mode: `wiki_repair=(old_wiki, findings, notifications)`.
+    Its user message states that the reporting pass could not emit the
+    wiki and carries the old on-disk wiki verbatim plus the observed
+    report's findings and notifications, asking for a corrected
+    `PatrolReport` whose `updated_wiki` is the old wiki rewritten
+    **minimally** — the findings merged in, everything else preserved.
+    The mode shares everything with the pass's other modes: the
+    `PatrolReport` binding, the reporting bounds (rules 8a/8b), and the
+    internal parse/empty retry (rules 7/7b — a wiki-repair result with
+    an empty wiki is retried with the named corrective before the
+    caller's fallback applies). When the tail runs this mode, the rule
+    that the call's own findings and notifications are never delivered
+    (it never saw the cluster), and the minimal-write fallback behind
+    it, are `wiki-memory.md` rules 30–32.
 8. A budget-cut report must cover only what was actually observed; the pass is told
    which commands never executed.
 8a. **Per-call-shape request bounds** [DONE: #49]. The two call shapes
@@ -200,6 +219,7 @@ in `how/reporting-pipeline.md`.
 
 | Ticket | Summary |
 |---|---|
+| #60 | Wiki-repair pass + minimal-write fallback (rule 7d here; the tail contract, bounds, and fallback are `wiki-memory.md` rules 30–32, ADR 0022): the shape pass gains a `wiki_repair=(old_wiki, findings, notifications)` mode — old wiki verbatim plus the observed findings, minimal-merge ask, shared binding/bounds/retry; its findings are never delivered. Impl commit also syncs `AGENTS.md`'s test list |
 | ~~#63~~ | ~~Per-call-shape completion-token bounds + visible empty-result reasons (rules 7c + 8b): exploration `REQUEST_MAX_TOKENS` 16000, structured reporting/repair calls `REPORT_MAX_TOKENS` 64000 through the `make_model` seam; the attempt-failure log line names its cause (`truncated at max_tokens` vs `no tool call`) via a pure classifier over the raw response. Impl commit also syncs `AGENTS.md`'s test list and the stale `max_tokens` prose in `patrol.py`'s code comments (e.g. the working-set comment near the shape-pass budget)~~ |
 | ~~#51~~ | ~~Empty PatrolReport (rules 5 + 7b): the report contract requires `updated_wiki` on every report; an empty one is a failed attempt — one named corrective retry, then findings-only delivery with a stderr warning, wiki unchanged. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#49~~ | ~~Per-call-shape request bounds (rule 8a): exploration turns `REQUEST_TIMEOUT` 300 s, structured reporting/repair calls `REPORT_TIMEOUT` 900 s — two `make_model` instances through the same seam; the specced constants in `agent-engine.md` / `system-overview.md` updated to the split, bounds pinned by test. Impl commit also syncs `AGENTS.md`'s test list~~ |

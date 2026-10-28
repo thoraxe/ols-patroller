@@ -78,6 +78,17 @@ redefined here.
 - **Repair pass** — the single allowed re-invocation of the shape pass when a
   report's `updated_wiki` fails skeleton validation; it carries the validation
   errors and the rejected wiki back to the model (#5).
+- **Wiki-repair pass** — the shape pass's third mode (#60, planned): after the
+  #51 still-empty outcome, one structured call carrying the old on-disk wiki
+  verbatim plus the observed report's findings, asking for a minimal merge —
+  the old wiki rewritten with the findings folded in. Its own findings are
+  never delivered (it never saw the cluster); only its wiki is used.
+- **Minimal write** — the model-free fallback behind the wiki-repair pass
+  (#60, planned, ADR 0022): when both model attempts fail to emit a wiki, the
+  patrol runs the accepted-write tail on the old wiki verbatim — content
+  stale, `patrol_count`/`last_patrol`/`verified_patrol` clocks honest, so
+  #7's expiry keeps working instead of freezing. No frontmatter block in the
+  old wiki → no write at all.
 - **Shape pass** — the tool-free structured-output pass (`shape_report`) that
   converts a finished patrol conversation into the typed `PatrolReport`. Same
   pattern as the OLS agentic sandbox.
@@ -119,11 +130,16 @@ redefined here.
 - **Milestones** — v0.1 in-cluster (#1–#4, #9, #11, #24, #25, #27, #28), v0.2
   compounding wiki (#5–#8, #20, #39, #40), v0.2.1 real-cluster validation
   fixes (#49: per-call-shape request bounds; #51: empty-report
-  classification; #50: one event loop per loop-mode process), v0.3 operational
-  hardening (#10 plus #9's digest and #63's reporting token bound + visible
-  empty-result reasons), future (#12–#16, #41). Plans live in
+  classification; #50: one event loop per loop-mode process), v0.2.3 more
+  real-cluster validation fixes (#60: still-empty safety net — wiki-repair
+  pass + minimal write; #61: `imagePullPolicy: Always` for the rolling tag;
+  #62: the seed passes the gate), v0.3 operational
+  hardening (#10 plus #9's digest; #63 — reporting token bound + visible
+  empty-result reasons — was filed here but pulled forward and closed after
+  the frozen-wiki diagnosis), future (#12–#16, #41). Plans live in
   GitHub issues; #9/#11 were promoted into v0.1 and #20 slotted into v0.2
   after the first in-cluster acceptance run (PR #29 discussion); #39–#41
   were filed from the #5 spec review (PR #38 discussion); #49–#51 were
-  filed from the v0.2 real-cluster validation runs; #63 was filed from the
+  filed from the v0.2 real-cluster validation runs; #60–#62 were filed
+  from the same runs' follow-up soak; #63 was filed from the
   same runs and slotted into v0.3.
