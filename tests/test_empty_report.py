@@ -28,6 +28,7 @@ log lines carrying the classified reason.
 Run: uv run --group dev pytest tests/ -q
 """
 import asyncio
+import re
 
 import patrol
 from langchain_core.messages import AIMessage
@@ -209,8 +210,11 @@ def test_shape_pass_classifies_the_empty_result_reason(capsys):
     assert len(stub.prompts) == 2              # the one-retry bound holds
     assert stub.include_raw == [True, True]    # invoked with the raw envelope
     err = capsys.readouterr().err
-    assert "attempt 1 failed (empty result (truncated at max_tokens))" in err
-    assert "attempt 2 failed (empty result (no tool call))" in err
+    # #66 (rule 7f) flipped the pin: the line now carries the elapsed suffix
+    assert re.search(r"attempt 1 failed \(empty result \(truncated at max_tokens\)"
+                     r", took \d+ s\)", err)
+    assert re.search(r"attempt 2 failed \(empty result \(no tool call\)"
+                     r", took \d+ s\)", err)
 
 
 def test_shape_pass_parsing_error_keeps_its_message(capsys):
@@ -224,7 +228,7 @@ def test_shape_pass_parsing_error_keeps_its_message(capsys):
     result = _shape(stub)
     assert result.updated_wiki == "full wiki"
     err = capsys.readouterr().err
-    assert "attempt 1 failed (bad tool args)" in err
+    assert re.search(r"attempt 1 failed \(bad tool args, took \d+ s\)", err)
 
 
 # ------------------------------------------- wiki-repair mode (rule 7d, #60)
