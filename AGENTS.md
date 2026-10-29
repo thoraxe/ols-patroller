@@ -84,8 +84,10 @@ under current policy (clean implementation review + `implementation-complete`):
   gate contract of #62 (any value for `cluster_id`/`patrol_count`/
   `last_patrol` passes; `WIKI_SEED` itself passes `validate_wiki`); and
   `tests/test_manifests.py` covers the kustomize manifest contract
-  (incl. the deploy-key wiring of #39 and the pull-policy invariant of
-  #61: a mutable kustomization tag requires `imagePullPolicy: Always`);
+  (incl. the deploy-key wiring of #39, the pull-policy invariant of
+  #61: a mutable kustomization tag requires `imagePullPolicy: Always`,
+  and the storage-class override of #68: the pvc-patch template's
+  shape, the gitignored operator copy, and the README procedure);
   and `tests/test_wiki_expiry.py`
   covers the stale-entry auto-expiry contract (#7: the `verified_patrol`
   clock matrix and the expiry flip); and `tests/test_wiki_stats.py` covers

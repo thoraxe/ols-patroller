@@ -17,3 +17,7 @@ manifests/secret.yaml
 # operator's copy of the deploy-key patch template (#39) — opt-in wiring,
 # never committed (rule 16c)
 manifests/deploy-key-patch.yaml
+
+# operator's copy of the storage-class patch template (in-cluster-deployment
+# rule 5a's override-by-patch) — opt-in wiring, never committed
+manifests/pvc-patch.yaml
