@@ -209,6 +209,26 @@ def test_requirements_mirror_pep723_and_pyproject():
     )
 
 
+def test_apprise_replaces_requests_top_level():
+    """#9: apprise joins the pinned runtime set and requests drops from it
+    (container-image.md rule 6 — requests' only direct use was the Slack
+    webhook post; apprise brings it transitively)."""
+    pep = _pep723_names()
+    req = _pinned_names(_req())
+    py = _pyproject_project_names()
+    for names, surface in ((pep, "the PEP 723 header"),
+                           (req, "requirements.txt"),
+                           (py, "pyproject.toml [project] dependencies")):
+        assert "apprise" in names, (
+            f"apprise must be a top-level runtime dependency in {surface} "
+            f"(rule 6, #9)"
+        )
+        assert "requests" not in names, (
+            f"requests must drop from the top-level set in {surface} "
+            f"(rule 6, #9 — transitive via apprise)"
+        )
+
+
 # ------------------------------------------------------------------ rules 8-10: user & layout
 
 def test_runtime_user_non_root():

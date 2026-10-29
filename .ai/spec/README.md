@@ -3,7 +3,7 @@
 OLS Patroller is a proactive, non-deterministic SRE agent ("resident SRE") for
 OpenShift/Kubernetes clusters: on a schedule, an LLM agentically explores a cluster
 **read-only**, validates reality against a persistent markdown **wiki** (its memory),
-rewrites the wiki, and notifies a human (console / Slack) about anything it thinks is
+rewrites the wiki, and notifies a human (console / apprise sinks) about anything it thinks is
 wrong. These specs cover the current single-file PoC (`patrol.py`) and its planned
 evolution.
 

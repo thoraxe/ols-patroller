@@ -3,7 +3,7 @@
 OLS Patroller is a proactive, non-deterministic SRE agent ("resident SRE") for
 OpenShift/Kubernetes clusters: on a schedule, an LLM agentically explores a cluster
 **read-only**, validates reality against a persistent markdown **wiki** (its memory),
-rewrites the wiki, and notifies a human (console / Slack) about anything it thinks is
+rewrites the wiki, and notifies a human (console / apprise sinks) about anything it thinks is
 wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
 [OLS-4439](https://redhat.atlassian.net/browse/OLS-4439).
 
@@ -62,7 +62,8 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
    20,000-character budget warns on overshoot without ever failing
    validation [DONE: #40].
 10. **Reporting & notifications** — typed report schema, severity vocabulary,
-    console/Slack delivery (`reporting-notifications.md`).
+    console/apprise-sink delivery (`reporting-notifications.md`) [PLANNED: #9 —
+    was console/Slack].
 11. **Safety model** — layered read-only enforcement spanning guard, engine, and
     (planned) in-cluster RBAC (`safety-model.md`).
 12. **CLI & scheduling** — argument parsing, once/loop modes, wiki path
@@ -123,7 +124,8 @@ Environment variables:
 - `PATROL_BASE_URL` — endpoint URL, e.g. `https://api.example.com/v1` (required)
 - `PATROL_MODEL` — model id on that endpoint (required)
 - `KUBECTL` — cluster CLI override; otherwise resolved `oc` → `kubectl` → `oc`
-- `SLACK_WEBHOOK_URL` — if set, notifications are also posted to Slack
+- `PATROL_NOTIFY_URLS` — if set, apprise sink URLs (comma/newline separated);
+  notifications are also delivered to every configured sink [PLANNED: #9]
 - `PATROL_MAX_STEPS` — LLM-turn exploration budget per patrol (default `30`)
 - `PATROL_INTERVAL` — seconds between patrols in `--loop` mode (default
   `21600`, six hours) [DONE: #25 — was `900`]
@@ -184,7 +186,7 @@ documents). Milestone shape:
 
 | Ticket | Summary |
 |---|---|
-| v0.1 (#1–#4, #9, #11, #24, #25, #27, #28) | In-cluster: Containerfile, manifests (SA + cluster-reader + PVC + Deployment), git-backed wiki, e2e tests in-repo, deployment defaults & observability (6 h cadence, unbuffered + verbose logs, git-safe `/wiki`), guard `--raw` refusal, notification dedup |
+| v0.1 (#1–#4, #9, #11, #24, #25, #27, #28) | In-cluster: Containerfile, manifests (SA + cluster-reader + PVC + Deployment), git-backed wiki, e2e tests in-repo, deployment defaults & observability (6 h cadence, unbuffered + verbose logs, git-safe `/wiki`), guard `--raw` refusal [#9 was later re-scoped to apprise multi-sink (v0.3) with its original dedup scope moved to #35] |
 | v0.2 (#5–#8, #20, #39, #40) | Compounding wiki: skeleton schema + validation-on-write, per-entry recheck commands, `stale_after` expiry, `--wiki-stats`, efficient-sweep guidance, deploy-key remote-push wiring, wiki length budget |
 | v0.2.1 (#49, #50, #51) | Real-cluster validation fixes: per-call-shape request bounds (300 s exploration / 900 s structured reporting, #49), empty-`updated_wiki` classification — the contract requires the wiki every report, one named retry + stderr warning (#51), one event loop per `--loop` process (#50); in-cluster operational acceptance is deferred to the v0.2.1 release validation. Impl commits sync `AGENTS.md`'s test list |
 | v0.3 (#10, #9 digest, #63) | Operational hardening: cost control, periodic digest reminder for long-unfixed entries, per-call-shape completion-token bounds + visible empty-result reasons (rules 7c + 8b) |
