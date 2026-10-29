@@ -63,6 +63,12 @@ The argument names the work:
 ### 3. Write the failing tests
 
 - Encode the new rules as tests. They must fail now and pass after implementation.
+- **Flip every existing test that pins superseded behavior.** When a new rule
+  replaces an old outcome (a path that used to write nothing now writes, a gate
+  that used to reject now accepts), sweep the existing suite for tests that pin
+  the old outcome and update them in this commit — the flip is spec content and
+  belongs in the reviewed spec PR, not in the implementation. Name the flipped
+  tests in the PR body so the human gate sees them.
 - Run them and capture the failure output. Tests must fail for the right reason —
   an assertion about missing behavior, not an incidental error.
 - If the repo has no test harness yet, scaffolding it is part of this PR: settle

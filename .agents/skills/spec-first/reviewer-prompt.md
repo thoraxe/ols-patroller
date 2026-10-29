@@ -37,6 +37,12 @@ evidence:
 6. **Tests** — the failing tests encode the new rules; the captured output shows
    they fail for the right reasons (assertions about missing behavior, not
    incidental errors); no implementation logic hides in the tests beyond scaffolding.
+   **Stale-test sweep:** for every rule that changes an existing outcome, verify
+   that every pre-existing test pinning the superseded outcome has been updated in
+   this diff (or the PR body names why not). An un-flipped stale test is a
+   BLOCKING finding — it forces a contradictory test change into the
+   implementation phase, where it gets a weaker review than spec content
+   deserves.
 
 Output format:
 

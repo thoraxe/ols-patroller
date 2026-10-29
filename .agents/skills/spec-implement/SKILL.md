@@ -46,6 +46,15 @@ issue number. Resolve with `gh pr view` / `gh pr diff` as needed.
   loop returned APPROVED with zero BLOCKING findings and the PR carries the
   `implementation-complete` label. If that policy is revoked, merging reverts to
   a human action.
+- **An existing passing test that contradicts the approved spec is a spec-phase
+  defect, not an implementation decision.** When one is found, prefer STOP and
+  surface it (a spec change needs its own `spec-first` review loop). The one
+  exception: a purely mechanical, unambiguous supersession — the approved spec
+  and its new tests pin the new outcome for the exact scenario the stale test
+  pins the old one — may be flipped in the implementation commit, but ONLY with
+  the flip called out in the PR body and presented to the implementation
+  reviewer as a first-class item to adjudicate (see step 4), never folded in as
+  background. Anything judgment-bearing goes back to `spec-first`.
 - If the spec is wrong or impossible to implement as written: STOP. Report the
   conflict in the PR conversation and to the user. Spec changes need their own
   `/skill:spec-first` review loop — do not fix the spec inline.
@@ -103,7 +112,12 @@ contract change.
 
 - Address every finding in the code (or, if the finding reveals a spec defect, stop
   per the non-negotiables). Repeat until the reviewer returns APPROVED with zero
-  BLOCKING findings.
+  BLOCKING findings. When the implementation commit flips a stale test under the
+  non-negotiables' mechanical-supersession exception, the prompt must present
+  that flip explicitly — the old test's assertions, the new ones, and the approved
+  rules that supersede them — and ask the reviewer to adjudicate whether the flip
+  is a faithful alignment or a weakening (a reviewer who only sees a green suite
+  cannot tell the difference).
 - Save each round's report to `.ai/spec/verification/impl-<slug>-report.md`
   (gitignored; the PR body carries the outcome).
 
