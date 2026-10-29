@@ -11,7 +11,8 @@ wiki persists across pod restarts) is a documented procedure —
 
 Contract: .ai/spec/what/in-cluster-deployment.md [PLANNED: #2]
 [deploy-key wiring: rules 16a-16d, PLANNED: #39]
-[pull policy: rule 8a, PLANNED: #61].
+[pull policy: rule 8a, PLANNED: #61]
+[storage-class override: rule 5a, PLANNED: #68].
 
 Run: uv run --group dev pytest tests/ -q
 """
@@ -142,12 +143,16 @@ def test_no_extra_files_in_manifests_dir():
         # resources.
         "deploy-key-patch.yaml.example",
         "deploy-key-patch.yaml",
+        # #68: the storage-class patch template (committed, rule 5a) and the
+        # operator's gitignored copy — templates/copies, not resources.
+        "pvc-patch.yaml.example",
+        "pvc-patch.yaml",
     }
     names = {p.name for p in MANIFESTS.glob("*") if p.is_file()}
     assert names <= allowed, (
         f"manifests/ may contain only kustomization.yaml, the six resources "
         f"and the .example templates, plus the gitignored operator copies "
-        f"(secret.yaml, deploy-key-patch.yaml) (rule 1), got extra: "
+        f"(secret.yaml, deploy-key-patch.yaml, pvc-patch.yaml) (rule 1), got extra: "
         f"{sorted(names - allowed)}"
     )
 
@@ -766,3 +771,66 @@ def test_secret_env_keys_in_example_templates_are_comments_only():
                 f"{hit} may appear in the .example template only in comments "
                 f"(rule 15), got: {ln.strip()!r}"
             )
+
+
+def test_pvc_patch_example_template():
+    """Rule 5a (#68): the committed storage-class override template — a
+    strategic-merge patch over the base PVC that sets exactly
+    spec.storageClassName (never accessModes, size, or metadata beyond the
+    merge key), so the patch can never drift the rest of the claim."""
+    path = MANIFESTS / "pvc-patch.yaml.example"
+    assert path.exists(), (
+        "manifests/pvc-patch.yaml.example must exist (rule 5a, #68) — the "
+        "committed template for the no-default-storage-class override"
+    )
+    doc = yaml.safe_load(path.read_text())
+    assert doc["apiVersion"] == "v1", "the patch is a v1 PVC patch"
+    assert doc["kind"] == "PersistentVolumeClaim"
+    assert doc["metadata"]["name"] == PVC_NAME, "the patch keys on the base PVC"
+    assert doc["metadata"]["namespace"] == NAMESPACE, (
+        "rule 2: every namespaced object carries the literal namespace"
+    )
+    assert set(doc["spec"]) == {"storageClassName"}, (
+        f"the patch must set exactly spec.storageClassName (rule 5a), "
+        f"got {sorted(doc['spec'])}"
+    )
+    assert doc["spec"]["storageClassName"], "the class placeholder must be non-empty"
+
+
+def test_pvc_patch_copy_is_gitignored():
+    # Rule 5a (#68): the operator's copied-in patch is gitignored like
+    # secret.yaml — real wiring never commits.
+    gitignore = (REPO / ".gitignore").read_text()
+    assert re.search(r"^manifests/pvc-patch\.yaml\s*$", gitignore, re.M), (
+        ".gitignore must ignore manifests/pvc-patch.yaml — the operator's "
+        "copy is never committed (rule 5a, #68)"
+    )
+    tracked = subprocess.run(
+        ["git", "ls-files", "manifests/"], cwd=REPO,
+        capture_output=True, text=True, check=True,
+    ).stdout.split()
+    assert "manifests/pvc-patch.yaml" not in tracked, (
+        "manifests/pvc-patch.yaml must never be tracked (rule 5a, #68)"
+    )
+
+
+def test_readme_documents_pvc_patch_procedure():
+    # Rule 5a (#68): the README's in-cluster deployment section carries the
+    # storage-class override procedure end-to-end, self-sufficiently (the
+    # rule-16d standard applied to the volume).
+    readme = (REPO / "README.md").read_text()
+    assert re.search(r"^### No default storage class", readme, re.M), (
+        "the README must carry the 'No default storage class?' subsection "
+        "(rule 5a, #68)"
+    )
+    for needle in (
+        "oc get sc",
+        "storageclass.kubernetes.io/is-default-class",
+        "pvc-patch.yaml.example",
+        "patches:",
+        "storageClassName",
+    ):
+        assert needle in readme, (
+            f"the README storage-class procedure must mention {needle!r} "
+            f"(rule 5a, #68)"
+        )
