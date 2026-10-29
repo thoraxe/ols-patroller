@@ -17,10 +17,14 @@ layer 3 (RBAC boundary) real, and what the CI-published image
    `pvc.yaml`, `secret.yaml`, `deployment.yaml`), the committed
    `secret.yaml.example` template — a template, not a resource (rule 14) —
    the committed `deploy-key-patch.yaml.example` template — likewise a
-   template, not a resource (rule 16a) — and, once the operator follows
+   template, not a resource (rule 16a) — the committed
+   `pvc-patch.yaml.example` template — likewise a template, not a resource
+   (rule 5a) [PLANNED: #68] — and, once the operator follows
    rule 14, the gitignored `secret.yaml` itself, plus, once the operator
    follows rule 16c, the gitignored `deploy-key-patch.yaml` copy and the
-   matching `patches:` entry in the operator's `kustomization.yaml`;
+   matching `patches:` entry in the operator's `kustomization.yaml`, plus,
+   once the operator follows rule 5a, the gitignored `pvc-patch.yaml` copy
+   and its matching `patches:` entry [PLANNED: #68];
    nothing else [DONE: #2] [example templates + opt-in copy: DONE: #39].
 2. Every namespaced object carries the literal `metadata.namespace:
    ols-patroller`, the `ClusterRoleBinding`'s subject namespace is the same,
@@ -56,6 +60,25 @@ layer 3 (RBAC boundary) real, and what the CI-published image
    override by patch when the default class is wrong). The Deployment mounts
    it at `/wiki` (volume name `wiki`, `claimName` matching the PVC) — the wiki
    directory is the PVC mount (`wiki-memory.md` rule 4a) [DONE: #2].
+5a. **The storage-class override patch** [PLANNED: #68]. When the cluster
+   has no default storage class (check `oc get sc`: a class is default only
+   when annotated `storageclass.kubernetes.io/is-default-class: "true"`),
+   the base PVC never binds, and any class applied server-side becomes
+   immutable once the claim is bound — a live class the manifest doesn't
+   declare makes every `oc apply -k manifests/` fail on the PVC (the other
+   objects still apply; the exit code and the noise still break scripted
+   use). The override is the deploy-key pattern (rules 16a–16c, ADR 0012)
+   applied to the volume: a committed `manifests/pvc-patch.yaml.example`
+   template (a strategic-merge patch over the base PVC setting exactly
+   `spec.storageClassName`, nothing else) that the operator copies to a
+   gitignored `manifests/pvc-patch.yaml`, edits to their class name, wires
+   with a `patches:` entry in their local `kustomization.yaml`, and
+   re-applies. Setting the class at first-deployment time is the same patch
+   (the class must be set before the claim binds). README's in-cluster
+   deployment section documents the procedure end-to-end under a
+   `### No default storage class?` subsection (the rule-16d standard: an
+   operator can enable it from the README plus the committed template
+   alone).
 6. **Volume writability under the SCC.** The pod's `securityContext` sets
    `runAsNonRoot: true` and sets **no** `runAsUser`, `runAsGroup`, or
    `fsGroup`. Under the cluster-default restricted SCC (`restricted-v2`), the
@@ -273,6 +296,10 @@ layer 3 (RBAC boundary) real, and what the CI-published image
 - container `imagePullPolicy` — `Always` while the deployed tag is rolling
   (rule 8a); may be dropped when the tag is pinned to `sha-…` or a digest
   [DONE: #61]
+- `manifests/pvc-patch.yaml.example` — committed template for the optional
+  storage-class override patch (rule 5a); the operator's gitignored
+  `manifests/pvc-patch.yaml` copy + `patches:` entry in their local
+  `kustomization.yaml` is the opt-in [PLANNED: #68]
 - `PATROL_CLUSTER_ID` — literal env in the Deployment, edit to the real
   cluster name (rule 10)
 - `PYTHONUNBUFFERED` — literal env `1`; unbuffered stdout so pod logs show
@@ -324,6 +351,7 @@ layer 3 (RBAC boundary) real, and what the CI-published image
 
 | Ticket | Summary |
 |---|---|
+| #68 | The storage-class override patch (rule 5a + the rule 1 directory amendment): a committed `manifests/pvc-patch.yaml.example` strategic-merge template setting exactly `spec.storageClassName`, the gitignored operator copy + `patches:` opt-in (the deploy-key pattern), and the README procedure. Impl commit also syncs `AGENTS.md`'s test list |
 | ~~#61~~ | ~~`imagePullPolicy: Always` on the patrol container while the kustomization tag is rolling (rule 8a), the static-suite invariant (mutable tag → Always; `sha-…`/digest pin is the other legal form), and rule 17 step 6's image-pull premise stated. Impl commit also syncs `AGENTS.md`'s test list~~
 | ~~#2~~ | This file's contract: manifests (rules 1–17) + the CI workflow that publishes the deployed image (`container-image.md` rules 13–16) |
 | ~~#24~~ | `PYTHONUNBUFFERED=1` literal env — unbuffered stdout for pod-log visibility (rule 10a) |
