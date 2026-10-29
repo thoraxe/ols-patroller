@@ -27,7 +27,7 @@ flowchart TD
     D --> H["Finished conversation<br/>(plain-text summary OR budget cut)"]
     H --> I["Shape pass<br/>tool-free structured output"]
     I --> J["PatrolReport<br/>findings · notifications · updated_wiki"]
-    J --> K["Console + Slack<br/>(warn/crit only)"]
+    J --> K["Console + apprise sinks<br/>(warn/crit only)"]
     J --> L["Wiki rewrite<br/>(memory for next patrol)"]
     L -.->|next patrol reads it| A
 ```
@@ -131,7 +131,7 @@ flowchart TD
     POD --> SA
     PVC --> POD
     SEC --> POD
-    POD -->|"notifications (warn/crit)"| SLACK["Slack webhook"]
+    POD -->|"notifications (warn/crit)"| SINKS["apprise sinks"]
     PVC -.->|"optional, never blocking"| GIT["git remote (off-cluster)"]
 ```
 

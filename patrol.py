@@ -6,7 +6,7 @@
 #     "langchain-openai>=1.0",
 #     "pydantic>=2",
 #     "pyyaml>=6",
-#     "requests>=2.31",
+#     "apprise>=1.9",
 # ]
 # ///
 """
@@ -50,7 +50,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-import requests
+import apprise
 import yaml
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import tool
@@ -66,12 +66,27 @@ from deepagents import (
 )
 from deepagents.middleware.filesystem import FilesystemMiddleware
 
+# ------------------------------------------------------------- notify helpers
+
+def parse_notify_urls(value: str) -> list[str]:
+    """Rule 10a (#9): split PATROL_NOTIFY_URLS on commas and newlines, strip
+    whitespace, drop empty entries. Unset/empty -> zero sinks (console only)."""
+    return [part for part in (p.strip() for p in value.replace("\n", ",").split(",")) if part]
+
+
+def report_notify_type(findings: list[dict]) -> str:
+    """Rule 10b (#9): patrol-level severity -> apprise notify_type. Any crit
+    finding -> FAILURE, else WARNING (INFO never occurs — notifications are
+    warn/crit only, rule 4)."""
+    return "FAILURE" if any(f.get("severity") == "crit" for f in findings) else "WARNING"
+
+
 # --------------------------------------------------------------------------- config
 BASE_URL   = os.environ.get("PATROL_BASE_URL", "")   # e.g. https://api.example.com/v1
 MODEL      = os.environ.get("PATROL_MODEL", "")      # model id on that endpoint
 API_KEY    = os.environ.get("PATROL_API_KEY", "")
 KUBECTL    = os.environ.get("KUBECTL", "")  # resolved later
-SLACK_URL  = os.environ.get("SLACK_WEBHOOK_URL", "")
+NOTIFY_URLS = parse_notify_urls(os.environ.get("PATROL_NOTIFY_URLS", ""))
 MAX_STEPS  = int(os.environ.get("PATROL_MAX_STEPS", "30"))  # LLM turns per patrol
 TOOL_TIMEOUT = int(os.environ.get("PATROL_TOOL_TIMEOUT", "60"))
 # Per-call-shape request bounds (reporting-notifications.md rule 8a, #49; ADR
@@ -519,15 +534,32 @@ def preview(s: str, n: int = 200) -> str:
     return s if len(s) <= n else s[:n] + "…"
 
 
-def notify(messages: list[str]) -> None:
+def notify(messages: list[str], *, notify_type: str = "WARNING") -> None:
+    """Console 🔔 NOTIFY lines (unconditional, rule 9a's pod-log surface) plus
+    best-effort apprise delivery to every configured sink (rules 10a–10c, #9).
+    Sink failures are logged to stderr and never fatal."""
     for msg in messages:
         print(f"\n[patrol] 🔔 NOTIFY: {msg}")
-        if SLACK_URL:
-            try:
-                requests.post(SLACK_URL, json={"text": f":rotating_light: Cluster patrol: {msg}"},
-                              timeout=15)
-            except Exception as e:  # noqa: BLE001
-                print(f"[patrol]   (slack post failed: {e})", file=sys.stderr)
+    if not NOTIFY_URLS:
+        return
+    app = apprise.Apprise()
+    for url in NOTIFY_URLS:
+        try:
+            if not app.add(url):
+                print(f"[patrol]   (apprise refused sink URL {url}; skipped)",
+                      file=sys.stderr)
+        except Exception as e:  # noqa: BLE001
+            print(f"[patrol]   (apprise refused sink URL {url}: {e}; skipped)",
+                  file=sys.stderr)
+    for msg in messages:
+        try:
+            if not app.notify(title="Cluster patrol", body=msg,
+                              notify_type=notify_type):
+                print(f"[patrol]   (apprise delivery failed for: {msg})",
+                      file=sys.stderr)
+        except Exception as e:  # noqa: BLE001
+            print(f"[patrol]   (apprise delivery failed for: {msg}: {e})",
+                  file=sys.stderr)
 
 
 def report_fields(report: object) -> tuple[list[dict], list[str], str]:
@@ -1937,7 +1969,8 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
         if verbose and f.get("evidence"):
             print(f"         ↳ {f['evidence']}")
 
-    notify([m for m in notifications if m])
+    notify([m for m in notifications if m],
+           notify_type=report_notify_type(findings))
 
     if new_wiki:
         # Rule 22 (#7): the expiry pass — pure and deterministic, after the

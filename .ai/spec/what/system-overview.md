@@ -62,7 +62,7 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
    20,000-character budget warns on overshoot without ever failing
    validation [DONE: #40].
 10. **Reporting & notifications** — typed report schema, severity vocabulary,
-    console/apprise-sink delivery (`reporting-notifications.md`) [PLANNED: #9 —
+    console/apprise-sink delivery (`reporting-notifications.md`) [DONE: #9 —
     was console/Slack].
 11. **Safety model** — layered read-only enforcement spanning guard, engine, and
     (planned) in-cluster RBAC (`safety-model.md`).
@@ -125,7 +125,7 @@ Environment variables:
 - `PATROL_MODEL` — model id on that endpoint (required)
 - `KUBECTL` — cluster CLI override; otherwise resolved `oc` → `kubectl` → `oc`
 - `PATROL_NOTIFY_URLS` — if set, apprise sink URLs (comma/newline separated);
-  notifications are also delivered to every configured sink [PLANNED: #9]
+  notifications are also delivered to every configured sink [DONE: #9]
 - `PATROL_MAX_STEPS` — LLM-turn exploration budget per patrol (default `30`)
 - `PATROL_INTERVAL` — seconds between patrols in `--loop` mode (default
   `21600`, six hours) [DONE: #25 — was `900`]

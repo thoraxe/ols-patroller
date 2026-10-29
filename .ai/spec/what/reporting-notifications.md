@@ -202,8 +202,8 @@ in `how/reporting-pipeline.md`.
     [DONE: #27].
 10. Each notification prints with a `🔔 NOTIFY:` prefix; if `PATROL_NOTIFY_URLS` is
     set, notifications are also delivered to every configured sink via
-    [apprise](https://github.com/caronc/apprise) (rules 10a–10c) [PLANNED: #9].
-10a. **Sink configuration** [PLANNED: #9]. `PATROL_NOTIFY_URLS` holds one or
+    [apprise](https://github.com/caronc/apprise) (rules 10a–10c) [DONE: #9].
+10a. **Sink configuration** [DONE: #9]. `PATROL_NOTIFY_URLS` holds one or
     more apprise sink URLs (`slack://…`, `discord://…`, `tgram://…`,
     `ntfys://…`, … — any scheme apprise supports), separated by commas and/or
     newlines. Parsing is a pure function,
@@ -214,7 +214,7 @@ in `how/reporting-pipeline.md`.
     incoming webhook expresses it as its apprise `slack://` URL (apprise's
     documented webhook form). The parsed list is read once at import (the
     same env-derived-config convention as the other `PATROL_*` vars).
-10b. **Severity → notify type** [PLANNED: #9]. Delivery maps the report's
+10b. **Severity → notify type** [DONE: #9]. Delivery maps the report's
     severities onto apprise's `notify_type` at the patrol level, via the pure
     helper `report_notify_type(findings) -> "FAILURE" | "WARNING"`:
     `FAILURE` when the delivered report contains at least one `crit` finding,
@@ -224,7 +224,7 @@ in `how/reporting-pipeline.md`.
     the patrol's worst severity is the honest mapping. Per-notification
     severity and per-severity sink routing (apprise tags) are deferred to the
     #35 follow-up family.
-10c. **Delivery semantics** [PLANNED: #9]. Per-sink best-effort, never fatal
+10c. **Delivery semantics** [DONE: #9]. Per-sink best-effort, never fatal
     (the rule-10 status quo generalized). `notify(messages, *,
     notify_type="WARNING")` builds one apprise instance per invocation that
     has at least one configured URL (an empty message list still constructs
@@ -245,7 +245,7 @@ in `how/reporting-pipeline.md`.
 ## Configuration Surface
 
 - `PATROL_NOTIFY_URLS` — if set, apprise sink URLs (comma/newline separated);
-    notifications are also delivered to every configured sink [PLANNED: #9]
+    notifications are also delivered to every configured sink [DONE: #9]
 - ~~`SLACK_WEBHOOK_URL`~~ — removed by #9; superseded by `PATROL_NOTIFY_URLS`
   (a Slack incoming webhook is expressed as its apprise `slack://` URL)
 
@@ -255,7 +255,7 @@ in `how/reporting-pipeline.md`.
   says "don't cry wolf"); there is no mechanical dedup — known gap.
 - The configured apprise sinks are the patrol's deliberate outbound notification
   allowlist — the egress question (network-level exfiltration controls) is #34's,
-  not this contract's [PLANNED: #9].
+  not this contract's [DONE: #9].
 
 ## Planned Changes
 
@@ -265,7 +265,7 @@ in `how/reporting-pipeline.md`.
 | ~~#63~~ | ~~Per-call-shape completion-token bounds + visible empty-result reasons (rules 7c + 8b): exploration `REQUEST_MAX_TOKENS` 16000, structured reporting/repair calls `REPORT_MAX_TOKENS` 64000 through the `make_model` seam; the attempt-failure log line names its cause (`truncated at max_tokens` vs `no tool call`) via a pure classifier over the raw response. Impl commit also syncs `AGENTS.md`'s test list and the stale `max_tokens` prose in `patrol.py`'s code comments (e.g. the working-set comment near the shape-pass budget)~~ |
 | ~~#51~~ | ~~Empty PatrolReport (rules 5 + 7b): the report contract requires `updated_wiki` on every report; an empty one is a failed attempt — one named corrective retry, then findings-only delivery with a stderr warning, wiki unchanged. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#49~~ | ~~Per-call-shape request bounds (rule 8a): exploration turns `REQUEST_TIMEOUT` 300 s, structured reporting/repair calls `REPORT_TIMEOUT` 900 s — two `make_model` instances through the same seam; the specced constants in `agent-engine.md` / `system-overview.md` updated to the split, bounds pinned by test. Impl commit also syncs `AGENTS.md`'s test list~~ |
-| #9 | apprise multi-sink notifications (rules 10a–10c): `PATROL_NOTIFY_URLS` (comma/newline-separated apprise URLs, pure `parse_notify_urls`) replaces the removed `SLACK_WEBHOOK_URL`; patrol-level `notify_type` via pure `report_notify_type` (crit anywhere → FAILURE, else WARNING); per-sink best-effort delivery, failures logged to stderr, never fatal; apprise joins the pinned dependency set (`container-image.md` rules 6–7), `requests` drops from the top-level set (transitive via apprise); manifest Secret optional key becomes `PATROL_NOTIFY_URLS`. Impl commit also syncs `AGENTS.md`'s test list, the repo `README.md`'s env/config table (`SLACK_WEBHOOK_URL` → `PATROL_NOTIFY_URLS`) and any remaining Slack prose, and the `run_patrol_cli` test docstring's env pin list |
+| ~~#9~~ | apprise multi-sink notifications (rules 10a–10c): `PATROL_NOTIFY_URLS` (comma/newline-separated apprise URLs, pure `parse_notify_urls`) replaces the removed `SLACK_WEBHOOK_URL`; patrol-level `notify_type` via pure `report_notify_type` (crit anywhere → FAILURE, else WARNING); per-sink best-effort delivery, failures logged to stderr, never fatal; apprise joins the pinned dependency set (`container-image.md` rules 6–7), `requests` drops from the top-level set (transitive via apprise); manifest Secret optional key becomes `PATROL_NOTIFY_URLS`. Impl commit also syncs `AGENTS.md`'s test list, the repo `README.md`'s env/config table (`SLACK_WEBHOOK_URL` → `PATROL_NOTIFY_URLS`) and any remaining Slack prose, and the `run_patrol_cli` test docstring's env pin list |
 | #35 | Notification dedup: notify on state change, not every patrol — new entry, severity change/escalation, or resolution notify; standing unchanged entries stay wiki-only; optional periodic digest for long-unfixed entries; possible per-severity sink routing (apprise tags) once #9's multi-sink exists |
 | ~~#40~~ | ~~Report contract states the working-set expectations: the wiki is a working set (git history is the archive), summarize and prune rather than accumulate, the soft character budget, the anomaly-log keep budget (`wiki-memory.md` rules 28–29)~~ |
 | ~~#7~~ | ~~Report contract states the staleness clock's model-facing half: `verified_patrol` is process-stamped (never computed by the model), `last_verified` advances only on actual re-verification, and unverified watching entries auto-expire (`wiki-memory.md` rules 20–22)~~ |
