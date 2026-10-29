@@ -5,7 +5,7 @@ Tracked in [OLS-4439](https://redhat.atlassian.net/browse/OLS-4439) (research sp
 A hacky proof-of-concept of a **proactive, non-deterministic SRE agent** ("resident SRE"):
 on a schedule, an LLM agentically explores a cluster **read-only**, validates reality
 against a persistent **wiki** (its memory), updates/refines the wiki, and notifies a
-human (console / Slack) about anything it thinks is wrong.
+human (console / apprise sinks) about anything it thinks is wrong.
 
 Prior-art landscape and positioning: see [`docs/prior-art.md`](docs/prior-art.md).
 Plans are tracked in [GitHub issues and milestones](../../milestones), not in a
@@ -133,7 +133,7 @@ without ever rejecting a write.
 | `PATROL_BASE_URL` | — | any OpenAI-compatible endpoint, e.g. `https://api.example.com/v1` (required) |
 | `PATROL_MODEL` | — | model id on that endpoint (required) |
 | `KUBECTL` | `oc`→`kubectl` | cluster CLI |
-| `SLACK_WEBHOOK_URL` | — | if set, notifications also go to Slack |
+| `PATROL_NOTIFY_URLS` | — | if set, apprise sink URLs (comma/newline separated); notifications are also delivered to every configured sink |
 | `PATROL_MAX_STEPS` | `30` | LLM-turn exploration budget per patrol (raised from 15 after real-cluster runs; GLM needs >15 turns even single-node — if exhausted, the reporting pass reports from observations so far) |
 | `PATROL_INTERVAL` | `21600` | seconds (`--loop`, 6 h) |
 | `PATROL_TOOL_TIMEOUT` | `60` | per-command timeout |

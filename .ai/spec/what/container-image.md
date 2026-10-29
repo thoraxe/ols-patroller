@@ -42,8 +42,11 @@ manifests deploy by default.
 6. `requirements.txt` pins every requirement exactly (`name==version`, one per
    line, nothing else) and lists exactly the top-level runtime dependencies —
    the same package set as `patrol.py`'s PEP 723 header (`deepagents`,
-   `langchain-openai`, `pydantic`, `requests`, `pyyaml` [DONE: #5 — the wiki
-   skeleton's frontmatter parser]). Transitive dependencies are resolved by pip
+   `langchain-openai`, `pydantic`, `pyyaml` [DONE: #5 — the wiki
+   skeleton's frontmatter parser], and `apprise` [DONE: #9 — multi-sink
+   notifications, `reporting-notifications.md` rules 10a–10c; `requests`
+   drops from the top-level set — its only direct use was the Slack webhook
+   post, and apprise brings it transitively]). Transitive dependencies are resolved by pip
    at build time and are not listed; dev-only tools (e.g. pytest) never appear
    [DONE: #1].
 7. `patrol.py`'s PEP 723 uv header is kept unchanged — `uv run patrol.py`
@@ -92,9 +95,10 @@ manifests deploy by default.
     - `podman build .` (or `docker build .`) succeeds;
     - inside the container, `oc version`, `kubectl version --client`, and
       `git --version` all succeed;
-    - `python3.12 -c "import deepagents, langchain_openai, pydantic, requests, yaml"`
+    - `python3.12 -c "import deepagents, langchain_openai, pydantic, apprise, yaml"`
       succeeds inside the container (build-time dependency install; `yaml` is
-      PyYAML, the wiki frontmatter parser [DONE: #5]);
+      PyYAML, the wiki frontmatter parser [DONE: #5]; `apprise` is the
+      notification sink library [DONE: #9]);
     - `podman run --rm <image>` with no `PATROL_*` env exits non-zero with the
       standard missing-env error (`system-overview.md` rule 6).
     A patrol inside the container against a real dev cluster — through the #2
@@ -209,3 +213,4 @@ manifests deploy by default.
 | ~~#25~~ | Default cadence 6 h: CMD `--interval 21600` (rule 9), kept identical to the Deployment args and the `patrol.py` env default |
 | ~~#36~~ | Release image tags: published `v*` releases retag the matching `sha-<SHA>` image — no rebuild — plus a `workflow_dispatch` manual retag path (rules 17–18; ADR 0010). Impl commit also syncs the image-CI entries in `how/project-structure.md`, `ARCHITECTURE.md`, and the `image.yml` pointer in `in-cluster-deployment.md`'s Configuration Surface |
 | ~~#5~~ | `pyyaml` joins the pinned runtime set (rules 6, 12) — the wiki skeleton's frontmatter parser (`wiki-memory.md` rule 15) |
+| ~~#9~~ | `apprise` joins the pinned runtime set and `requests` drops from it (rules 6, 12) — multi-sink notifications (`reporting-notifications.md` rules 10a–10c) |

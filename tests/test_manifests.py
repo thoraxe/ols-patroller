@@ -38,7 +38,7 @@ SECRET_ENV_KEYS = {
     "PATROL_API_KEY",
     "PATROL_BASE_URL",
     "PATROL_MODEL",
-    "SLACK_WEBHOOK_URL",
+    "PATROL_NOTIFY_URLS",
     "PATROL_WIKI_REMOTE",
 }
 
@@ -468,7 +468,7 @@ def test_secret_template_placeholders():
             f"{key} in the template must be an obvious <placeholder> value "
             f"(rule 14), got: {string_data[key]!r}"
         )
-    for key in ("SLACK_WEBHOOK_URL", "PATROL_WIKI_REMOTE"):
+    for key in ("PATROL_NOTIFY_URLS", "PATROL_WIKI_REMOTE"):
         assert re.search(rf"^\s*#\s*{key}\s*:", raw, re.M), (
             f"optional key {key} must be documented as a commented-out line "
             f"in the template (rule 14)"

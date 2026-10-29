@@ -104,7 +104,13 @@ under current policy (clean implementation review + `implementation-complete`):
   `tests/test_request_bounds.py` covers the per-call-shape request-bound
   contract (#49 and #63: the two timeout constants, the two completion-token
   bound constants, and the `make_model` timeout + `max_tokens` passthrough);
-  and `tests/test_empty_report.py` covers the empty-report
+  `tests/test_notifications.py` covers the apprise multi-sink notification
+  contract (#9: the `parse_notify_urls` and `report_notify_type` matrices,
+  and the `notify` delivery semantics over a fake apprise — the
+  unconditional console line, the one-instance-per-invocation and
+  per-message `notify` calls with the mapped `notify_type`, the skipped
+  refused URL with its stderr line, the never-fatal failure modes, and the
+  module-level `NOTIFY_URLS` env wiring); and `tests/test_empty_report.py` covers the empty-report
   contract (#51: the report contract's wiki-required pins and the
   empty-wiki classification matrix over `shape_report` — the named
   corrective retry, the double-empty return, the composition and repair

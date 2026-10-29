@@ -356,8 +356,8 @@ def run_patrol_cli(monkeypatch, endpoint, wiki, *extra_args, wiki_remote="",
     """Run one full patrol through main() — argparse, env check, startup repo
     ensure, the engine loop, the shape pass, and the wiki git tail — with the
     model pointed at the scripted endpoint. Module-level config read from env
-    at import (BASE_URL/MODEL/API_KEY/CLUSTER_ID/SLACK_URL/WIKI_REMOTE) is
-    pinned explicitly so an ambient PATROL_*/SLACK_* environment cannot leak
+    at import (BASE_URL/MODEL/API_KEY/CLUSTER_ID/NOTIFY_URLS/WIKI_REMOTE) is
+    pinned explicitly so an ambient PATROL_* environment cannot leak
     network calls into the e2e (rule 6c). `model_factory` overrides the
     make_model patch (e.g. a recording wrapper asserting on the #49 bound)."""
     monkeypatch.setattr(patrol, "make_model", model_factory or endpoint.model)
@@ -365,7 +365,7 @@ def run_patrol_cli(monkeypatch, endpoint, wiki, *extra_args, wiki_remote="",
     monkeypatch.setattr(patrol, "MODEL", "fake-model")
     monkeypatch.setattr(patrol, "API_KEY", "test-key")
     monkeypatch.setattr(patrol, "CLUSTER_ID", "e2e-cluster")
-    monkeypatch.setattr(patrol, "SLACK_URL", "")
+    monkeypatch.setattr(patrol, "NOTIFY_URLS", [])
     monkeypatch.setattr(patrol, "WIKI_REMOTE", wiki_remote)
     monkeypatch.setattr(sys, "argv",
                         ["patrol.py", "--once", "--dry-cluster", "--wiki", str(wiki),

@@ -134,10 +134,11 @@ redefined here.
   real-cluster validation fixes (#60: still-empty safety net — wiki-repair
   pass + minimal write; #61: `imagePullPolicy: Always` for the rolling tag;
   #62: the seed passes the gate), v0.3 operational
-  hardening (#10 plus #9's digest; #63 — reporting token bound + visible
+  hardening (#10 plus #35's digest; #9 re-scoped to apprise multi-sink; #63 — reporting token bound + visible
   empty-result reasons — was filed here but pulled forward and closed after
   the frozen-wiki diagnosis), future (#12–#16, #41). Plans live in
-  GitHub issues; #9/#11 were promoted into v0.1 and #20 slotted into v0.2
+  GitHub issues; #9/#11 were promoted into v0.1 (#9's original dedup scope
+  later moved to #35) and #20 slotted into v0.2
   after the first in-cluster acceptance run (PR #29 discussion); #39–#41
   were filed from the #5 spec review (PR #38 discussion); #49–#51 were
   filed from the v0.2 real-cluster validation runs; #60–#62 were filed

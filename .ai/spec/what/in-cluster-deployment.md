@@ -134,7 +134,8 @@ layer 3 (RBAC boundary) real, and what the CI-published image
    #25 — cadence 900 s → 6 h, the resident-SRE posture; the fast demo loop
    stays available via an explicit `--interval`].
 10. **Env wiring.** `PATROL_API_KEY`, `PATROL_BASE_URL`, `PATROL_MODEL` (and
-    `SLACK_WEBHOOK_URL` / `PATROL_WIKI_REMOTE` when present in the Secret)
+    `PATROL_NOTIFY_URLS` / `PATROL_WIKI_REMOTE` when present in the Secret)
+    [DONE: #9 — the optional notification key is `PATROL_NOTIFY_URLS`]
     arrive **only** via `envFrom` → `secretRef` on the Secret named
     `ols-patroller` — no committed manifest carries a literal value for any of
     them (mirrors `container-image.md` rule 10). `PATROL_CLUSTER_ID` is set as
@@ -181,10 +182,13 @@ layer 3 (RBAC boundary) real, and what the CI-published image
     `manifests/secret.yaml.example` is a Secret named `ols-patroller` whose
     `stringData` holds the three required keys (`PATROL_API_KEY`,
     `PATROL_BASE_URL`, `PATROL_MODEL`) set to obvious placeholder values, with
-    the optional keys (`SLACK_WEBHOOK_URL`, `PATROL_WIKI_REMOTE`) present as
+    the optional keys (`PATROL_NOTIFY_URLS`, `PATROL_WIKI_REMOTE`) present as
     commented-out lines — the `PATROL_WIKI_REMOTE` placeholder shows the
     SSH-remote form and points at the deploy-key wiring (rules 16a–16c)
-    [DONE: #39]. Procedure: `cp secret.yaml.example secret.yaml`,
+    [DONE: #39] [DONE: #9 — the optional notification key is
+    `PATROL_NOTIFY_URLS`, one apprise URL per line in the Secret; replaces the
+    removed `SLACK_WEBHOOK_URL` (a Slack incoming webhook is expressed as its
+    apprise `slack://` URL)]. Procedure: `cp secret.yaml.example secret.yaml`,
     fill in, apply [DONE: #2].
 15. No committed manifest contains a real or plausible value for any secret
     env key: those key names appear in committed manifests only inside the
@@ -307,7 +311,8 @@ layer 3 (RBAC boundary) real, and what the CI-published image
 - `GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_0` / `GIT_CONFIG_VALUE_0` — literal
   env trio setting `safe.directory=/wiki` for in-container git (rule 10b)
 - Secret keys — required `PATROL_API_KEY`, `PATROL_BASE_URL`,
-  `PATROL_MODEL`; optional `SLACK_WEBHOOK_URL`, `PATROL_WIKI_REMOTE` (rule 14)
+  `PATROL_MODEL`; optional `PATROL_NOTIFY_URLS` (apprise URL form,
+  `reporting-notifications.md` rule 10a) [DONE: #9], `PATROL_WIKI_REMOTE` (rule 14)
 - `manifests/deploy-key-patch.yaml.example` — committed template for the
   optional remote-push patch; the operator's gitignored
   `deploy-key-patch.yaml` copy + the `patches:` entry in their
