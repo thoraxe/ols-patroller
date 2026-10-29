@@ -168,19 +168,6 @@ oc -n ols-patroller logs deploy/ols-patroller                                   
 oc -n ols-patroller exec deploy/ols-patroller -- git -C /wiki log --oneline       # wiki commits
 ```
 
-### No default storage class? (optional patch)
-
-The committed PVC sets no `storageClassName` — the cluster's default storage
-class applies, which is the most portable form. If your cluster has **no**
-default class (check `oc get sc`: a class is default only when annotated
-`storageclass.kubernetes.io/is-default-class: "true"`), the claim needs an
-explicit class: copy `manifests/pvc-patch.yaml.example` to
-`manifests/pvc-patch.yaml` (gitignored), set your class name in it, add a
-`patches:` entry to your local `kustomization.yaml`, and re-apply. Set the
-class at creation time — `spec.storageClassName` is immutable once the claim
-is bound, and a live class the manifest doesn't declare makes every
-`oc apply -k` error on the PVC (noisily, though harmlessly).
-
 ### Remote wiki replication (optional)
 
 The wiki replicates off-cluster if `PATROL_WIKI_REMOTE` is set in the patrol
