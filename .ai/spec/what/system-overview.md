@@ -141,7 +141,7 @@ Environment variables:
   [DONE: #35]
 - `PATROL_MAX_STEPS` — LLM-turn exploration budget per patrol (default `30`)
 - `PATROL_TOKEN_BUDGET` — cumulative exploration input-token budget per patrol
-  (default `500,000`; `0` disables the stop) [PLANNED: #10]
+  (default `500,000`; `0` disables the stop) [DONE: #10]
 - `PATROL_INTERVAL` — seconds between patrols in `--loop` mode (default
   `21600`, six hours) [DONE: #25 — was `900`]
 - `PATROL_TOOL_TIMEOUT` — per-command timeout in seconds (default `60`)
@@ -158,7 +158,7 @@ Environment variables:
 
 CLI flags: `--once` (default), `--loop`, `--interval`, `--dry-cluster`, `--wiki`
 (default `wiki/cluster-wiki.md` next to `patrol.py` [DONE: #3; was
-`cluster-wiki.md`]), `--max-steps`, `--token-budget` [PLANNED: #10], `-q/--quiet` (suppress the per-turn output
+`cluster-wiki.md`]), `--max-steps`, `--token-budget` [DONE: #10], `-q/--quiet` (suppress the per-turn output
 stream, on by default [DONE: #27 — was the opt-in `-v/--verbose`]), and
 `--wiki-stats` (print the wiki's four health numbers and exit — offline, no
 `PATROL_*` env needed, never runs a patrol [DONE: #8]; plus the #40 size
@@ -168,9 +168,9 @@ In-cluster, the image's default command is `--loop --interval 21600 --wiki
 
 Hard-coded constants (not env-configurable): `OUT_CAP` = 15,000 chars of tool output
 fed back to the model (the cap envelope; the truncated view itself is head+tail —
-`OUT_HEAD` 9,000 / `OUT_TAIL` 5,000, `kubectl-guard.md` rule 11 [PLANNED: #10]);
+`OUT_HEAD` 9,000 / `OUT_TAIL` 5,000, `kubectl-guard.md` rule 11 [DONE: #10]);
 the prompt's soft turn target `SOFT_TARGET_TURNS` = 20, decoupled from the hard
-`max_steps` budget (`patrol-engine.md` rule 8a) [PLANNED: #10]; model temperature 0.3, completion-token bounds —
+`max_steps` budget (`patrol-engine.md` rule 8a) [DONE: #10]; model temperature 0.3, completion-token bounds —
 `REQUEST_MAX_TOKENS` 16000 per exploration turn, `REPORT_MAX_TOKENS` 64000
 per structured reporting/repair call
 (`reporting-notifications.md` rule 8b) [DONE: #63 — was a flat

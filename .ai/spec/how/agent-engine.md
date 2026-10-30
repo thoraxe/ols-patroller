@@ -10,7 +10,7 @@ gotchas an agent must know before touching this code.
 | `make_model` | `ChatOpenAI` (any OpenAI-compatible endpoint; temp 0.3; `timeout` and `max_tokens` parametrized per call shape — `REQUEST_TIMEOUT` 300 s / `REQUEST_MAX_TOKENS` 16000 defaults, `REPORT_TIMEOUT` 900 s / `REPORT_MAX_TOKENS` 64000 for the shape pass) [DONE: #49; max_tokens split: DONE: #63 — was a flat 16000] |
 | `_disable_default_subagent` | Registers a `HarnessProfile` disabling deepagents' general-purpose `task` subagent |
 | `make_kubectl_tool` | Wraps the guarded `kubectl_readonly` as the single langchain tool |
-| `run_patrol` | Builds the agent, streams it, accounts tokens, handles budget cut (step budget and, once #10 lands, token soft-stop), invokes the shape pass |
+| `run_patrol` | Builds the agent, streams it, accounts tokens, handles budget cut (step budget and the #10 token soft-stop), invokes the shape pass |
 | `FIXTURES` / `fixture_for` | Dry-cluster substitution inside the tool |
 
 ## Data Flow
@@ -20,7 +20,7 @@ middleware=[FilesystemMiddleware(tools=["read_file"])])` → `agent.astream({mes
 config={"recursion_limit": max_steps * 2 + 12}, stream_mode="values")` → per-state
 iteration over new messages (token accounting from `AIMessage.usage_metadata`; per-turn
 previews of reasoning/tool calls/results — on by default, `--quiet` suppresses
-[DONE: #27]) → natural end or `GraphRecursionError` →
+[DONE: #27]) → natural end, `GraphRecursionError`, or the #10 token cut →
 shape pass over the accumulated message list.
 
 ## Key Abstractions
@@ -71,7 +71,7 @@ shape pass over the accumulated message list.
   OLS-4439); patrol #7 self-terminated at 34/36 turns, apparently keying off the
   "~30 turns" soft target in the prompt — the target is now decoupled from the
   hard budget as `SOFT_TARGET_TURNS` (20), specced by #10
-  (`patrol-engine.md` rule 8a, ADR 0027) [PLANNED: #10].
+  (`patrol-engine.md` rule 8a, ADR 0027) [DONE: #10].
 - **Token soft-stop (#10, `patrol-engine.md` rule 8b):** `run_patrol` maintains
   `tokens_in` (already accounted from `usage_metadata`) and stops iterating
   `astream` once it exceeds the budget (`PATROL_TOKEN_BUDGET` /
@@ -80,7 +80,7 @@ shape pass over the accumulated message list.
   dangling-tool-call salvage (the step-budget ToolMessage text, reused
   verbatim — rule 8b), the same shape pass, and a console warning naming
   consumed tokens and budget. Checked between streamed states, so an in-flight
-  turn always completes — the cut never lands mid-turn [PLANNED: #10].
+  turn always completes — the cut never lands mid-turn [DONE: #10].
 - **OUT_CAP fights:** hard truncation at 15k chars can burn turns when the model
   retries truncated dumps (patrol #6 fought node proxy stats) — motivates #10
   (smarter truncation) and #11 (refuse `--raw`) [DONE: #11]. Since #20 the

@@ -93,7 +93,7 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
 8. Hard budget: `max_steps` LLM turns per patrol (default 30, `PATROL_MAX_STEPS` /
    `--max-steps`); a soft target ("~N turns") is communicated in the user prompt —
    the target value is its own constant, not the budget (rule 8a).
-8a. **Soft turn target, decoupled from the hard budget** [PLANNED: #10]. The
+8a. **Soft turn target, decoupled from the hard budget** [DONE: #10]. The
     user prompt's turn target is the hard-coded constant `SOFT_TARGET_TURNS`
     (20), independent of the hard budget (`max_steps`, rule 8). The prompt
     states both, distinctly: a soft-target sentence — "aim to wrap up within
@@ -109,7 +109,7 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
     Decoupling makes the target retunable without touching the budget — a
     spec change either way, like the other hard-coded engine constants (ADR
     0015's convention).
-8b. **Token soft-stop** [PLANNED: #10]. Exploration is additionally bounded
+8b. **Token soft-stop** [DONE: #10]. Exploration is additionally bounded
     by cumulative input tokens: `PATROL_TOKEN_BUDGET` (default 500,000;
     `PATROL_TOKEN_BUDGET` env / `--token-budget`, mirroring `--max-steps`;
     `0` disables the stop). The count is process-owned — the sum of
@@ -195,11 +195,11 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
 
 - `PATROL_MAX_STEPS` / `--max-steps` — LLM-turn budget (default 30)
 - `PATROL_TOKEN_BUDGET` / `--token-budget` — cumulative exploration input-token
-  budget (default 500,000; `0` disables) [PLANNED: #10]
+  budget (default 500,000; `0` disables) [DONE: #10]
 - `--dry-cluster` — fixture mode, no cluster needed
 - `SOFT_TARGET_TURNS` — the prompt's soft turn target, 20 (hard-coded, not
   env-configurable — retuning it is a spec change, not a config knob; ADR 0027)
-  [PLANNED: #10]
+  [DONE: #10]
 - Engine constants (not configurable): temperature 0.3, completion-token
   bounds — `REQUEST_MAX_TOKENS` 16000 per exploration turn,
   `REPORT_MAX_TOKENS` 64000 per structured reporting/repair call
@@ -224,7 +224,7 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
 | Ticket | Summary |
 |---|---|
 | ~~#6~~ | ~~Prompt consumes recheck commands: run an entry's `recheck` first when re-verifying it, keep it current when the verification path changes (`wiki-memory.md` rule 12a)~~ |
-| #10 | Cost control: token soft-stop (rule 8b), soft turn target decoupled from the hard budget (rule 8a), head+tail truncation replacing head-only `OUT_CAP` capping (`kubectl-guard.md` rule 11) — scoping settled whole-cluster by ADR 0027 (the wiki economy of rule 3e already is the scoping mechanism; per-namespace rounds rejected). Impl commit also syncs `AGENTS.md`'s test list |
+| ~~#10~~ | ~~Cost control: token soft-stop (rule 8b), soft turn target decoupled from the hard budget (rule 8a), head+tail truncation replacing head-only `OUT_CAP` capping (`kubectl-guard.md` rule 11) — scoping settled whole-cluster by ADR 0027 (the wiki economy of rule 3e already is the scoping mechanism; per-namespace rounds rejected). Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#49~~ | ~~Per-call-shape request bounds: `REQUEST_TIMEOUT` 300 s exploration / `REPORT_TIMEOUT` 900 s structured reporting — the engine-constants line above; the behavioral rule is `reporting-notifications.md` rule 8a~~ |
 | ~~#20~~ | ~~Efficient cluster sweep: the layered sweep + field-selection teaching in the system prompt (rules 3a–3e), dry-cluster fixtures modeling the taught sweep (rules 13–13a), and the guard truncation marker's recovery hint (`kubectl-guard.md` rule 11) — prompt guidance and fixture data only: no new config surface, no guard refusal changes (ADR 0016). Impl commit also syncs `AGENTS.md`'s test list~~ |
 | #14 | CRD-based dispatcher (`PatrolSchedule`) replacing the `--loop` process |

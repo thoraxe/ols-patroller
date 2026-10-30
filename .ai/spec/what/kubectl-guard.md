@@ -63,7 +63,7 @@ sees these messages and recovers based on them.
 ### Output Cap
 
 11. Tool output fed back to the model is capped at `OUT_CAP` = 15,000 chars
-    (hard-coded). Truncated output is **head+tail, not head-only** [PLANNED:
+    (hard-coded). Truncated output is **head+tail, not head-only** [DONE:
     #10]: the model sees the first `OUT_HEAD` (9,000) chars, an elision
     marker, the last `OUT_TAIL` (5,000) chars, and — after the tail — the #20
     recovery hint naming the narrowing patterns (field selectors
@@ -112,7 +112,7 @@ sees these messages and recovers based on them.
   envelope on tool output fed back to the model
 - `OUT_HEAD` / `OUT_TAIL` — hard-coded 9,000 / 5,000 chars (not
   env-configurable): the head+tail split of rule 11's truncated output
-  [PLANNED: #10]
+  [DONE: #10]
 
 ## Constraints
 
@@ -136,4 +136,4 @@ sees these messages and recovers based on them.
 | ~~#6~~ | ~~Refusal grammar extracted as a shared pure predicate (`guard_refusal`); the wiki validator judges `recheck` citations with it — guard behavior itself unchanged (`wiki-memory.md` rule 12a)~~ |
 | ~~#11~~ | ~~Refuse any command containing `--raw` (rule 6a) — proxy/stats endpoints dump multi-hundred-KB JSON that truncates and gets retried, burning patrol turns~~ |
 | ~~#20~~ | ~~Truncation-marker recovery hint (rule 11): output capped at `OUT_CAP` appends, after the unchanged `[truncated, N chars total]` marker, the narrowing patterns (`--field-selector`, `-o jsonpath`/custom-columns, single-object drilldown) — output shaping only, the refusal grammar untouched (ADR 0016)~~ |
-| #10 | Head+tail truncation (rule 11): truncated output keeps `OUT_HEAD` 9,000 head chars + `OUT_TAIL` 5,000 tail chars around a middle-elision marker naming the true total; the #20 hint unchanged after the tail; dry-mode fixture capping unchanged. Impl commit also syncs `AGENTS.md`'s test list |
+| ~~#10~~ | ~~Head+tail truncation (rule 11): truncated output keeps `OUT_HEAD` 9,000 head chars + `OUT_TAIL` 5,000 tail chars around a middle-elision marker naming the true total; the #20 hint unchanged after the tail; dry-mode fixture capping unchanged. Impl commit also syncs `AGENTS.md`'s test list~~ |

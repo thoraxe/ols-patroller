@@ -88,6 +88,14 @@ API_KEY    = os.environ.get("PATROL_API_KEY", "")
 KUBECTL    = os.environ.get("KUBECTL", "")  # resolved later
 NOTIFY_URLS = parse_notify_urls(os.environ.get("PATROL_NOTIFY_URLS", ""))
 MAX_STEPS  = int(os.environ.get("PATROL_MAX_STEPS", "30"))  # LLM turns per patrol
+TOKEN_BUDGET = int(os.environ.get("PATROL_TOKEN_BUDGET", "500000"))  # input tokens/patrol
+# Soft turn target (patrol-engine.md rule 8a, #10; ADR 0027): the user prompt's
+# "~N turns" advice, decoupled from the hard `max_steps` budget. GLM keys off
+# the stated target, not the budget (self-terminated at 34/36 with "~30"
+# stated), so the target is the tuning surface and the budget the backstop.
+# Hard-coded, not env-configurable — retuning it is a spec change, not a config
+# knob (the ADR 0015 convention).
+SOFT_TARGET_TURNS = 20
 TOOL_TIMEOUT = int(os.environ.get("PATROL_TOOL_TIMEOUT", "60"))
 # Per-call-shape request bounds (reporting-notifications.md rule 8a, #49; ADR
 # 0018). Hard-coded, not env-configurable: exploration turns are small and
@@ -102,6 +110,13 @@ REPORT_TIMEOUT  = 900  # seconds per structured reporting/repair call
 REQUEST_MAX_TOKENS = 16_000  # completion tokens per exploration turn
 REPORT_MAX_TOKENS  = 64_000  # completion tokens per structured reporting/repair call
 OUT_CAP    = 15_000  # max chars of tool output fed back to the model
+# Head+tail split of rule 11's truncated output (kubectl-guard.md rule 11, #10;
+# ADR 0027): kubectl tables carry headers/oldest rows at the head, logs and
+# events carry recency at the tail — head-only truncation keeps one informative
+# end and destroys the other. Hard-coded, not env-configurable; the split stays
+# at or under OUT_CAP.
+OUT_HEAD   = 9_000  # head chars kept by the truncation marker
+OUT_TAIL   = 5_000  # tail chars kept after the truncation marker
 # Shape-pass compaction cap (reporting-notifications.md rule 7e, #66): the
 # tool-result keep budget for `compact_messages` — every shape-pass invocation
 # carries the compacted conversation. Hard-coded, not env-configurable (the
@@ -490,15 +505,21 @@ def kubectl_readonly(arg_string: str, *, kubectl: str, dry: bool, verbose: bool)
         return f"ERROR: command timed out after {TOOL_TIMEOUT}s"
     out = (proc.stdout or "") + (("\n[stderr]\n" + proc.stderr) if proc.stderr else "")
     if len(out) > OUT_CAP:
-        # Rule 11 (#20): after the unchanged marker, a recovery hint naming the
-        # narrowing patterns the prompt teaches (patrol-engine.md rules 3a-3d)
-        # — the model recovers systematically instead of retrying the same
-        # dump. Marker plus hint stay under 250 chars so the suffix can never
-        # rival the cap it explains. Output shaping only — the refusal grammar
-        # is untouched (ADR 0016); dry-mode fixture capping above stays
+        # Rule 11 (#10, was #20's head-only cap): keep BOTH informative ends —
+        # the head (table headers, oldest rows) and the tail (logs/events
+        # recency) — around a marker naming the true total and the elided
+        # middle, then the unchanged #20 recovery hint naming the narrowing
+        # patterns the prompt teaches (patrol-engine.md rules 3a-3d). Marker
+        # plus hint stay under 250 chars so the suffix can never rival the cap
+        # it explains. Output shaping only — the refusal grammar is untouched
+        # (ADR 0016); dry-mode fixture capping above stays head-only,
         # marker-free and hint-free (rule 13: fixture text is demo data).
-        out = (out[:OUT_CAP]
-               + f"\n...[truncated, {len(out)} chars total]"
+        total = len(out)
+        middle = total - OUT_HEAD - OUT_TAIL
+        out = (out[:OUT_HEAD]
+               + f"\n...[truncated, {total} chars total: middle {middle} chars "
+                 "elided, head+tail kept]"
+               + out[-OUT_TAIL:]
                + "\nRecover by narrowing, not retrying: --field-selector=..., "
                  "-o jsonpath or custom-columns projections, or a single-object "
                  "drilldown (describe / get <one object>).")
@@ -2139,7 +2160,7 @@ def wiki_history(wiki_path, window: int) -> list[str]:
 
 # --------------------------------------------------------------------------- one patrol
 async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
-                     max_steps: int) -> None:
+                     max_steps: int, token_budget: int) -> None:
     ts = time.strftime("%Y-%m-%dT%H:%M:%S%z")
     print(f"\n[patrol] === patrol start {ts} (model={MODEL}, dry={dry}, engine=deepagents) ===")
 
@@ -2163,9 +2184,11 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
         f"Current time: {ts}\n{dry_note}\n"
         f"=== IN-FLIGHT AGENTIC RUNS / WORK ALREADY IN PROGRESS ===\n{inflight}\n\n"
         f"=== CLUSTER WIKI (your prior notes — may be stale, verify against reality) ===\n{wiki}\n\n"
-        f"Begin your patrol. Explore with kubectl_readonly. You have a hard budget of "
-        f"~{max_steps} turns — once you have covered the main areas or hit diminishing "
-        f"returns, stop exploring and write your final summary."
+        f"Begin your patrol. Explore with kubectl_readonly. Aim to wrap up within "
+        f"~{SOFT_TARGET_TURNS} turns (soft target) — once you have covered the main "
+        f"areas or hit diminishing returns, stop exploring and write your final "
+        f"summary. The hard budget is {max_steps} turns — beyond it the patrol is "
+        f"cut off."
     )
 
     # Two models, two bounds (rules 8a + 8b, #49/#63; ADRs 0018 + 0021): the
@@ -2209,6 +2232,20 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
     seen = 0
     messages: list = []
     budget_cut = False
+    token_cut = False
+
+    def _close_dangling(msgs: list) -> None:
+        """Close tool calls the run never executed so the history is valid
+        input for the reporting pass (rule 10). The step-budget ToolMessage
+        text is reused verbatim for the token cut too (rule 8b) — the cut
+        reason lives in the console warning, not the salvage."""
+        last = msgs[-1] if msgs else None
+        if isinstance(last, AIMessage) and last.tool_calls:
+            for tc in last.tool_calls:
+                msgs.append(ToolMessage(
+                    content="ERROR: step budget exhausted; command not executed.",
+                    tool_call_id=tc["id"], name=tc["name"]))
+
     try:
         async for state in agent.astream(
             {"messages": [{"role": "user", "content": user}]},
@@ -2237,6 +2274,12 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
                 elif isinstance(m, ToolMessage):
                     if verbose:
                         print(f"[patrol]   ↳ {preview(m.content, 220)}", file=sys.stderr)
+            # Rule 8b (#10): the cumulative input-token soft-stop. Checked
+            # between streamed states, so an in-flight turn always completes;
+            # the stop ends exploration, never the patrol. `0` disables.
+            if token_budget and tokens_in > token_budget:
+                token_cut = True
+                break
     except GraphRecursionError:
         # Exploration budget exhausted. Not a failure: the reporting pass runs over
         # whatever was observed, exactly as it does for a naturally-completed patrol.
@@ -2245,12 +2288,17 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
               "reporting from observations so far.")
         # If the run died between a tool call and its execution, close those calls so
         # the history is valid to feed into the reporting pass.
-        last = messages[-1] if messages else None
-        if isinstance(last, AIMessage) and last.tool_calls:
-            for tc in last.tool_calls:
-                messages.append(ToolMessage(
-                    content="ERROR: step budget exhausted; command not executed.",
-                    tool_call_id=tc["id"], name=tc["name"]))
+        _close_dangling(messages)
+
+    if token_cut:
+        # The token cut shares the step-budget cut's landing exactly (rule 8b):
+        # same `budget_cut` reporting pass, same dangling-call salvage, and a
+        # console warning naming the consumed tokens and the budget.
+        budget_cut = True
+        print(f"[patrol] WARNING: exploration token budget ({token_budget} input "
+              f"tokens) exceeded — consumed {tokens_in} input tokens; reporting "
+              "from observations so far.")
+        _close_dangling(messages)
 
     if not messages:
         print("[patrol] WARNING: patrol made no observations; skipping wiki write.")
@@ -2536,6 +2584,9 @@ def main() -> None:
                          "its parent directory is the wiki git repo)")
     ap.add_argument("--max-steps", type=int, default=MAX_STEPS,
                     help="max LLM turns per patrol")
+    ap.add_argument("--token-budget", type=int, default=TOKEN_BUDGET,
+                    help="cumulative exploration input-token budget per patrol "
+                         "(default 500000; 0 disables the stop)")
     ap.add_argument("-q", "--quiet", action="store_true",
                     help="suppress the per-turn output stream (reasoning previews, tool "
                          "calls, results — on by default; findings and notifications "
@@ -2574,7 +2625,8 @@ def main() -> None:
 
     async def patrol_once() -> None:
         await run_patrol(kubectl=kubectl, wiki_path=wiki_path, dry=args.dry_cluster,
-                         verbose=verbose, max_steps=args.max_steps)
+                         verbose=verbose, max_steps=args.max_steps,
+                         token_budget=args.token_budget)
 
     def one() -> None:
         asyncio.run(patrol_once())
