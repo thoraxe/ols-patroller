@@ -143,7 +143,7 @@ redefined here.
   secret-value refusal, raw-path (`--raw`) refusal, timeout, output cap.
 - **`OUT_CAP`** — hard-coded 15,000-char cap envelope on tool output fed back to
   the model; the truncated view itself is head+tail (`OUT_HEAD` 9,000 /
-  `OUT_TAIL` 5,000 around a middle-elision marker) once #10 lands.
+  `OUT_TAIL` 5,000 around a middle-elision marker) [DONE: #10].
 - **AgenticRun** — OLS-side governed execution CR (sandbox + approval + derived RBAC
   + audit). The patrol reads in-flight runs for dedup [today: best-effort] and is
   planned to dispatch remediation to them (#12).

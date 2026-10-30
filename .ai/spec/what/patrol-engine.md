@@ -130,7 +130,7 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
     caps bound the wrong thing, and a warn-only alarm does not stop in-flight
     spend (ADR 0027).
 9. A patrol ends either naturally (the model's plain-text summary) or by exhausting
-   the step budget — or, once #10 lands, by the token soft-stop (rule 8b), which
+   the step budget — or by the token soft-stop (rule 8b, [DONE: #10]), which
    shares the budget-cut path; **all paths flow through the same reporting pass** —
    there is no salvage special-case (asserted by the in-repo fake-model e2e [DONE:
    #4]).
