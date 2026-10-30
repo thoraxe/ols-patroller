@@ -12,10 +12,15 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
 | `shape_report` | Tool-free structured-output pass with one schema retry; `repair=(rejected_wiki, errors)` re-invokes it as the wiki-validation repair pass [DONE: #5]; a parsed result with an empty `updated_wiki` is a failed attempt — retried with a corrective message naming it, a still-empty retry returns the report [DONE: #51]; a `None`/unparsed result's failure reason is classified from the raw response (`classify_empty_result`: truncated-at-max_tokens vs no-tool-call) [DONE: #63]; `wiki_repair=(old_wiki, findings, notifications)` re-invokes it as the wiki-repair pass — the old wiki verbatim plus the observed findings, minimal-merge ask (rule 7d) [DONE: #60]; every report-pass invocation appends the `wiki_size_note` of its wiki-in-play (on-disk wiki for the report pass, rejected wiki for the validation repair; none for the wiki-repair pass) [DONE: #67] |
 | `report_fields` | Normalizes the result (pydantic model or dict) into plain data |
 | `notify` | Console `🔔 NOTIFY` + apprise multi-sink delivery (`PATROL_NOTIFY_URLS`, rules 10a–10c) [DONE: #9] |
+| `notification_entry_id` | Pure parser for a proposed notification's leading `[<entry id>]` tag (rule 4a); `None` for an untagged message [PLANNED: #35] |
+| `wiki_entry_states` | Pure reader of a wiki's metadata-section entries: id → `{status, severity, first_seen, last_notified}` (first occurrence wins, fence-aware; missing optional pairs read as `None`) [PLANNED: #35] |
+| `filter_state_change_notifications` | Pure old-vs-new wiki diff over proposed notifications (rule 4a): `(delivered, suppressed, notified_ids)` — new/severity-changed/status-changed/removed entries deliver; standing unchanged entries suppress; untagged/unattributable messages pass through fail-open [PLANNED: #35] |
+| `digest_notifications` | Pure periodic-digest builder (rule 4c): `(digest, ids)` for standing watching entries older than `PATROL_NOTIFY_DIGEST_AFTER` days and not notified within the window; skips entries the expiry pass is about to retire and `exclude_ids` already notified this patrol [PLANNED: #35] |
+| `stamp_last_notified` | Pure process-owned per-entry clock stamp (rule 4d): `stamp_last_notified(content, ids, day) -> str` — rewrites or appends `last_notified: <day>` for the notified ids, nothing else touched [PLANNED: #35] |
 | `classify_empty_result` | Pure classifier for a `None`/unparsed result's failure reason from the raw response (truncated-at-max_tokens vs no-tool-call) [DONE: #63] |
 | `classify_exception` | Pure classifier for an exception failure's reason — 5xx (`Error code: 5NN`) or timeout markers become `gateway failure (…)`; anything else keeps the exception's string [DONE: #66] |
 | `compact_messages` | Pure conversation compaction for every shape-pass invocation: all messages kept in order, tool-result bodies over `SHAPE_TOOL_KEEP` (1500) chars truncated with a marker; non-tool messages verbatim [DONE: #66] |
-| `run_patrol` (tail) | Validates the report's wiki against the skeleton (one repair pass on failure, `validate_wiki`), delivers findings/notifications, expires stale watch-list entries (`expire_stale_entries`) [DONE: #7], compacts the Anomaly log to its keep budget (`compact_anomaly_log`) [DONE: #40], stamps the frontmatter (`stamp_wiki`), then warns on soft-budget overshoot (`wiki_budget_warnings` on the final wiki, stderr — post-stamp, rule 29) [DONE: #40], writes the wiki atomically, commits + pushes it (wiki git persistence — `project-structure.md`) [#3: DONE; validation/repair/stamp: DONE: #5]; an empty `updated_wiki` on arrival (post-retry) logs one stderr warning naming it before delivery — the no-op is never silent [DONE: #51]; after that warning the tail runs the #60 safety net: one wiki-repair pass (rule 7d), then the minimal-write fallback — the accepted-write tail on the old wiki, no-op without a frontmatter block, one console line [DONE: #60]; a `None` report (total failure) warns, sends one FAILURE notification, and runs the rule-31 fallback directly — the wiki-repair pass skipped (rule 33) [DONE: #66] |
+| `run_patrol` (tail) | Validates the report's wiki against the skeleton (one repair pass on failure, `validate_wiki`), delivers findings/notifications, expires stale watch-list entries (`expire_stale_entries`) [DONE: #7], compacts the Anomaly log to its keep budget (`compact_anomaly_log`) [DONE: #40], stamps the per-entry `last_notified` clock for entries notified this patrol (`stamp_last_notified`) [PLANNED: #35], stamps the frontmatter (`stamp_wiki`), then warns on soft-budget overshoot (`wiki_budget_warnings` on the final wiki, stderr — post-stamp, rule 29) [DONE: #40], writes the wiki atomically, commits + pushes it (wiki git persistence — `project-structure.md`) [#3: DONE; validation/repair/stamp: DONE: #5]; notification delivery is filtered first (`filter_state_change_notifications` over the on-disk and final wiki) and the rule-4c digest appended last [PLANNED: #35]; an empty `updated_wiki` on arrival (post-retry) logs one stderr warning naming it before delivery — the no-op is never silent [DONE: #51]; after that warning the tail runs the #60 safety net: one wiki-repair pass (rule 7d), then the minimal-write fallback — the accepted-write tail on the old wiki, no-op without a frontmatter block, one console line [DONE: #60]; a `None` report (total failure) warns, sends one FAILURE notification, and runs the rule-31 fallback directly — the wiki-repair pass skipped (rule 33) [DONE: #66] |
 
 ## Data Flow
 
@@ -79,7 +84,18 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
    report's notifications, `notify_type` from `report_notify_type` (rules
    10a–10c) [DONE: #9] —
    both after the validation/repair decision resolves and before the physical
-   write, so the final report is the one delivered [DONE: #5].
+   write, so the final report is the one delivered [DONE: #5]. Notification
+   dedup (#35, rule 4a) runs first, but only when a model-authored accepted
+   wiki exists (`new_wiki` from the report or the wiki-repair pass; `old_wiki`
+   is the on-disk wiki, or the seed when the file is absent, rule 14):
+   `filter_state_change_notifications(proposed, old_wiki, new_wiki)` drops
+   standing unchanged tagged messages (count to stderr) and returns the
+   notified ids; `digest_notifications(old_wiki, new_wiki, today=…,
+   digest_after=NOTIFY_DIGEST_AFTER, exclude_ids=notified_ids,
+   patrol_count=…, stale_after=STALE_AFTER)` appends at most one digest last.
+   The minimal-write / keep-old-wiki legs deliver every proposed message
+   unfiltered and append no digest (fail-open: no new state to diff).
+   Both functions are pure, no model calls [PLANNED: #35].
 7. Expiry (#7): before the stamp, `expire_stale_entries(new_wiki, on-disk wiki,
    patrol_count, STALE_AFTER)` maintains the per-entry `verified_patrol` clock
    (new id or advanced `last_verified` → the current write's count, else carried,
@@ -96,6 +112,13 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
    the final wiki prints one stderr warning when it is over
    `WIKI_CHAR_BUDGET` — the write, commit, and push proceed regardless (the
    budget is soft) [DONE: #40].
+7b. Notify stamp (#35): between compaction and the frontmatter stamp,
+   `stamp_last_notified(new_wiki, notified_ids, today)` rewrites or appends
+   the process-owned `last_notified` date on every entry a delivered
+   notification named (state-change ids plus digest ids). It is the digest
+   cadence's state and runs only on a model-authored accepted write — the
+   minimal-write/keep-old-wiki legs have no new state and stamp nothing
+   [PLANNED: #35].
 8. Stamping (#5): before the write, `stamp_wiki` rewrites the process-owned
    frontmatter fields — `patrol_count` (on-disk value + 1, legacy wikis count 0),
    `last_patrol` (patrol-start timestamp), `cluster_id` (`PATROL_CLUSTER_ID`).
@@ -124,6 +147,7 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
 |---|---|---|
 | `shape_report` | langchain `with_structured_output` | function-calling schema binding to `PatrolReport` |
 | `run_patrol` | `shape_report` | message history + `budget_cut` flag |
+| `run_patrol` | `filter_state_change_notifications`, `digest_notifications`, `stamp_last_notified` | proposed notifications + old/new wikis → delivered messages + per-entry notify clock (rules 4a–4d) [PLANNED: #35] |
 | `notify` | apprise | `Apprise` instance per invocation, one `notify` per message, `notify_type` from `report_notify_type` (rules 10a–10c) [DONE: #9] |
 | `run_patrol` | wiki file | `write_wiki_atomic` → `commit_wiki` → `push_wiki`, only when `updated_wiki` is non-empty and skeleton-valid (the gate, step 5; delivery, expiry, stamp, steps 6–8) [#3: DONE; gate: DONE: #5; expiry: DONE: #7] |
 

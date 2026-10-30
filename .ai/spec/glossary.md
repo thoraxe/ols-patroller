@@ -59,6 +59,29 @@ redefined here.
   excess (with a prune target) or the headroom. The process's rule-29
   warning tells the human; the size note tells the model, whose rewrite
   decides.
+- **Notification dedup** — notification hygiene on state change, not every
+  patrol (#35; `reporting-notifications.md` rules 4a–4e): each proposed
+  notification carries a `[<entry id>]` tag and is diffed against the
+  old-vs-new wiki — a new entry, severity change, status change, or
+  removal delivers; a standing unchanged entry is wiki-only. Untagged or
+  unattributable messages deliver fail-open. Process-authored weekly
+  digest for long-unfixed watching entries.
+- **Severity pair** — the optional `severity: info|warn|crit` pair on an
+  entry metadata line (#35, `wiki-memory.md` rule 12b): the current grade
+  of the tracked condition, judged when present and compared across
+  patrols by notification dedup — a missing value on one side of the diff
+  reads as a change (fail-open).
+- **Last-notified clock** — the process-owned `last_notified: YYYY-MM-DD`
+  pair on an entry metadata line (#35, `wiki-memory.md` rule 12c): the
+  patrol start date on which the entry was last named by a delivered
+  notification, stamped by `stamp_last_notified` on accepted writes. The
+  digest cadence's state; never model-trusted, never judged by the
+  validator.
+- **Digest** — the periodic reminder notification (#35, `reporting-notifications.md`
+  rule 4c): at most one process-authored message per patrol naming standing
+  watching entries older than `PATROL_NOTIFY_DIGEST_AFTER` days (default 7)
+  and not notified within that window — the human surface for a condition
+  that outlives the state-change filter.
 - **Stats mode** — `--wiki-stats` (#8): the offline command that prints the
   wiki's health numbers — #8's four (verification rate, resolution ratio,
   confidence spread, churn) plus #40's size line — and exits; no model, no
@@ -143,10 +166,11 @@ redefined here.
   real-cluster validation fixes (#60: still-empty safety net — wiki-repair
   pass + minimal write; #61: `imagePullPolicy: Always` for the rolling tag;
   #62: the seed passes the gate), v0.3 operational
-  hardening (#10 plus #35's digest; #9 re-scoped to apprise multi-sink; #63 — reporting token bound + visible
-  empty-result reasons — was filed here but pulled forward and closed after
-  the frozen-wiki diagnosis), future (#12–#16, #41). Plans live in
-  GitHub issues; #9/#11 were promoted into v0.1 (#9's original dedup scope
+  hardening (#10 plus #35's state-change notification dedup + weekly
+  digest; #9 re-scoped to apprise multi-sink; #63 — reporting token bound +
+  visible empty-result reasons — was filed here but pulled forward and
+  closed after the frozen-wiki diagnosis), future (#12–#16, #41). Plans live
+  in GitHub issues; #9/#11 were promoted into v0.1 (#9's original dedup scope
   later moved to #35) and #20 slotted into v0.2
   after the first in-cluster acceptance run (PR #29 discussion); #39–#41
   were filed from the #5 spec review (PR #38 discussion); #49–#51 were

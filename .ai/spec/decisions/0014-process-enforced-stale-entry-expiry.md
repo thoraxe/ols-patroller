@@ -50,7 +50,7 @@ unit as frontmatter `patrol_count` — never patrol starts.
   again: verification is the only reset.
 - The flip never deletes history (expired items move to the Anomaly log) and
   never becomes a finding or notification — wiki housekeeping, logged to the
-  console; #9's digest is the human surface for long-standing entries. Only
+  console; #9's digest (now #35's) is the human surface for long-standing entries. Only
   Watch-list watching entries flip: statuses and placements the model chose
   deliberately are the model's to manage — the flip is a backstop, not an
   override.

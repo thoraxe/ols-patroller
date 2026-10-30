@@ -217,11 +217,13 @@ the history #7 expires into) carry per-entry structure; everything else is prose
       (forward-compatible: #6's `recheck`, specified as rule 12a); the rest of
       the line after the six required keys must consist solely of such
       ` · `-separated pairs — any other trailing text is a validation failure.
-      Unknown keys are not judged — `recheck` is the first additional key the
-      validator judges (rule 12a) [DONE: #6]. A `verified_patrol` pair
+      Unknown keys are not judged — `recheck` and `severity` are the
+      additional keys the validator judges (rules 12a–12b) [DONE: #6]
+      [PLANNED: #35 — `severity`]. A `verified_patrol` pair
       (#7, rule 20) stays unjudged: it is process-stamped and overwritten
       wholesale, so the model may copy, drop, or mangle it freely
-      [DONE: #7].
+      [DONE: #7]. A `last_notified` pair (#35, rule 12c) is equally
+      process-stamped and unjudged [PLANNED: #35].
     - Free prose is the indented continuation of the list item (sub-bullets
       allowed) — the natural-language hypothesis. Prose is never validated and
       never appears on the metadata line itself: a trailing text after the
@@ -266,6 +268,33 @@ the history #7 expires into) carry per-entry structure; everything else is prose
     - Each recheck error names the section, the entry id, and the reason —
       missing, duplicate, prefixed, or refused (carrying the guard's refusal
       reason) — so the repair pass (rule 18) can fix it in one round.
+12b. **Severity pair** [PLANNED: #35]. An entry metadata line may carry a
+    `severity: <info|warn|crit>` pair among its additional pairs — the
+    current severity of the condition the entry tracks, in the same
+    vocabulary as a finding's severity (`reporting-notifications.md` rule
+    3). It is **optional structurally** — a missing pair is a legal
+    pre-#35 entry, and the model may omit it — but **judged when present**:
+    a `severity` pair whose value is not exactly `info`, `warn`, or `crit`
+    is a validation failure naming the entry, section, and vocabulary. The
+    report contract asks for it on every Watch-list and Anomaly-log entry
+    (`reporting-notifications.md` rule 4b), because notification dedup
+    compares the old and new wiki's severity to detect escalation or
+    de-escalation (rule 4a): a missing severity on either side reads as a
+    change when the other side carries one (fail-open). The pair records
+    the current grade only — the history is git's (rule 4a) — so the model
+    rewrites it as the condition moves; the process never stamps it.
+12c. **Last-notified clock** [PLANNED: #35]. An entry metadata line may
+    carry a process-owned `last_notified: YYYY-MM-DD` pair — the patrol
+    start date on which the entry was last named by a delivered
+    notification (`reporting-notifications.md` rule 4d). The patroller
+    maintains it on accepted writes: `stamp_last_notified` replaces an
+    existing pair in place or appends it as the metadata line's final pair
+    for every entry notified this patrol, and touches nothing else. The
+    model's value is never trusted (copy, drop, or mangle it freely, like
+    `verified_patrol` rule 20), and validation does not judge it — the
+    digest cadence (`reporting-notifications.md` rule 4c) is the only
+    reader. An absent pair reads as "not yet notified under this clock";
+    the digest falls back to `first_seen` for its migration nudge.
 13. **Prose sections.** Topology, Baselines, and Open questions carry no entry
     metadata: list items there are free prose (rule 6's inline
     `(source, timestamp, confidence)` tag remains the convention, unvalidated).
@@ -334,6 +363,10 @@ attempt, and then the old wiki wins. Persistence problems degrade, never block.
       [DONE: #40 — the compaction pass (rule 28) joins between expiry
       and the stamp — expire → compact → stamp → write → commit → push —
       and the soft-budget warning (rule 29) fires on the final wiki];
+      [PLANNED: #35 — the notification stamp (`stamp_last_notified`,
+      `reporting-notifications.md` rule 4d) joins after compaction and
+      before the frontmatter stamp, and only on accepted writes: expire →
+      compact → notify stamp → stamp → write → commit → push];
     - **invalid** → one repair pass (rule 18). If the repaired report's wiki
       validates, that report is the patrol's final report (expire → compact
       → stamp → write → commit → push [DONE: #40 — compaction joins
@@ -471,7 +504,7 @@ archaeology).
     the model's own status choices. Each flip prints one console line
     (stdout, alongside rule 4d's wiki-commit line) naming the entry id and
     its unverified-patrol count; expiry never becomes a finding or a
-    notification — it is wiki housekeeping, not a cluster observation (#9's
+    notification — it is wiki housekeeping, not a cluster observation (#35's
     digest is the human surface for long-standing entries).
 22. **The expiry pass.** A pure, deterministic function —
     `expire_stale_entries(content, old_wiki, patrol_count, stale_after)`,
@@ -984,6 +1017,7 @@ write.
 
 | Ticket | Summary |
 |---|---|
+| #35 | Notification dedup, state-keyed (rules 12b–12c plus the rule-16 write-path amendment; behavior in `reporting-notifications.md` rules 4a–4e, ADR 0026): entries gain an optional `severity` pair (judged when present) so severity changes are diffable across patrols, and a process-owned `last_notified` date pair that the write path stamps for every entry a notification named this patrol (after compaction, before the frontmatter stamp, accepted writes only). The wiki is the dedup baseline; standing unchanged entries stay wiki-only. Impl commit also syncs `README.md`'s config table and `AGENTS.md`'s test list |
 | ~~#67~~ | ~~Model-facing wiki size feedback (rule 29a; the contract amendment is `reporting-notifications.md` rule 5): every report-pass invocation carries a deterministic `wiki_size_note` line — the wiki-in-play's character count, the budget, the floored percentage, and the excess (over budget, with a named prune target) or headroom (under budget) — appended after `REPORT_CONTRACT`; the report pass reports the on-disk wiki, the validation-repair pass the rejected wiki, and the wiki-repair pass carries none. The contract names the consequence chain (over-budget wiki → slower reporting pass → gateway ceiling → the next patrol re-reading prose) and requires the returned wiki to be smaller when over budget unless new facts require the space. ADR 0025 rejects process-side prose compaction. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#66~~ | ~~Total-failure leg of the minimal-write net (rule 33; ADR 0024): a `report is None` patrol skips the wiki-repair pass (no findings to merge) and runs the rule-31 fallback directly — warning, FAILURE notification, then the accepted-write tail on the old wiki. The reporting-pass input compaction and failure-visibility halves of #66 live in `reporting-notifications.md` rules 7e/7f. Impl commit also syncs
   `AGENTS.md`'s test list~~ |

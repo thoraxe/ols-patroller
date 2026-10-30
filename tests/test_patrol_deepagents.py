@@ -353,14 +353,17 @@ def commit_count(cwd) -> int:
 
 
 def run_patrol_cli(monkeypatch, endpoint, wiki, *extra_args, wiki_remote="",
-                   model_factory=None):
+                   model_factory=None, digest_after=0):
     """Run one full patrol through main() — argparse, env check, startup repo
     ensure, the engine loop, the shape pass, and the wiki git tail — with the
     model pointed at the scripted endpoint. Module-level config read from env
     at import (BASE_URL/MODEL/API_KEY/CLUSTER_ID/NOTIFY_URLS/WIKI_REMOTE) is
     pinned explicitly so an ambient PATROL_* environment cannot leak
     network calls into the e2e (rule 6c). `model_factory` overrides the
-    make_model patch (e.g. a recording wrapper asserting on the #49 bound)."""
+    make_model patch (e.g. a recording wrapper asserting on the #49 bound).
+    `digest_after` is pinned too (default 0 = digest disabled) so the
+    fixture dates cannot make unrelated e2e patrols emit a #35 digest; the
+    dedicated dedup tests opt in with the production cadence."""
     monkeypatch.setattr(patrol, "make_model", model_factory or endpoint.model)
     monkeypatch.setattr(patrol, "BASE_URL", "http://fake.test/v1")
     monkeypatch.setattr(patrol, "MODEL", "fake-model")
@@ -368,6 +371,7 @@ def run_patrol_cli(monkeypatch, endpoint, wiki, *extra_args, wiki_remote="",
     monkeypatch.setattr(patrol, "CLUSTER_ID", "e2e-cluster")
     monkeypatch.setattr(patrol, "NOTIFY_URLS", [])
     monkeypatch.setattr(patrol, "WIKI_REMOTE", wiki_remote)
+    monkeypatch.setattr(patrol, "NOTIFY_DIGEST_AFTER", digest_after, raising=False)
     monkeypatch.setattr(sys, "argv",
                         ["patrol.py", "--once", "--dry-cluster", "--wiki", str(wiki),
                          *extra_args])
@@ -1243,3 +1247,130 @@ def test_minimal_write_on_a_fresh_deployment_writes_the_stamped_seed(
     assert fm["patrol_count"] == 1                  # stamped, honest clock
     assert fm["cluster_id"] == "e2e-cluster"
     assert commit_count(wiki.parent) == 1
+
+
+# --------------------------------------------------- notification dedup (#35)
+
+def dedup_watch_body(status="watching", severity="warn",
+                     first_seen="2026-10-15", last_verified="2026-10-20"):
+    """A Watch-list body whose one entry carries the #35 severity pair
+    (rule 12b)."""
+    return (
+        "- id: W-1 · status: " + status + " · first_seen: " + first_seen
+        + " · last_verified: " + last_verified
+        + " · source: kubectl get nodes · confidence: high"
+        + " · recheck: get nodes · severity: " + severity + "\n"
+        "  worker-1 has been NotReady for 40 days."
+    )
+
+
+def dedup_wiki(**kw):
+    """A skeleton-valid report wiki for the dedup scenarios."""
+    return expiry_wiki_text(dedup_watch_body(**kw))
+
+
+def test_notification_dedup_suppresses_standing_and_delivers_changes(
+        tmp_path, monkeypatch, capsys):
+    """#35 rules 4a/4d wired through main(): patrol 1's new entry notifies
+    and stamps last_notified; patrol 2's identical standing entry is
+    wiki-only (no NOTIFY line, one stderr count); patrol 3's severity
+    escalation and patrol 4's resolution notify again. The wiki remains the
+    diff baseline across accepted writes."""
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+
+    def report(notifications, **wiki_kw):
+        return dict(REPORT, notifications=notifications,
+                    updated_wiki=dedup_wiki(**wiki_kw))
+
+    # patrol 1 — new entry: notify, stamp the notify clock
+    run_patrol_cli(monkeypatch, ScriptedEndpoint(
+        turns=NATURAL_TURNS[:1],
+        report=report(["[W-1] worker-1 NotReady"]),
+    ), wiki, "--max-steps", "8")
+    out = capsys.readouterr().out
+    assert "🔔 NOTIFY: [W-1] worker-1 NotReady" in out
+    today = datetime.now().strftime("%Y-%m-%d")
+    assert f"last_notified: {today}" in wiki.read_text()
+
+    # patrol 2 — standing unchanged: wiki-only
+    capsys.readouterr()
+    run_patrol_cli(monkeypatch, ScriptedEndpoint(
+        turns=NATURAL_TURNS[:1],
+        report=report(["[W-1] worker-1 NotReady"]),
+    ), wiki, "--max-steps", "8")
+    captured = capsys.readouterr()
+    assert "🔔 NOTIFY: [W-1] worker-1 NotReady" not in captured.out
+    assert ("suppressed 1 standing-unchanged notification(s) (wiki-only)"
+            in captured.err)
+    assert frontmatter(wiki.read_text())["patrol_count"] == 2
+
+    # patrol 3 — severity escalation: notify again
+    capsys.readouterr()
+    run_patrol_cli(monkeypatch, ScriptedEndpoint(
+        turns=NATURAL_TURNS[:1],
+        report=report(["[W-1] worker-1 degraded to critical"], severity="crit"),
+    ), wiki, "--max-steps", "8")
+    captured = capsys.readouterr()
+    assert "🔔 NOTIFY: [W-1] worker-1 degraded to critical" in captured.out
+    assert "suppressed" not in captured.err  # no line when N == 0
+
+    # patrol 4 — resolution: notify again
+    capsys.readouterr()
+    run_patrol_cli(monkeypatch, ScriptedEndpoint(
+        turns=NATURAL_TURNS[:1],
+        report=report(["[W-1] worker-1 resolved"], status="resolved",
+                      severity="crit"),
+    ), wiki, "--max-steps", "8")
+    captured = capsys.readouterr()
+    assert "🔔 NOTIFY: [W-1] worker-1 resolved" in captured.out
+    assert frontmatter(wiki.read_text())["patrol_count"] == 4
+    assert commit_count(wiki.parent) == 4
+
+
+def test_periodic_digest_wiring_stamps_the_notify_clock(
+        tmp_path, monkeypatch, capsys):
+    """#35 rules 4c/4d wired through main(): a standing entry older than the
+    cadence gets one process-authored digest (its model notification is
+    suppressed), and the accepted write stamps last_notified so the next
+    patrol is quiet until the window rolls."""
+    old = expiry_wiki_text(dedup_watch_body(first_seen="2026-10-01"),
+                           patrol_count=3)
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    wiki.parent.mkdir(parents=True)
+    wiki.write_text(old)
+
+    run_patrol_cli(monkeypatch, ScriptedEndpoint(
+        turns=NATURAL_TURNS[:1],
+        report=dict(REPORT, notifications=["[W-1] worker-1 NotReady"],
+                    updated_wiki=dedup_wiki(first_seen="2026-10-01")),
+    ), wiki, "--max-steps", "8", digest_after=7)
+
+    captured = capsys.readouterr()
+    assert "suppressed 1 standing-unchanged notification(s) (wiki-only)" in captured.err
+    assert "[W-1] worker-1 NotReady" not in captured.out
+    assert ("🔔 NOTIFY: [digest] 1 entry unfixed for more than 7 days: W-1"
+            in captured.out)
+    written = wiki.read_text()
+    today = datetime.now().strftime("%Y-%m-%d")
+    assert f"last_notified: {today}" in written
+    assert frontmatter(written)["patrol_count"] == 4
+
+
+def test_notification_dedup_fails_open_on_the_minimal_write_leg(
+        tmp_path, monkeypatch, capsys):
+    """#35 rule 4a's fail-open clause: when the patrol cannot write a new
+    wiki (the #60 minimal-write fallback), old and new content are the same,
+    but the observed notification must still deliver — there is no new state
+    to dedup against, and a failed write must never swallow the news."""
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    wiki.parent.mkdir(parents=True)
+    wiki.write_text(expiry_wiki_text(dedup_watch_body(), patrol_count=3))
+    report = dict(EMPTY_WIKI_REPORT,
+                  notifications=["[W-1] worker-1 NotReady"])
+    endpoint = ScriptedEndpoint(turns=NATURAL_TURNS[:1], reports=[report] * 4)
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
+
+    captured = capsys.readouterr()
+    assert "minimal write" in captured.out
+    assert "🔔 NOTIFY: [W-1] worker-1 NotReady" in captured.out
+    assert "suppressed 1 standing-unchanged" not in captured.err
