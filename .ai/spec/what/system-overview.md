@@ -60,7 +60,11 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
    `WIKI_ANOMALY_KEEP` (20) resolved/expired entries — older ones pruned by
    the patroller, recoverable from git history — and a soft
    20,000-character budget warns on overshoot without ever failing
-   validation [DONE: #40].
+   validation [DONE: #40]. The model is shown its own size: every shape-pass
+   report invocation carries a deterministic size line (count, budget,
+   over-budget excess or headroom) and the report contract names the
+   consequence chain, so an over-budget wiki is pruned by the model instead
+   of only warned about by the process [PLANNED: #67].
 10. **Reporting & notifications** — typed report schema, severity vocabulary,
     console/apprise-sink delivery (`reporting-notifications.md`) [DONE: #9 —
     was console/Slack].
@@ -189,5 +193,5 @@ documents). Milestone shape:
 | v0.1 (#1–#4, #9, #11, #24, #25, #27, #28) | In-cluster: Containerfile, manifests (SA + cluster-reader + PVC + Deployment), git-backed wiki, e2e tests in-repo, deployment defaults & observability (6 h cadence, unbuffered + verbose logs, git-safe `/wiki`), guard `--raw` refusal [#9 was later re-scoped to apprise multi-sink (v0.3) with its original dedup scope moved to #35] |
 | v0.2 (#5–#8, #20, #39, #40) | Compounding wiki: skeleton schema + validation-on-write, per-entry recheck commands, `stale_after` expiry, `--wiki-stats`, efficient-sweep guidance, deploy-key remote-push wiring, wiki length budget |
 | v0.2.1 (#49, #50, #51) | Real-cluster validation fixes: per-call-shape request bounds (300 s exploration / 900 s structured reporting, #49), empty-`updated_wiki` classification — the contract requires the wiki every report, one named retry + stderr warning (#51), one event loop per `--loop` process (#50); in-cluster operational acceptance is deferred to the v0.2.1 release validation. Impl commits sync `AGENTS.md`'s test list |
-| v0.3 (#10, #9 digest, #63) | Operational hardening: cost control, periodic digest reminder for long-unfixed entries, per-call-shape completion-token bounds + visible empty-result reasons (rules 7c + 8b) |
+| v0.3 (#10, #9 digest, #63, #67) | Operational hardening: cost control, periodic digest reminder for long-unfixed entries, per-call-shape completion-token bounds + visible empty-result reasons (rules 7c + 8b), model-facing wiki size feedback so the model prunes the over-budget wiki (rule 29a) |
 | future (#12–#16, #41) | Remediation handoff to AgenticRuns, fleet/multicluster, CRD dispatcher, pluggable investigation engine, MCP-memory decision record, external runbook referencing |

@@ -52,6 +52,13 @@ redefined here.
   (`WIKI_CHAR_BUDGET`, 20,000) warns on overshoot (write path, repair
   pass, `--wiki-stats`) without ever failing validation. The wiki is what
   the next patrol reads; the repo is what the auditor reads.
+- **Size note** — the model-facing feedback line (#67): a deterministic
+  one-liner appended to the shape pass's user message by
+  `wiki_size_note(content, *, budget=None)` (`wiki-memory.md` rule 29a) naming the
+  wiki-in-play's character count, the soft budget, and the over-budget
+  excess (with a prune target) or the headroom. The process's rule-29
+  warning tells the human; the size note tells the model, whose rewrite
+  decides.
 - **Stats mode** — `--wiki-stats` (#8): the offline command that prints the
   wiki's health numbers — #8's four (verification rate, resolution ratio,
   confidence spread, churn) plus #40's size line — and exits; no model, no
@@ -145,4 +152,6 @@ redefined here.
   were filed from the #5 spec review (PR #38 discussion); #49–#51 were
   filed from the v0.2 real-cluster validation runs; #60–#62 were filed
   from the same runs' follow-up soak; #63 was filed from the
-  same runs and slotted into v0.3.
+  same runs and slotted into v0.3; #67 — model-facing wiki size feedback
+  so the model prunes the over-budget wiki — was filed from the same soak
+  and slotted into v0.3.

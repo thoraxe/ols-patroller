@@ -7,8 +7,9 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
 
 | Symbol | Responsibility |
 |---|---|
-| `REPORT_CONTRACT` | Instructions appended for the reporting pass (field semantics, wiki skeleton format: frontmatter keys, section set, entry metadata line [DONE: #5]; the Watch-list recheck requirement + its tool-argument form [DONE: #6]; the staleness clock's model-facing half — `verified_patrol` is process-stamped, `last_verified` advances only on actual re-verification, unverified watching entries auto-expire [DONE: #7]; the working-set expectations — the wiki is a working set (git history is the archive), summarize and prune within the soft character budget, the Anomaly log keeps the last `WIKI_ANOMALY_KEEP` closed entries [DONE: #40]; the wiki-required instruction — `updated_wiki` is required on every report, full content even when nothing needs changing, an empty one is never a valid answer [DONE: #51]) |
-| `shape_report` | Tool-free structured-output pass with one schema retry; `repair=(rejected_wiki, errors)` re-invokes it as the wiki-validation repair pass [DONE: #5]; a parsed result with an empty `updated_wiki` is a failed attempt — retried with a corrective message naming it, a still-empty retry returns the report [DONE: #51]; a `None`/unparsed result's failure reason is classified from the raw response (`classify_empty_result`: truncated-at-max_tokens vs no-tool-call) [DONE: #63]; `wiki_repair=(old_wiki, findings, notifications)` re-invokes it as the wiki-repair pass — the old wiki verbatim plus the observed findings, minimal-merge ask (rule 7d) [DONE: #60] |
+| `REPORT_CONTRACT` | Instructions appended for the reporting pass (field semantics, wiki skeleton format: frontmatter keys, section set, entry metadata line [DONE: #5]; the Watch-list recheck requirement + its tool-argument form [DONE: #6]; the staleness clock's model-facing half — `verified_patrol` is process-stamped, `last_verified` advances only on actual re-verification, unverified watching entries auto-expire [DONE: #7]; the working-set expectations — the wiki is a working set (git history is the archive), summarize and prune within the soft character budget, the Anomaly log keeps the last `WIKI_ANOMALY_KEEP` closed entries [DONE: #40], plus #67's consequence chain and over-budget-must-shrink instruction [PLANNED: #67]; the wiki-required instruction — `updated_wiki` is required on every report, full content even when nothing needs changing, an empty one is never a valid answer [DONE: #51]) |
+| `wiki_size_note` | Pure model-facing size line (#67, `wiki-memory.md` rule 29a): `wiki_size_note(content, *, budget=None) -> str` — empty for empty content, else one line naming the character count, budget, floored percentage, and the excess (`N characters OVER budget. Prune at least N characters…`) or headroom; `budget` defaults to `WIKI_CHAR_BUDGET` read at call time [PLANNED: #67] |
+| `shape_report` | Tool-free structured-output pass with one schema retry; `repair=(rejected_wiki, errors)` re-invokes it as the wiki-validation repair pass [DONE: #5]; a parsed result with an empty `updated_wiki` is a failed attempt — retried with a corrective message naming it, a still-empty retry returns the report [DONE: #51]; a `None`/unparsed result's failure reason is classified from the raw response (`classify_empty_result`: truncated-at-max_tokens vs no-tool-call) [DONE: #63]; `wiki_repair=(old_wiki, findings, notifications)` re-invokes it as the wiki-repair pass — the old wiki verbatim plus the observed findings, minimal-merge ask (rule 7d) [DONE: #60]; every report-pass invocation appends the `wiki_size_note` of its wiki-in-play (on-disk wiki for the report pass, rejected wiki for the validation repair; none for the wiki-repair pass) [PLANNED: #67] |
 | `report_fields` | Normalizes the result (pydantic model or dict) into plain data |
 | `notify` | Console `🔔 NOTIFY` + apprise multi-sink delivery (`PATROL_NOTIFY_URLS`, rules 10a–10c) [DONE: #9] |
 | `classify_empty_result` | Pure classifier for a `None`/unparsed result's failure reason from the raw response (truncated-at-max_tokens vs no-tool-call) [DONE: #63] |
@@ -24,12 +25,18 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
    separate tool-free model call.
 2. Prompt = compacted conversation + user message (`prefix + REPORT_CONTRACT`)
    — `compact_messages(messages)` in every mode (rule 7e) [DONE: #66]; the
-   prefix
+   report and validation-repair modes append the rule-29a size note to the
+   attempt's final user message (after the contract on the first attempt,
+   after the corrective on a retry), a blank line between — the on-disk
+   wiki's count for the report pass, the rejected wiki's for the validation
+   repair, none for the wiki-repair pass [PLANNED: #67]; the prefix
    differs by `budget_cut`: "completed and wrote its final summary" vs "CUT OFF …
    commands marked 'not executed' never ran. Report only on what was actually
    observed."
 3. On exception or empty result: append "That was not a valid PatrolReport. Produce
-   it now." and retry once. Two failures → `None` — and the tail's `None` leg
+   it now." and retry once — the rule-29a size note is appended last on the
+   retry prompt too (it describes the wiki-in-play, not the response), so the
+   retry prompt also ends with the note, exactly once [PLANNED: #67]. Two failures → `None` — and the tail's `None` leg
    warns, notifies (FAILURE), and minimal-writes (rule 33) [DONE: #66]. Every
    attempt-failure log line carries the attempt's elapsed seconds, and an
    exception's reason passes `classify_exception` (rule 7f) [DONE: #66]. A
@@ -174,3 +181,13 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
   notification and minimal write, rule 33); `classify_exception` is
   string-based because the SDK's exception types are not importable
   guarantees across langchain-openai versions [DONE: #66].
+- The size note (#67, rule 29a) is instruction-only feedback: it changes
+  what the model is told, never what the patrol accepts. It is computed
+  from the content in play — never from the model's own response — and
+  appended after the contract so the number is the last thing the model
+  reads before emitting the report. The on-disk count comes from the
+  `wiki` `run_patrol` loaded at start (the seed when the file is absent),
+  passed to `shape_report` as `current_wiki`; the validation-repair mode
+  uses its `rejected_wiki` argument; the wiki-repair mode appends none
+  (its ask is a minimal merge). Rejected process-side prose compaction is
+  ADR 0025 [PLANNED: #67].
