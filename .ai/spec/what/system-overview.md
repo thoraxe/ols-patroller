@@ -140,6 +140,8 @@ Environment variables:
   disables the digest. Read once at import; invalid/negative fails startup
   [DONE: #35]
 - `PATROL_MAX_STEPS` — LLM-turn exploration budget per patrol (default `30`)
+- `PATROL_TOKEN_BUDGET` — cumulative exploration input-token budget per patrol
+  (default `500,000`; `0` disables the stop) [PLANNED: #10]
 - `PATROL_INTERVAL` — seconds between patrols in `--loop` mode (default
   `21600`, six hours) [DONE: #25 — was `900`]
 - `PATROL_TOOL_TIMEOUT` — per-command timeout in seconds (default `60`)
@@ -156,7 +158,7 @@ Environment variables:
 
 CLI flags: `--once` (default), `--loop`, `--interval`, `--dry-cluster`, `--wiki`
 (default `wiki/cluster-wiki.md` next to `patrol.py` [DONE: #3; was
-`cluster-wiki.md`]), `--max-steps`, `-q/--quiet` (suppress the per-turn output
+`cluster-wiki.md`]), `--max-steps`, `--token-budget` [PLANNED: #10], `-q/--quiet` (suppress the per-turn output
 stream, on by default [DONE: #27 — was the opt-in `-v/--verbose`]), and
 `--wiki-stats` (print the wiki's four health numbers and exit — offline, no
 `PATROL_*` env needed, never runs a patrol [DONE: #8]; plus the #40 size
@@ -165,7 +167,10 @@ In-cluster, the image's default command is `--loop --interval 21600 --wiki
 /wiki/cluster-wiki.md` [DONE: #1] [DONE: #25] (`container-image.md`).
 
 Hard-coded constants (not env-configurable): `OUT_CAP` = 15,000 chars of tool output
-fed back to the model; model temperature 0.3, completion-token bounds —
+fed back to the model (the cap envelope; the truncated view itself is head+tail —
+`OUT_HEAD` 9,000 / `OUT_TAIL` 5,000, `kubectl-guard.md` rule 11 [PLANNED: #10]);
+the prompt's soft turn target `SOFT_TARGET_TURNS` = 20, decoupled from the hard
+`max_steps` budget (`patrol-engine.md` rule 8a) [PLANNED: #10]; model temperature 0.3, completion-token bounds —
 `REQUEST_MAX_TOKENS` 16000 per exploration turn, `REPORT_MAX_TOKENS` 64000
 per structured reporting/repair call
 (`reporting-notifications.md` rule 8b) [DONE: #63 — was a flat
@@ -202,5 +207,5 @@ documents). Milestone shape:
 | v0.1 (#1–#4, #9, #11, #24, #25, #27, #28) | In-cluster: Containerfile, manifests (SA + cluster-reader + PVC + Deployment), git-backed wiki, e2e tests in-repo, deployment defaults & observability (6 h cadence, unbuffered + verbose logs, git-safe `/wiki`), guard `--raw` refusal [#9 was later re-scoped to apprise multi-sink (v0.3) with its original dedup scope moved to #35] |
 | v0.2 (#5–#8, #20, #39, #40) | Compounding wiki: skeleton schema + validation-on-write, per-entry recheck commands, `stale_after` expiry, `--wiki-stats`, efficient-sweep guidance, deploy-key remote-push wiring, wiki length budget |
 | v0.2.1 (#49, #50, #51) | Real-cluster validation fixes: per-call-shape request bounds (300 s exploration / 900 s structured reporting, #49), empty-`updated_wiki` classification — the contract requires the wiki every report, one named retry + stderr warning (#51), one event loop per `--loop` process (#50); in-cluster operational acceptance is deferred to the v0.2.1 release validation. Impl commits sync `AGENTS.md`'s test list |
-| v0.3 (#10, #35, #63, #67) | Operational hardening: cost control, state-change notification dedup + periodic digest reminder for long-unfixed entries (#35), per-call-shape completion-token bounds + visible empty-result reasons (rules 7c + 8b), model-facing wiki size feedback so the model prunes the over-budget wiki (rule 29a) |
+| v0.3 (#10, #35, #63, #67) | Operational hardening: cost control (token soft-stop, soft turn target decoupled from the hard budget, head+tail truncation; scoping settled whole-cluster by ADR 0027), state-change notification dedup + periodic digest reminder for long-unfixed entries (#35), per-call-shape completion-token bounds + visible empty-result reasons (rules 7c + 8b), model-facing wiki size feedback so the model prunes the over-budget wiki (rule 29a) |
 | future (#12–#16, #41) | Remediation handoff to AgenticRuns, fleet/multicluster, CRD dispatcher, pluggable investigation engine, MCP-memory decision record, external runbook referencing |

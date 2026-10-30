@@ -117,12 +117,13 @@ class ScriptedEndpoint:
     """
 
     def __init__(self, turns=(), report=None, on_empty="summary", report_mode="ok",
-                 reports=None):
+                 reports=None, prompt_tokens=10):
         self.turns = list(turns)
         self.report = report
         self.on_empty = on_empty
         self.report_mode = report_mode
         self.reports = list(reports) if reports is not None else None
+        self.prompt_tokens = prompt_tokens  # #10: fake per-turn input-token usage
         self._shape_seen = 0
         self.requests: list[dict] = []
 
@@ -152,8 +153,7 @@ class ScriptedEndpoint:
         finish = "tool_calls" if msg.get("tool_calls") else "stop"
         return self._completion(msg, finish, stream=bool(body.get("stream")))
 
-    @staticmethod
-    def _completion(message, finish, stream):
+    def _completion(self, message, finish, stream):
         if stream:  # SSE chunks, in case the stack switches to streamed calls
             chunks = []
             if message.get("content"):
@@ -173,7 +173,9 @@ class ScriptedEndpoint:
             "id": "chatcmpl-fake", "object": "chat.completion",
             "created": 1700000000, "model": "fake-model",
             "choices": [{"index": 0, "message": message, "finish_reason": finish}],
-            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+            "usage": {"prompt_tokens": self.prompt_tokens,
+                      "completion_tokens": 5,
+                      "total_tokens": self.prompt_tokens + 5},
         })
 
     def model(self, timeout: float | None = None,
@@ -478,6 +480,79 @@ def test_budget_cut_flows_through_same_shape_pass(tmp_path, monkeypatch, capsys)
     # and the model genuinely never wrote a final summary: no assistant text
     # in the conversation the shape pass received (it was cut mid-tool-loop)
     assert "FINAL SUMMARY" not in endpoint.conversation_text(s)
+
+
+def test_user_prompt_carries_decoupled_soft_target(tmp_path, monkeypatch, capsys):
+    """Rule 8a (#10): the user prompt states the soft turn target
+    (SOFT_TARGET_TURNS, 20) distinctly from the hard max_steps budget — was
+    `~{max_steps} turns` (one number wearing both hats) before #10."""
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    endpoint = ScriptedEndpoint(turns=NATURAL_TURNS, report=REPORT)
+    # max-steps 8: distinct from both the target (20) and the default budget
+    # (30), so the two numbers in the prompt cannot be confused
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
+
+    agents = endpoint.agent_requests
+    assert agents, "no agent requests recorded"
+    prompt = endpoint.last_user_prompt(agents[0])
+    # the soft target, as its own constant's value, in its own sentence
+    assert "~20 turns (soft target)" in prompt
+    # the hard budget, quoted as specced (rule 8a), with the CLI's actual value
+    assert "The hard budget is 8 turns" in prompt
+    # and the patrol completed normally (the target is advice, not a cut)
+    assert "e2e wiki marker" in wiki.read_text()
+
+
+def test_token_soft_stop_ends_exploration_like_a_budget_cut(tmp_path, monkeypatch, capsys):
+    """Rule 8b (#10): crossing the cumulative input-token budget ends
+    exploration through the budget-cut path — same shape pass, dangling
+    tool calls closed, report still written — and the warning names the
+    consumed tokens and the budget."""
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    # each turn claims 400k input tokens; the budget is 600k, so turn 2
+    # crosses it — long before the 30-turn step budget could
+    endpoint = ScriptedEndpoint(report=REPORT, on_empty="toolcall",
+                                prompt_tokens=400_000)
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "30",
+                   "--token-budget", "600000")
+
+    # the cut happened and was reported with its numbers
+    out = capsys.readouterr().out
+    assert "token budget" in out
+    assert "600000" in out and "800000" in out
+    # and it was the TOKEN cut, not the step budget (30 turns never exhausted)
+    assert "exhausted" not in out
+
+    # exploration stopped early: a handful of agent turns, not the step
+    # budget's worth
+    assert 2 <= len(endpoint.agent_requests) <= 4, (
+        f"token cut must stop exploration early, got {len(endpoint.agent_requests)} turns")
+
+    # the same shape pass ran (budget-cut prefix, closed tool calls)
+    shapes = endpoint.shape_requests
+    assert len(shapes) == 1
+    s = shapes[0]
+    assert "CUT OFF" in endpoint.last_user_prompt(s)
+    assert "step budget exhausted; command not executed." in endpoint.tool_results(s)
+
+    # the report still landed: wiki written and committed
+    assert "e2e wiki marker" in wiki.read_text()
+    assert commit_count(wiki.parent) == 1
+
+
+def test_token_budget_zero_disables_the_soft_stop(tmp_path, monkeypatch, capsys):
+    """Rule 8b (#10): --token-budget 0 disables the token stop — a
+    token-hungry model runs to the step-budget cut exactly as before."""
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    endpoint = ScriptedEndpoint(report=REPORT, on_empty="toolcall",
+                                prompt_tokens=10_000_000)
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "2",
+                   "--token-budget", "0")
+
+    out = capsys.readouterr().out
+    assert "token budget" not in out
+    assert "exploration budget" in out and "exhausted" in out
+    assert "e2e wiki marker" in wiki.read_text()
 
 
 def test_failed_reporting_pass_minimal_writes_and_notifies(tmp_path, monkeypatch, capsys):
