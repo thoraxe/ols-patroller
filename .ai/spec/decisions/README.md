@@ -49,3 +49,4 @@ Date: YYYY-MM-DD · Status: proposed | accepted | superseded by NNNN
 | [0022](0022-minimal-write-advances-the-clock.md) | The minimal-write fallback advances the patrol clock |
 | [0023](0023-apprise-multi-sink-notifications.md) | apprise for multi-sink notifications |
 | [0024](0024-total-failure-joins-the-minimal-write-net.md) | Total reporting failure joins the minimal-write net |
+| [0025](0025-wiki-size-feedback-not-prose-compaction.md) | Wiki budget feedback goes to the model, not through prose compaction |

@@ -23,12 +23,14 @@ end-to-end by the fake-model e2e in test_patrol_deepagents.py.
 
 Run: uv run --group dev pytest tests/ -q
 """
+import asyncio
 import os
 import subprocess
 import sys
 from pathlib import Path
 
 import patrol
+from langchain_core.messages import HumanMessage
 
 
 REPO = Path(__file__).resolve().parent.parent
@@ -395,3 +397,168 @@ def test_report_contract_states_working_set_expectations():
         "the contract's old closing sentence must be reworded per the rule 5"
         " amendment — prose entries are expired by the model, closed"
         " Anomaly-log history is pruned by the patroller")
+
+
+# ------------------------------------ the model-facing size note (#67, rule 29a)
+
+def test_size_note_within_budget_names_count_budget_headroom():
+    """Rule 29a (#67): within budget the note names the content's character
+    count, the soft budget, the floored percentage, and the headroom — plus
+    the do-not-grow-without-pruning instruction."""
+    content = build_wiki()
+    count, budget = len(content), patrol.WIKI_CHAR_BUDGET
+    share = int(100 * count / budget)
+    assert patrol.wiki_size_note(content) == (
+        f"Current wiki size: {count} characters ({share}% of the "
+        f"{budget}-character soft budget) — {budget - count} characters "
+        "of headroom. Do not grow it without pruning something else.")
+    assert "OVER budget" not in patrol.wiki_size_note(content)
+
+
+def test_size_note_over_budget_names_the_excess_and_prune_target():
+    """Rule 29a (#67): over budget the note names the exact excess and a
+    named prune target — the number the model must shrink by."""
+    content = big_wiki(target=25_000)
+    count, budget = len(content), patrol.WIKI_CHAR_BUDGET
+    excess = count - budget
+    share = int(100 * count / budget)
+    assert patrol.wiki_size_note(content) == (
+        f"Current wiki size: {count} characters ({share}% of the "
+        f"{budget}-character soft budget) — {excess} characters OVER "
+        f"budget. Prune at least {excess} characters: rewrite existing "
+        "prose tighter and drop what no longer earns its place.")
+
+
+def test_size_note_empty_content_and_budget_parameter():
+    """Rule 29a (#67): empty content renders nothing (no note); the budget
+    parametrizes the pure function so tests are not pinned to the constant."""
+    assert patrol.wiki_size_note("") == ""
+    over = patrol.wiki_size_note("x" * 120, budget=100)
+    assert "120 characters" in over and "(120% of the 100-character" in over
+    assert "20 characters OVER budget" in over
+    under = patrol.wiki_size_note("x" * 10, budget=100)
+    assert "10 characters" in under and "(10% of the 100-character" in under
+    assert "90 characters of headroom" in under
+    # the boundary is within budget (rule 29's strict `count > budget`)
+    at_budget = patrol.wiki_size_note("x" * 100, budget=100)
+    assert "0 characters of headroom" in at_budget
+    assert "OVER budget" not in at_budget
+
+
+def test_size_note_reads_the_default_budget_at_call_time(monkeypatch):
+    """Rule 29a (#67): like the #40 budgets, WIKI_CHAR_BUDGET is read at call
+    time — monkeypatching it changes the note."""
+    monkeypatch.setattr(patrol, "WIKI_CHAR_BUDGET", 100)
+    note = patrol.wiki_size_note("x" * 120)
+    assert "100-character soft budget" in note
+    assert "20 characters OVER budget" in note
+
+
+def test_report_contract_names_the_consequence_chain_and_shrink_rule():
+    """reporting-notifications.md rule 5 (#67): the contract names the
+    consequence chain and requires the returned wiki to be smaller than the
+    current one when the size line says over budget."""
+    contract = patrol.REPORT_CONTRACT
+    assert "size line" in contract
+    assert "over budget" in contract
+    assert "gateway" in contract and "request ceiling" in contract
+    assert "next patrol" in contract and "re-read" in contract
+    assert "must be smaller than the current wiki" in contract
+    assert "prune at least the stated excess" in contract
+
+
+class _StubShapeModel:
+    """A shape_report stub: with_structured_output returns a runnable whose
+    ainvoke serves scripted results and records every prompt it received."""
+
+    def __init__(self, results):
+        self.results = list(results)
+        self.prompts = []
+
+    def with_structured_output(self, schema, method=None, include_raw=None):
+        stub = self
+
+        class _Structured:
+            async def ainvoke(self, msgs):
+                stub.prompts.append(list(msgs))
+                served = stub.results.pop(0)
+                if isinstance(served, Exception):
+                    raise served
+                return served
+
+        return _Structured()
+
+
+def _report(wiki):
+    return patrol.PatrolReport(findings=[], notifications=[], updated_wiki=wiki)
+
+
+def _prompt(stub):
+    return stub.prompts[0][-1]["content"]
+
+
+def test_shape_pass_appends_size_note_after_the_contract_for_on_disk_wiki():
+    """Rule 29a (#67): the report pass appends the on-disk wiki's size note
+    after REPORT_CONTRACT, a blank line between — the model sees the number
+    it is being asked to shrink."""
+    old = build_wiki()
+    stub = _StubShapeModel([_report("full wiki")])
+    result = asyncio.run(patrol.shape_report(
+        stub, [HumanMessage("mission")], budget_cut=False, current_wiki=old))
+    assert result.updated_wiki == "full wiki"
+    prompt = _prompt(stub)
+    note = patrol.wiki_size_note(old)
+    assert note and prompt.endswith("\n\n" + note)
+    assert prompt.count("Current wiki size:") == 1
+
+
+def test_shape_pass_no_size_note_without_current_wiki():
+    """Rule 29a (#67): empty content (no wiki in play) renders no note —
+    existing callers that pass no `current_wiki` are unchanged."""
+    stub = _StubShapeModel([_report("full wiki")])
+    asyncio.run(patrol.shape_report(
+        stub, [HumanMessage("mission")], budget_cut=False))
+    assert "Current wiki size:" not in _prompt(stub)
+
+
+def test_validation_repair_size_note_describes_the_rejected_wiki():
+    """Rule 29a (#67): the validation-repair pass reports the rejected wiki
+    it is asked to fix — not the on-disk wiki."""
+    on_disk = build_wiki()
+    rejected = big_wiki(target=25_000)
+    stub = _StubShapeModel([_report("fixed wiki")])
+    asyncio.run(patrol.shape_report(
+        stub, [HumanMessage("mission")], budget_cut=False,
+        current_wiki=on_disk, repair=(rejected, ["bogus_key: 1"])))
+    prompt = _prompt(stub)
+    assert patrol.wiki_size_note(rejected) in prompt
+    assert patrol.wiki_size_note(on_disk) not in prompt
+
+
+def test_shape_pass_size_note_persists_on_the_retry():
+    """Rule 29a (#67): the size note describes the wiki-in-play, not the
+    response — it appears exactly once on the corrective retry too."""
+    old = build_wiki()
+    stub = _StubShapeModel([RuntimeError("nope"), _report("full wiki")])
+    result = asyncio.run(patrol.shape_report(
+        stub, [HumanMessage("mission")], budget_cut=False, current_wiki=old))
+    assert result.updated_wiki == "full wiki"
+    note = patrol.wiki_size_note(old)
+    assert len(stub.prompts) == 2
+    for prompt in stub.prompts:
+        content = prompt[-1]["content"]
+        assert content.endswith("\n\n" + note)
+        assert content.count("Current wiki size:") == 1
+    assert "not a valid PatrolReport" in stub.prompts[1][-1]["content"]
+
+
+def test_wiki_repair_pass_carries_no_size_note():
+    """Rule 29a (#67): the rule-7d wiki-repair pass carries no size note —
+    its ask is a minimal merge preserving the old wiki, so a prune
+    instruction would contradict it."""
+    stub = _StubShapeModel([_report("merged wiki")])
+    asyncio.run(patrol.shape_report(
+        stub, [HumanMessage("mission")], budget_cut=False,
+        current_wiki=big_wiki(target=25_000),
+        wiki_repair=("OLD WIKI", [], [])))
+    assert "Current wiki size:" not in _prompt(stub)

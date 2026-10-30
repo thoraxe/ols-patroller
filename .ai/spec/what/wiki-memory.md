@@ -741,6 +741,60 @@ load-bearing constraint of #5).
     - **stats mode:** rule 24's `size:` line and over-budget warning make
       the drift measurable offline (rule 23's rationale: rules without
       measures drift).
+29a. **Model-facing size note** [DONE: #67]. Rule 29's warning is
+    process-side: the model never sees its own size, so it cannot act on
+    it (the #67 evidence: consecutive patrols logged the over-budget
+    warning while the wiki kept growing). The feedback loop closes inside
+    the shape pass. A pure function
+    `wiki_size_note(content, *, budget=None) -> str` renders exactly one
+    deterministic line — empty string for empty content — with `budget`
+    defaulting to `WIKI_CHAR_BUDGET`, read at call time (the rule-28/29
+    convention; tests may pass a smaller budget). It states the content's
+    character count, the budget, and the floored percentage of budget
+    (`int(100 * count / budget)`), plus:
+    - **within budget:** the headroom in characters and the
+      do-not-grow-without-pruning instruction — e.g.
+      `Current wiki size: 18500 characters (92% of the 20000-character
+      soft budget) — 1500 characters of headroom. Do not grow it without
+      pruning something else.` The boundary is `count == budget`: it is
+      **within budget** (0 characters of headroom), matching rule 29's
+      strict `count > budget` overshoot test — the `OVER budget` branch
+      fires only when the count strictly exceeds the budget.
+    - **over budget:** the excess in characters (`count - budget`) and a
+      named prune target — e.g. `Current wiki size: 27296 characters
+      (136% of the 20000-character soft budget) — 7296 characters OVER
+      budget. Prune at least 7296 characters: rewrite existing prose
+      tighter and drop what no longer earns its place.`
+    The note is appended to the **final user message of every attempt's
+    prompt**, a blank line between: after `REPORT_CONTRACT` on the first
+    attempt, and after the corrective message on a retry — so the note is
+    the last text the model reads on every attempt, and it appears exactly
+    once per prompt. It is carried in every report-pass invocation — the
+    report pass and the rule-18 validation-repair pass:
+    - the **report pass** reports the old on-disk wiki's size — the seed
+      on a file-absent deployment (rule 14), i.e. the content rule 3
+      injects into exploration and the next patrol would read;
+    - the **validation-repair pass** reports the **rejected wiki's** size
+      — the content the model is being asked to fix. The rejected wiki's
+      rule-29 budget warning also rides the repair error list (rule 18)
+      **separately**: both surfaces appear deliberately and must not be
+      de-duplicated — the error-list warning is part of the fix
+      instructions, the size note is the measurement;
+    - the **rule-7d wiki-repair pass carries no size note** on any of its
+      invocations, including its internal retry: its ask is a minimal
+      merge that preserves the old wiki, and a prune instruction would
+      contradict it.
+    `REPORT_CONTRACT`'s working-set item is mode-agnostic and shared by
+    every invocation, so its wording is hedged ("a size line **may** be
+    appended below") — the wiki-repair mode and direct
+    `shape_report` callers with no `current_wiki` see no line.
+    The note is instruction only, never a gate: acceptance stays
+    structural (rule 29's softness), and no write-path behavior changes.
+    `REPORT_CONTRACT`'s working-set item names the consequence chain the
+    note makes actionable (`reporting-notifications.md` rule 5 amendment,
+    the teach-harder half of #67). See
+    `decisions/0025-wiki-size-feedback-not-prose-compaction.md` for the
+    rejected process-side alternative.
 
 ### Still-Empty Safety Net
 
@@ -930,6 +984,7 @@ write.
 
 | Ticket | Summary |
 |---|---|
+| ~~#67~~ | ~~Model-facing wiki size feedback (rule 29a; the contract amendment is `reporting-notifications.md` rule 5): every report-pass invocation carries a deterministic `wiki_size_note` line — the wiki-in-play's character count, the budget, the floored percentage, and the excess (over budget, with a named prune target) or headroom (under budget) — appended after `REPORT_CONTRACT`; the report pass reports the on-disk wiki, the validation-repair pass the rejected wiki, and the wiki-repair pass carries none. The contract names the consequence chain (over-budget wiki → slower reporting pass → gateway ceiling → the next patrol re-reading prose) and requires the returned wiki to be smaller when over budget unless new facts require the space. ADR 0025 rejects process-side prose compaction. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#66~~ | ~~Total-failure leg of the minimal-write net (rule 33; ADR 0024): a `report is None` patrol skips the wiki-repair pass (no findings to merge) and runs the rule-31 fallback directly — warning, FAILURE notification, then the accepted-write tail on the old wiki. The reporting-pass input compaction and failure-visibility halves of #66 live in `reporting-notifications.md` rules 7e/7f. Impl commit also syncs
   `AGENTS.md`'s test list~~ |
 | ~~#60~~ | ~~Still-empty safety net (rules 30–32, ADR 0022; the call shape is `reporting-notifications.md` rule 7d): after the #51 still-empty outcome, one wiki-repair pass — the shape pass carrying the old wiki verbatim plus the observed findings, asking for a minimal merge; its findings are never delivered — and, when that fails too, a minimal-write fallback that runs the accepted-write tail on the old wiki (clock advanced, body preserved; no-op on a legacy no-frontmatter wiki). Impl commit also syncs `AGENTS.md`'s test list and `ARCHITECTURE.md`'s wiki prose if it mentions the terminal still-empty outcome~~

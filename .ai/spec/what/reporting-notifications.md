@@ -58,6 +58,19 @@ in `how/reporting-pipeline.md`.
    to `""`), so a wiki-omitting response still parses and its findings
    survive: the process, not the parser, enforces the requirement
    (rule 7b).]
+   [DONE: #67 — the working-set instruction also names the
+   consequence chain and the prune target, and tells the model its own
+   size. The contract text added, verbatim (executable pins live in
+   `test_wiki_budget.py`):
+   "A size line may be appended below: the current wiki's character count
+   and the soft budget. An over-budget wiki slows this reporting pass,
+   risks the model gateway's request ceiling, and makes the next patrol
+   re-read prose that should have been pruned. When the size line says
+   the wiki is over budget, the updated_wiki you return must be smaller
+   than the current wiki — prune at least the stated excess — unless this
+   patrol observed new facts that genuinely require the space; then prune
+   elsewhere to pay for them. Use the line: retain what is load-bearing,
+   drop what is not."]
 
 ### Reporting Pass
 
@@ -325,6 +338,7 @@ in `how/reporting-pipeline.md`.
 
 | Ticket | Summary |
 |---|---|
+| ~~#67~~ | ~~Wiki size feedback in the reporting pass (rule 5 amendment here; rule 29a in `wiki-memory.md`): `REPORT_CONTRACT` names the consequence chain (over-budget wiki → slower reporting pass → model gateway's request ceiling → the next patrol re-reading prose) and requires a smaller returned wiki when the size line says over budget (prune at least the excess, unless new facts require the space); every report-pass invocation appends the deterministic `wiki_size_note` line. ADR 0025 rejects process-side prose compaction. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#66~~ | Reporting-pass gateway-ceiling survival (rules 6, 7, 7e, 7f here; `wiki-memory.md` rule 33; ADR 0024): every shape-pass invocation carries the compacted conversation (pure `compact_messages`, `SHAPE_TOOL_KEEP` 1500 chars, tool-result bodies truncated with a marker); every attempt-failure log line carries elapsed seconds and exception reasons pass the pure `classify_exception` (5xx/timeout → `gateway failure (…)`); a total-failure patrol delivers one FAILURE notification (pinned message) and runs the rule-31 minimal-write fallback (wiki-repair pass skipped — no findings to merge). Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#60~~ | ~~Wiki-repair pass + minimal-write fallback (rule 7d here; the tail contract, bounds, and fallback are `wiki-memory.md` rules 30–32, ADR 0022): the shape pass gains a `wiki_repair=(old_wiki, findings, notifications)` mode — old wiki verbatim plus the observed findings, minimal-merge ask, shared binding/bounds/retry; its findings are never delivered. Impl commit also syncs `AGENTS.md`'s test list~~
 | ~~#63~~ | ~~Per-call-shape completion-token bounds + visible empty-result reasons (rules 7c + 8b): exploration `REQUEST_MAX_TOKENS` 16000, structured reporting/repair calls `REPORT_MAX_TOKENS` 64000 through the `make_model` seam; the attempt-failure log line names its cause (`truncated at max_tokens` vs `no tool call`) via a pure classifier over the raw response. Impl commit also syncs `AGENTS.md`'s test list and the stale `max_tokens` prose in `patrol.py`'s code comments (e.g. the working-set comment near the shape-pass budget)~~ |

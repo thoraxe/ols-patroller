@@ -854,6 +854,29 @@ def test_over_budget_wiki_writes_with_stderr_warning(tmp_path, monkeypatch, caps
     assert "500" in captured.err                 # the budget is named
 
 
+def test_shape_pass_prompt_carries_the_wiki_size_feedback(tmp_path, monkeypatch, capsys):
+    """#67 rule 29a wired into `run_patrol`: the report pass's prompt carries
+    the on-disk wiki's deterministic size note after REPORT_CONTRACT — the
+    model sees the exact count, the budget, and the excess it must prune."""
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    wiki.parent.mkdir(parents=True)
+    monkeypatch.setattr(patrol, "WIKI_CHAR_BUDGET", 500)
+    on_disk = wiki_text("on-disk memory marker")
+    assert len(on_disk) > 500 and patrol.validate_wiki(on_disk) == []
+    wiki.write_text(on_disk)
+    endpoint = ScriptedEndpoint(turns=NATURAL_TURNS[:1], report=REPORT)
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
+
+    shapes = endpoint.shape_requests
+    assert len(shapes) == 1, f"expected exactly one shape-pass request, got {len(shapes)}"
+    prompt = endpoint.last_user_prompt(shapes[0])
+    note = patrol.wiki_size_note(on_disk)
+    assert note and prompt.endswith("\n\n" + note)
+    assert f"{len(on_disk)} characters" in prompt
+    assert "OVER budget" in prompt and "Prune at least" in prompt
+    capsys.readouterr()
+
+
 def test_repair_prompt_carries_the_budget_warning(tmp_path, monkeypatch, capsys):
     """#40 rule 29's repair half: when a repair pass runs, the rejected
     wiki's budget warning rides the error list (the repair prompt carries
