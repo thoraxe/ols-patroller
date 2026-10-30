@@ -133,6 +133,9 @@ WIKI_ENTRY_STATUSES = ("watching", "resolved", "expired")
 WIKI_ENTRY_CONFIDENCES = ("high", "medium", "low")
 WIKI_ENTRY_RECHECK = "recheck"  # the recheck metadata key (rule 12a, #6)
 WIKI_ENTRY_VERIFIED_PATROL = "verified_patrol"  # the staleness-clock key (rule 20, #7)
+WIKI_ENTRY_SEVERITY = "severity"  # the condition-severity key (rule 12b, #35)
+WIKI_ENTRY_LAST_NOTIFIED = "last_notified"  # the notify clock (rule 12c, #35)
+WIKI_ENTRY_SEVERITIES = ("info", "warn", "crit")  # finding vocabulary (rule 3)
 
 # Wiki health stats (wiki-memory.md rules 23-27, #8; ADR 0015). Hard-coded
 # like OUT_CAP, not env-configurable — retuning them is a spec change, not a
@@ -178,6 +181,31 @@ def _stale_after() -> int:
 
 
 STALE_AFTER = _stale_after()
+
+
+def _notify_digest_after() -> int:
+    """PATROL_NOTIFY_DIGEST_AFTER as a non-negative int (rule 4c, #35).
+
+    The periodic-digest threshold: a standing watching entry older than this
+    many days, and not notified within this many days, is named by one
+    process-authored digest. Default 7; 0 disables the digest entirely
+    (state-change notifications are unaffected). Read once at import; an
+    unparseable or negative value fails startup with a config error — the
+    patrol never runs on a silently wrong digest cadence.
+    """
+    raw = os.environ.get("PATROL_NOTIFY_DIGEST_AFTER", "7")
+    try:
+        value = int(raw)
+    except ValueError:
+        value = -1
+    if value < 0:
+        print(f"[patrol] ERROR: PATROL_NOTIFY_DIGEST_AFTER must be a non-negative "
+              f"integer (got {raw!r})", file=sys.stderr)
+        sys.exit(1)
+    return value
+
+
+NOTIFY_DIGEST_AFTER = _notify_digest_after()
 
 READONLY_VERBS = {
     "get", "describe", "logs", "top", "version", "api-resources",
@@ -592,7 +620,7 @@ Produce the final PatrolReport for the cluster patrol above:
   (broken, needs a human now). Give each finding short "evidence" citing what was
   actually observed.
 - "notifications": ONLY the warn/crit findings a human should actually see (don't
-  cry wolf), as human-readable messages.
+  cry wolf), as human-readable messages. Every notification MUST begin with the wiki entry id it concerns in square brackets, then the human-readable message — for example "[W-1] worker-1 has been NotReady for 40 days." Notify only when an entry is new, its severity changed, or its status changed (resolution or re-opening). Do not notify about an entry that is standing and unchanged: update its wiki entry and leave notifications empty for it.
 - "updated_wiki": the FULL new markdown content of the cluster wiki in the
   skeleton format. updated_wiki is required on every report: return the FULL
   wiki content even when nothing needs changing — copy unchanged sections verbatim.
@@ -634,6 +662,7 @@ Produce the final PatrolReport for the cluster patrol above:
      last_verified stops advancing is auto-expired by the patroller after
      PATROL_WIKI_STALE_AFTER accepted writes. Re-verify what is worth
      keeping; resolve or expire the rest deliberately.
+     Every Watch-list and Anomaly-log entry also carries a severity: <info|warn|crit> pair (after confidence, alongside recheck) recording the current severity of the condition; the patroller compares it across patrols to decide whether a change is worth a notification.
   4. Topology, Baselines, and Open questions are free prose — no metadata lines
      there; keep tagging their entries with (source, timestamp, confidence)
      inline. Expire stale entries (flip status to expired), never delete them —
@@ -1032,6 +1061,13 @@ def _entry_errors(section: str, line: str, seen_ids: set[str]) -> list[str]:
             if refusal:
                 errors.append(f"{section}: entry '{entry_id}' recheck was refused "
                               f"by the guard: {refusal}")
+    # Rule 12b (#35): the severity pair is optional structurally but judged
+    # when present — the dedup diff reads it, so the vocabulary must be the
+    # finding vocabulary. A missing pair is a legal pre-#35 entry.
+    for value in (v for k, v in pairs if k == WIKI_ENTRY_SEVERITY):
+        if value not in WIKI_ENTRY_SEVERITIES:
+            errors.append(f"{section}: entry '{entry_id}' severity must be one of "
+                          f"{', '.join(WIKI_ENTRY_SEVERITIES)} (got {value!r})")
     return errors
 
 
@@ -1648,6 +1684,224 @@ def compact_anomaly_log(content: str, keep: int) -> tuple[str, list[str]]:
     return "\n".join(out), [entry_id for _idx, entry_id in closed[:beyond]]
 
 
+# ---- notification dedup (reporting-notifications.md rules 4a-4e, #35) ----
+# Notifications are state-change keyed: the wiki's standing entries are the
+# diff baseline. Everything here is pure — no I/O, no model calls — and uses
+# the same fence-aware section/entry scanning as the validator and expiry
+# pass. A standing entry whose status and severity are unchanged is wiki-only;
+# the process can only suppress what it can attribute, so untagged or unknown
+# messages always pass through (fail-open).
+
+_NOTIFICATION_TAG_RE = re.compile(r"^\[([^\[\]]+)\] .+")
+
+
+def notification_entry_id(message: str) -> str | None:
+    """Rule 4a (#35): the leading `[<entry id>]` tag's id, else None.
+
+    A tag is a non-empty bracketed id, a space, and a non-empty message. An
+    untagged message, an empty id (`[] message`), or a bare `[id]` with no
+    message reads as None (unattributable — delivered unchanged).
+    """
+    match = _NOTIFICATION_TAG_RE.match(message or "")
+    return match.group(1) if match else None
+
+
+def _ordered_entries(content: str):
+    """Yield (section, entry id, metadata pairs) in document order across the
+    metadata sections, first occurrence per id — the digest's ordering source
+    (Watch-list document order, then Anomaly-log document order)."""
+    lines = content.split("\n")
+    sections = _scan_sections(lines)
+    seen: set[str] = set()
+    for name in WIKI_METADATA_SECTIONS:
+        for section, start, end in sections:
+            if section != name:
+                continue
+            for idx in _scan_section_entries(lines, start, end):
+                pairs = _metadata_pairs(lines[idx])
+                entry_id = pairs.get("id")
+                if not entry_id or entry_id in seen:
+                    continue
+                seen.add(entry_id)
+                yield name, entry_id, pairs
+
+
+def wiki_entry_states(content: str) -> dict[str, dict]:
+    """Rule 4a (#35): id -> {status, severity, first_seen, last_notified}.
+
+    Pure reader over both metadata sections, fence-aware. First occurrence
+    wins for a duplicate id. `status` and `first_seen` are the required
+    six-key fields; a missing or unparseable optional pair (`severity`,
+    `last_notified`) reads as None — the old on-disk wiki may predate the
+    pair or be hand-edited, so the reader is defensive by design.
+    """
+    states: dict[str, dict] = {}
+    for _section, entry_id, pairs in _ordered_entries(content):
+        severity = pairs.get(WIKI_ENTRY_SEVERITY)
+        last_notified = pairs.get(WIKI_ENTRY_LAST_NOTIFIED)
+        states[entry_id] = {
+            "status": pairs.get("status"),
+            "severity": severity if severity in WIKI_ENTRY_SEVERITIES else None,
+            "first_seen": pairs.get("first_seen"),
+            "last_notified": (last_notified
+                              if _is_calendar_date(last_notified) else None),
+        }
+    return states
+
+
+def filter_state_change_notifications(notifications: list[str],
+                                      old_wiki: str,
+                                      new_wiki: str,
+                                      ) -> tuple[list[str], list[str], list[str]]:
+    """Rule 4a (#35): decide each proposed notification against the wiki diff.
+
+    Returns (delivered, suppressed, notified_ids), all preserving input order;
+    notified_ids is de-duplicated first-delivery order and only carries tagged
+    ids whose target exists in new_wiki (the entries the notify stamp
+    updates). New / severity-changed / status-changed / removed entries
+    deliver; a standing unchanged entry suppresses; untagged and
+    unattributable messages deliver unchanged (dedup never loses news it
+    cannot attribute). Pure — no I/O, no model calls.
+    """
+    old_states = wiki_entry_states(old_wiki)
+    new_states = wiki_entry_states(new_wiki)
+    delivered: list[str] = []
+    suppressed: list[str] = []
+    notified_ids: list[str] = []
+    for message in notifications:
+        entry_id = notification_entry_id(message)
+        if entry_id is None:
+            delivered.append(message)
+            continue
+        in_old = entry_id in old_states
+        in_new = entry_id in new_states
+        if not in_old and not in_new:
+            delivered.append(message)  # unattributable: fail open
+            continue
+        if in_new and not in_old:
+            delivered.append(message)  # new entry
+        elif in_old and not in_new:
+            delivered.append(message)  # removed entry: never suppress departure
+            continue
+        else:
+            old, new = old_states[entry_id], new_states[entry_id]
+            if (old["status"] == new["status"]
+                    and old["severity"] == new["severity"]):
+                suppressed.append(message)  # standing unchanged: wiki-only
+                continue
+            delivered.append(message)  # status or severity change
+        if in_new and entry_id not in notified_ids:
+            notified_ids.append(entry_id)
+    return delivered, suppressed, notified_ids
+
+
+def digest_notifications(old_wiki: str, new_wiki: str, *, today: str,
+                         digest_after: int, exclude_ids=(),
+                         patrol_count: int | None = None,
+                         stale_after: int | None = None,
+                         ) -> tuple[str | None, list[str]]:
+    """Rule 4c (#35): at most one process-authored digest for long-unfixed
+    standing watching entries. Returns (digest, ids); `digest_after == 0`
+    disables it entirely. The age and notification cadence read the OLD
+    wiki's dates — the model cannot reset the clock by rewriting first_seen
+    in the new wiki. A Watch-list candidate the expiry pass is about to
+    retire is skipped (using the old process-maintained verified_patrol clock
+    and an advanced new last_verified); an Anomaly-log watching entry is
+    never skipped (rule 21 never auto-expires it). Pure — no I/O.
+    """
+    if digest_after == 0:
+        return None, []
+    old_states = wiki_entry_states(old_wiki)
+    new_states = wiki_entry_states(new_wiki)
+    old_clocks = _old_entry_clocks(old_wiki)
+    try:
+        today_date = datetime.strptime(today, "%Y-%m-%d")
+    except (TypeError, ValueError):
+        return None, []
+    excluded = set(exclude_ids or ())
+    candidates: list[str] = []
+    for section, entry_id, pairs in _ordered_entries(new_wiki):
+        state = new_states.get(entry_id)
+        if state is None or state["status"] != "watching":
+            continue
+        if entry_id in excluded:
+            continue
+        old = old_states.get(entry_id)
+        if old is None or not _is_calendar_date(old["first_seen"]):
+            continue  # a new entry has no old clock; its own notification is the path
+        # The expiry skip reads the old process-maintained clock; the model's
+        # copy in new_wiki is never trusted (rule 20). Only Watch-list entries
+        # can be auto-expired, and stale_after == 0 disables expiry.
+        if (section == "Watch-list" and patrol_count is not None
+                and stale_after is not None and stale_after > 0):
+            old_last_verified, old_clock = old_clocks.get(
+                entry_id, (None, None))
+            new_last_verified = pairs.get("last_verified")
+            re_verified = (_is_calendar_date(old_last_verified)
+                           and _is_calendar_date(new_last_verified)
+                           and new_last_verified > old_last_verified)
+            if (not re_verified and old_clock is not None
+                    and patrol_count - old_clock >= stale_after):
+                continue
+        first_seen = datetime.strptime(old["first_seen"], "%Y-%m-%d")
+        if (today_date - first_seen).days <= digest_after:
+            continue  # strictly older than the threshold
+        last = old["last_notified"] or old["first_seen"]
+        if (today_date - datetime.strptime(last, "%Y-%m-%d")).days < digest_after:
+            continue
+        candidates.append(entry_id)
+    if not candidates:
+        return None, []
+    noun = "entry" if len(candidates) == 1 else "entries"
+    digest = (f"[digest] {len(candidates)} {noun} unfixed for more than "
+              f"{digest_after} days: {', '.join(candidates)}")
+    return digest, candidates
+
+
+def _stamp_last_notified_line(line: str, day: str) -> str:
+    """Rule 4d: rewrite or append `last_notified: <day>` on one metadata line."""
+    pair = f"{WIKI_ENTRY_LAST_NOTIFIED}: {day}"
+    parts = line[2:].split(" · ")
+    out: list[str] = []
+    stamped = False
+    for part in parts:
+        if part.startswith(f"{WIKI_ENTRY_LAST_NOTIFIED}: "):
+            if not stamped:
+                out.append(pair)
+                stamped = True
+            # duplicate pairs (never valid, never judged) drop
+        else:
+            out.append(part)
+    if not stamped:
+        out.append(pair)
+    return line[:2] + " · ".join(out)
+
+
+def stamp_last_notified(content: str, ids, day: str) -> str:
+    """Rule 4d (#35): stamp the process-owned notify clock on the targeted
+    metadata-section entries — an existing pair replaced in place, an absent
+    one appended as the line's final pair. Duplicate id: first occurrence
+    only; an absent id is a no-op; everything else is byte-for-byte
+    preserved (frontmatter and prose included). Pure, fence-aware."""
+    targets = set(ids or ())
+    if not targets:
+        return content
+    lines = content.split("\n")
+    stamped_ids: set[str] = set()
+    replacements: dict[int, str] = {}
+    for name, start, end in _scan_sections(lines):
+        if name not in WIKI_METADATA_SECTIONS:
+            continue
+        for idx in _scan_section_entries(lines, start, end):
+            entry_id = _metadata_pairs(lines[idx]).get("id")
+            if entry_id in targets and entry_id not in stamped_ids:
+                stamped_ids.add(entry_id)
+                replacements[idx] = _stamp_last_notified_line(lines[idx], day)
+    if not replacements:
+        return content
+    return "\n".join(replacements.get(i, line) for i, line in enumerate(lines))
+
+
 def wiki_size_note(content: str, *, budget: int | None = None) -> str:
     """Rule 29a (#67): the model-facing size feedback — pure.
 
@@ -2112,6 +2366,8 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
     # exactly one report — the final one — is delivered. Rule 33 (#66): the
     # total-failure leg delivers nothing here — its one FAILURE notification
     # already fired above, and there is no report to print findings from.
+    patrol_count = frontmatter_patrol_count(wiki) + 1
+    notify_stamp_ids: list[str] = []
     if not total_failure:
         print(f"\n[patrol] findings ({len(findings)}):")
         for f in findings:
@@ -2119,8 +2375,29 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
             if verbose and f.get("evidence"):
                 print(f"         ↳ {f['evidence']}")
 
-        notify([m for m in notifications if m],
-               notify_type=report_notify_type(findings))
+        proposed = [m for m in notifications if m]
+        delivered = proposed
+        # Rules 4a/4c/4e (#35): dedup only against a model-authored accepted
+        # wiki — the minimal-write and keep-old-wiki legs have no new state on
+        # disk, so every proposed notification delivers unfiltered (fail-open)
+        # and no digest is appended.
+        if new_wiki and not minimal_write:
+            delivered, suppressed, notified_ids = filter_state_change_notifications(
+                proposed, wiki, new_wiki)
+            if suppressed:
+                print(f"[patrol] notifications: suppressed {len(suppressed)} "
+                      "standing-unchanged notification(s) (wiki-only)",
+                      file=sys.stderr)
+            digest, digest_ids = digest_notifications(
+                wiki, new_wiki, today=ts[:10],
+                digest_after=NOTIFY_DIGEST_AFTER,
+                exclude_ids=notified_ids, patrol_count=patrol_count,
+                stale_after=STALE_AFTER)
+            if digest:
+                delivered = [*delivered, digest]
+            notify_stamp_ids = list(dict.fromkeys([*notified_ids, *digest_ids]))
+
+        notify(delivered, notify_type=report_notify_type(findings))
 
     if new_wiki:
         # Rule 22 (#7): the expiry pass — pure and deterministic, after the
@@ -2129,7 +2406,6 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
         # patrol_count + 1, the same basis rule 17 uses); the old on-disk
         # wiki is the clock's carry source. One console line per flip (rule
         # 21): expiry is wiki housekeeping, never a finding or notification.
-        patrol_count = frontmatter_patrol_count(wiki) + 1
         new_wiki, flips = expire_stale_entries(new_wiki, wiki,
                                                patrol_count=patrol_count,
                                                stale_after=STALE_AFTER)
@@ -2148,6 +2424,11 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
             print(f"[patrol] wiki: entry '{entry_id}' pruned from the Anomaly log "
                   f"(beyond the keep budget {WIKI_ANOMALY_KEEP}; "
                   "git history retains it)")
+        # Rule 4d (#35): the notification stamp joins after compaction and
+        # before the frontmatter stamp, only on a model-authored accepted
+        # write — no accepted write, no clock advance.
+        if notify_stamp_ids and not minimal_write:
+            new_wiki = stamp_last_notified(new_wiki, notify_stamp_ids, ts[:10])
         # Rule 17: stamp the process-owned frontmatter fields — patrol_count
         # from the ON-DISK wiki (never the model's guess), last_patrol from this
         # patrol's start, cluster_id from config. Every accepted write advances

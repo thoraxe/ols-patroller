@@ -39,5 +39,5 @@ self-limiting bookkeeping); per-section budgets and truncation were rejected
 as over-structuring / structure-destroying. The first accepted write after
 adoption may prune a burst of legacy entries at once (one console line each,
 once). Watching entries and the Watch-list are never pruned — live memory
-stays whole; only closed history compacts. #9's digest remains the human
+stays whole; only closed history compacts. #9's digest (now #35's) remains the human
 surface for long-standing live entries.

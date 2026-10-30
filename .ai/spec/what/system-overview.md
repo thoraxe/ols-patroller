@@ -67,7 +67,9 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
    of only warned about by the process [DONE: #67].
 10. **Reporting & notifications** — typed report schema, severity vocabulary,
     console/apprise-sink delivery (`reporting-notifications.md`) [DONE: #9 —
-    was console/Slack].
+    was console/Slack]. Notifications are state-change keyed: a `[<entry id>]`
+    tag plus an old-vs-new wiki diff suppresses standing unchanged entries, and
+    a weekly process digest names long-unfixed watching entries [DONE: #35].
 11. **Safety model** — layered read-only enforcement spanning guard, engine, and
     (planned) in-cluster RBAC (`safety-model.md`).
 12. **CLI & scheduling** — argument parsing, once/loop modes, wiki path
@@ -97,9 +99,11 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
     full skeleton — frontmatter + sections [DONE: #5]).
 14. Each patrol: load wiki → gather in-flight AgenticRuns context (best-effort) →
     agentic exploration → reporting pass → validate the wiki skeleton (one repair
-    pass on failure) [DONE: #5] → print findings, send notifications, expire
+    pass on failure) [DONE: #5] → print findings, filter/emit notifications
+    (state-change dedup + weekly digest) [DONE: #35], expire
     stale watch-list entries [DONE: #7], compact the Anomaly log to its keep
-    budget [DONE: #40], stamp the frontmatter counters
+    budget [DONE: #40], stamp the per-entry notify clock [DONE: #35] and the
+    frontmatter counters
     [DONE: #5], rewrite the wiki atomically, commit it to the wiki repo, push
     if `PATROL_WIKI_REMOTE` is set [DONE: #3].
 15. If the reporting pass fails entirely, the patrol ends with a warning and the wiki
@@ -130,6 +134,11 @@ Environment variables:
 - `KUBECTL` — cluster CLI override; otherwise resolved `oc` → `kubectl` → `oc`
 - `PATROL_NOTIFY_URLS` — if set, apprise sink URLs (comma/newline separated);
   notifications are also delivered to every configured sink [DONE: #9]
+- `PATROL_NOTIFY_DIGEST_AFTER` — periodic-digest threshold in days: a standing
+  watching entry older than this, and not notified within this window, is named
+  by one process-authored digest; non-negative integer, default `7`, `0`
+  disables the digest. Read once at import; invalid/negative fails startup
+  [DONE: #35]
 - `PATROL_MAX_STEPS` — LLM-turn exploration budget per patrol (default `30`)
 - `PATROL_INTERVAL` — seconds between patrols in `--loop` mode (default
   `21600`, six hours) [DONE: #25 — was `900`]
@@ -193,5 +202,5 @@ documents). Milestone shape:
 | v0.1 (#1–#4, #9, #11, #24, #25, #27, #28) | In-cluster: Containerfile, manifests (SA + cluster-reader + PVC + Deployment), git-backed wiki, e2e tests in-repo, deployment defaults & observability (6 h cadence, unbuffered + verbose logs, git-safe `/wiki`), guard `--raw` refusal [#9 was later re-scoped to apprise multi-sink (v0.3) with its original dedup scope moved to #35] |
 | v0.2 (#5–#8, #20, #39, #40) | Compounding wiki: skeleton schema + validation-on-write, per-entry recheck commands, `stale_after` expiry, `--wiki-stats`, efficient-sweep guidance, deploy-key remote-push wiring, wiki length budget |
 | v0.2.1 (#49, #50, #51) | Real-cluster validation fixes: per-call-shape request bounds (300 s exploration / 900 s structured reporting, #49), empty-`updated_wiki` classification — the contract requires the wiki every report, one named retry + stderr warning (#51), one event loop per `--loop` process (#50); in-cluster operational acceptance is deferred to the v0.2.1 release validation. Impl commits sync `AGENTS.md`'s test list |
-| v0.3 (#10, #9 digest, #63, #67) | Operational hardening: cost control, periodic digest reminder for long-unfixed entries, per-call-shape completion-token bounds + visible empty-result reasons (rules 7c + 8b), model-facing wiki size feedback so the model prunes the over-budget wiki (rule 29a) |
+| v0.3 (#10, #35, #63, #67) | Operational hardening: cost control, state-change notification dedup + periodic digest reminder for long-unfixed entries (#35), per-call-shape completion-token bounds + visible empty-result reasons (rules 7c + 8b), model-facing wiki size feedback so the model prunes the over-budget wiki (rule 29a) |
 | future (#12–#16, #41) | Remediation handoff to AgenticRuns, fleet/multicluster, CRD dispatcher, pluggable investigation engine, MCP-memory decision record, external runbook referencing |

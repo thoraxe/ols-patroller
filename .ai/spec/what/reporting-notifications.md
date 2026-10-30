@@ -72,6 +72,181 @@ in `how/reporting-pipeline.md`.
    elsewhere to pay for them. Use the line: retain what is load-bearing,
    drop what is not."]
 
+### Notification Dedup
+
+Notifications are the patrol's scarce human attention channel: a standing
+condition is wiki state, not a new event. Dedup is **state-change keyed**,
+not message-text keyed — the wiki's standing entries are the diff baseline
+(issue #35; ADR `decisions/0026-notification-dedup-state-change.md`). The
+four notification-worthy events are: a **new entry**, a **severity change**
+(including escalation), a **status change** (resolution, expiry, or
+re-opening), and a **periodic digest** for long-unfixed entries. A standing
+entry whose status and severity are unchanged is wiki-only.
+
+4a. **State-change filter** [DONE: #35]. Every notification the model
+    proposes carries its target wiki entry's id as a leading bracketed tag:
+    `[<entry id>] <human-readable message>`. The tag is part of the delivered
+    message (the human benefits from seeing which entry an alert concerns).
+    The pure parser
+    `notification_entry_id(message) -> str | None` returns the id for a
+    message matching `^\[([^\[\]]+)\] .+` (a non-empty id, a space, and a
+    non-empty message), else `None` (untagged — including `[id]` with no
+    message). The pure reader `wiki_entry_states(content) -> dict[str, dict]`
+    maps each metadata-section entry id to
+    `{"status", "severity", "first_seen", "last_notified"}` (a missing or
+    unparseable optional pair reads as `None`; `status` and `first_seen` are
+    the required six-key fields; first occurrence wins for a duplicate id;
+    fence-aware scanning, rule 11's discipline; both metadata sections).
+    The pure filter
+    `filter_state_change_notifications(notifications, old_wiki, new_wiki) ->
+    (delivered, suppressed, notified_ids)` decides each proposed message
+    against the on-disk wiki (`old_wiki`) and the final validated wiki
+    (`new_wiki`); on a file-absent fresh deployment `old_wiki` is the seed
+    (rule 14) — it carries no entries, so every tagged target is new:
+    - **new entry** — the tagged id is present in `new_wiki` but absent from
+      `old_wiki` → deliver (newness is keyed to the wiki diff, not the
+      `first_seen` date: an id the wiki has not carried before is new, an
+      entry re-introduced after pruning is new again);
+    - **status change** — present in both, `status` differs → deliver
+      (resolution, expiry, or re-opening);
+    - **severity change** — present in both, severity differs → deliver.
+      A severity present on one side and absent on the other is a change
+      (fail-open: gaining/losing the pair is news);
+    - **removed entry** — present in `old_wiki` but absent from `new_wiki`
+      → deliver (the entry left the working set; never suppress a
+      disappearance);
+    - **standing unchanged** — present in both with equal status and equal
+      severity (including both absent) → **suppress**: not delivered, not
+      printed, wiki-only;
+    - **unattributable** — untagged, or the tagged id is in neither wiki →
+      deliver unchanged (dedup must never lose news it cannot attribute).
+    `delivered` and `suppressed` preserve the input order. `notified_ids` is
+    the de-duplicated, first-delivery-ordered list of tagged ids delivered
+    whose target exists in `new_wiki` (the entries the rule-4d notify stamp
+    updates). The filter is pure — no I/O, no model calls, no mutation. The
+    caller logs the suppression count to stderr — only when the count is
+    greater than zero (no line on a clean patrol), verbatim:
+    `[patrol] notifications: suppressed N standing-unchanged notification(s)
+    (wiki-only)` (wording fixed; only `N` varies). Filtering runs only when
+    the patrol has a **model-authored accepted wiki** to diff: the final
+    report's wiki after validation/repair, or the rule-7d wiki-repair
+    result. The keep-old-wiki, empty-wiki, and rule-31/33 minimal-write legs
+    deliver every proposed notification unfiltered (fail-open) — there is no
+    new state on disk, so there is nothing to dedup against, and an observed
+    finding must never be lost because the wiki write failed. Findings are
+    never filtered; only notification delivery is.
+4b. **Model-facing dedup contract** [DONE: #35]. `REPORT_CONTRACT`
+    carries the facts the mechanical filter depends on, verbatim
+    (executable pins live in `test_notification_dedup.py`):
+    - every notification begins with the entry-id tag —
+      `Every notification MUST begin with the wiki entry id it concerns in
+      square brackets, then the human-readable message — for example
+      "[W-1] worker-1 has been NotReady for 40 days."`;
+    - notifications are state changes — `Notify only when an entry is new, its
+      severity changed, or its status changed (resolution or re-opening). Do
+      not notify about an entry that is standing and unchanged: update its
+      wiki entry and leave notifications empty for it.`;
+    - every entry records its current severity — `Every Watch-list and
+      Anomaly-log entry also carries a severity: <info|warn|crit> pair (after
+      confidence, alongside recheck) recording the current severity of the
+      condition; the patroller compares it across patrols to decide whether a
+      change is worth a notification.`
+    The contract teaches the same four events as rule 4a; the filter enforces
+    them mechanically, so a compliant model's standing entries stay quiet and
+    the patrol's own diff is the backstop. The issue's "watching →
+    materialized" escalation is expressed as a status or severity change in
+    this vocabulary — no new status value (`materialized`) is added to the
+    skeleton (rule 12's closed status set).
+4c. **Periodic digest** [DONE: #35]. A standing condition should nag
+    occasionally, not every patrol. After rule-4a filtering, the process
+    appends **at most one** digest notification for entries that have been
+    unfixed long enough: the pure function
+    `digest_notifications(old_wiki, new_wiki, *, today, digest_after,
+    exclude_ids=(), patrol_count=None, stale_after=None) -> (digest, ids)`.
+    `today` is the patrol start date (`YYYY-MM-DD`); `digest_after` is
+    `PATROL_NOTIFY_DIGEST_AFTER` (Configuration Surface; default 7 days, `0`
+    disables the digest entirely — returns `(None, [])`). An entry is a
+    digest candidate iff all hold:
+    - it is present in `new_wiki` with `status: watching` (resolved/expired
+      entries are closed — the resolution was their notification);
+    - its id is not in `exclude_ids` (already notified this patrol under
+      rule 4a);
+    - when `patrol_count` and `stale_after` are supplied (the write path
+      passes P — the on-disk frontmatter count + 1, the value the stamp is
+      about to write — and `STALE_AFTER`), a **Watch-list** candidate is
+      **not** about to be auto-expired. This check reads the
+      **process-maintained clock**: the
+      old wiki's `verified_patrol` (the model's copy in `new_wiki` is never
+      trusted, rule 20) together with the new entry's `last_verified`. If the
+      new `last_verified` is strictly later than the old entry's (both
+      parseable `YYYY-MM-DD`), the expiry pass will reset the clock to P —
+      not skipped. Otherwise a parseable old `verified_patrol` with
+      `P - verified_patrol >= stale_after` is skipped (`stale_after == 0`
+      disables expiry and excludes nothing) — the digest must not announce
+      what the expiry pass is about to retire. The skip applies only to
+      Watch-list candidates: rule 21 never auto-expires an Anomaly-log
+      entry, so an Anomaly-log `watching` entry is always digest-eligible
+      (it must not fall permanently silent). The check is best-effort by
+      construction: a fresh entry has no old clock and cannot be stale;
+      a re-verification resets it; an old clock the model cannot alter is
+      the only basis;
+    - the **old wiki's** `first_seen` parses as `YYYY-MM-DD` and
+      `(today - first_seen).days > digest_after` (strictly older than the
+      threshold; exactly `digest_after` days is not yet digest-worthy); a new
+      entry has no old `first_seen` and is never a digest candidate (its own
+      notification is the state-change path);
+    - its **last notification** — `last_notified` from `old_wiki` when
+      parseable, else the **old wiki's** `first_seen` (the
+      initial-notification day, so a pre-#35 entry gets one migration nudge)
+      — is at least `digest_after`
+      days old: `(today - last).days >= digest_after`. This makes the
+      cadence weekly by default rather than per patrol.
+    Candidates are ordered Watch-list document order, then Anomaly-log
+    document order. When there is at least one, the digest is exactly
+    `[digest] <count> entry unfixed for more than <N> days: <id>, <id>` for
+    one candidate, or the same with `entries` for more than one; `N` is
+    `digest_after`; ids are comma-and-space separated. It is a single
+    process-authored message, never a finding, delivered last — after the
+    filtered model notifications — through the standard `notify` path
+    (rules 10–10c). The `[digest]` prefix is not an entry id: the digest is
+    appended after rule-4a filtering and is never re-filtered, so the tag
+    grammar's collision is harmless and deliberately labeled. The returned
+    `ids` are the digest's entry ids in message
+    order. When no candidate exists the digest is `None` with no ids. The
+    function is pure — no I/O, no model calls.
+4d. **Last-notified stamp** [DONE: #35]. The digest cadence reads a
+    process-owned per-entry clock, `last_notified: YYYY-MM-DD` (the
+    metadata-line pair of `wiki-memory.md` rule 12c) — the patrol start date
+    on which the entry was last named by a delivered notification (state
+    change under rule 4a or digest under rule 4c). After delivery, on a
+    **model-authored accepted write** with a non-empty final wiki (not the
+    keep-old-wiki or minimal-write legs), the pure function
+    `stamp_last_notified(content, ids, day) -> str` rewrites the pair on every
+    metadata-section entry whose id is in `ids`: an existing
+    `last_notified: <date>` pair is replaced in place, an absent one is
+    appended as the metadata line's final pair (` · last_notified: <day>`),
+    and nothing else on the line, in the prose, or in the frontmatter is
+    touched (byte-for-byte otherwise; fence-aware scanning; duplicate id —
+    first occurrence only; an id absent from the content is a no-op). It runs
+    in the write path after the anomaly-log compaction and before the
+    frontmatter stamp (`wiki-memory.md` rule 16). The model's own
+    `last_notified` value is never trusted (the pair is process-owned like
+    `verified_patrol`); validation does not judge its value. The stamp is
+    skipped on a patrol that writes no wiki (empty, rejected, or
+    total-failure legs) — no accepted write, no clock advance (rule 20's
+    accepted-write semantics).
+4e. **Delivery order and scope** [DONE: #35]. `run_patrol` builds the
+    delivered list as the rule-4a `delivered` messages in proposed order,
+    followed by the rule-4c digest when one exists (and only when a
+    model-authored accepted wiki exists — the minimal-write and keep-old-wiki
+    legs append no digest), then calls `notify` once as today.
+    `report_notify_type` (rule 10b) still maps the patrol's findings, not the
+    messages, so the digest never changes the sink-level severity.
+    Per-notification severity and per-severity sink routing (apprise tags)
+    remain deferred: notifications are still plain strings, and the id tag is
+    the only structured part. The console `🔔 NOTIFY:` surface (rule 9a) is
+    unchanged — only the set of messages reaching it shrinks.
+
 ### Reporting Pass
 
 6. The report is produced by a **tool-free structured-output pass** over the finished
@@ -323,13 +498,28 @@ in `how/reporting-pipeline.md`.
 
 - `PATROL_NOTIFY_URLS` — if set, apprise sink URLs (comma/newline separated);
     notifications are also delivered to every configured sink [DONE: #9]
+- `PATROL_NOTIFY_DIGEST_AFTER` — the periodic-digest threshold in days
+    (rule 4c): a standing watching entry older than this many days, and not
+    notified within this many days, is named by one process-authored digest.
+    Non-negative integer, default 7; `0` disables the digest (state-change
+    notifications are unaffected). Read once at import; an unparseable or
+    negative value fails startup with a config error — the patrol never runs
+    on a silently wrong digest cadence [DONE: #35]
 - ~~`SLACK_WEBHOOK_URL`~~ — removed by #9; superseded by `PATROL_NOTIFY_URLS`
   (a Slack incoming webhook is expressed as its apprise `slack://` URL)
 
 ## Constraints
 
-- Notification filtering today is the model's judgment only (the report contract
-  says "don't cry wolf"); there is no mechanical dedup — known gap.
+- Notification dedup is mechanical but **state-keyed** (rules 4a–4d): the wiki's
+  persisted entries are the diff baseline, so a patrol whose wiki write is
+  rejected or empty has no new baseline and repeats its state-change
+  notifications next run. The digest has the same shape: with no accepted write
+  there is no `last_notified` stamp, so an over-due entry digests every patrol
+  until a write lands. Untagged notifications bypass dedup by design
+  (fail-open): dedup may reduce noise, never lose news. The model still owns
+  whether a notification is worth writing at all (rule 4's don't-cry-wolf) and
+  whether an entry carries its severity pair; the process enforces the diff it
+  can see.
 - The configured apprise sinks are the patrol's deliberate outbound notification
   allowlist — the egress question (network-level exfiltration controls) is #34's,
   not this contract's [DONE: #9].
@@ -345,7 +535,7 @@ in `how/reporting-pipeline.md`.
 | ~~#51~~ | ~~Empty PatrolReport (rules 5 + 7b): the report contract requires `updated_wiki` on every report; an empty one is a failed attempt — one named corrective retry, then findings-only delivery with a stderr warning, wiki unchanged. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#49~~ | ~~Per-call-shape request bounds (rule 8a): exploration turns `REQUEST_TIMEOUT` 300 s, structured reporting/repair calls `REPORT_TIMEOUT` 900 s — two `make_model` instances through the same seam; the specced constants in `agent-engine.md` / `system-overview.md` updated to the split, bounds pinned by test. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#9~~ | apprise multi-sink notifications (rules 10a–10c): `PATROL_NOTIFY_URLS` (comma/newline-separated apprise URLs, pure `parse_notify_urls`) replaces the removed `SLACK_WEBHOOK_URL`; patrol-level `notify_type` via pure `report_notify_type` (crit anywhere → FAILURE, else WARNING); per-sink best-effort delivery, failures logged to stderr, never fatal; apprise joins the pinned dependency set (`container-image.md` rules 6–7), `requests` drops from the top-level set (transitive via apprise); manifest Secret optional key becomes `PATROL_NOTIFY_URLS`. Impl commit also syncs `AGENTS.md`'s test list, the repo `README.md`'s env/config table (`SLACK_WEBHOOK_URL` → `PATROL_NOTIFY_URLS`) and any remaining Slack prose, and the `run_patrol_cli` test docstring's env pin list |
-| #35 | Notification dedup: notify on state change, not every patrol — new entry, severity change/escalation, or resolution notify; standing unchanged entries stay wiki-only; optional periodic digest for long-unfixed entries; possible per-severity sink routing (apprise tags) once #9's multi-sink exists |
+| ~~#35~~ | ~~Notification dedup, state-keyed (rules 4a–4e; `wiki-memory.md` rules 12b–12c and the rule-16 write-path amendment; ADR 0026): notifications carry `[<entry id>]` tags and are filtered against the old-vs-new wiki diff — new entry, severity change, status change, or removal delivers; a standing unchanged entry is wiki-only (suppressed, count on stderr). Entries gain an optional `severity` pair (judged when present) so severity changes are diffable, and the model contract requires the tag and the severity pair. A process-authored weekly digest (`PATROL_NOTIFY_DIGEST_AFTER`, default 7 days, `0` disables) names long-unfixed watching entries; entries notified this patrol get a process-stamped `last_notified` date after compaction. Per-notification severity and apprise-tag sink routing stay deferred. Impl commit also syncs `README.md`'s config table and `AGENTS.md`'s test list~~ |
 | ~~#40~~ | ~~Report contract states the working-set expectations: the wiki is a working set (git history is the archive), summarize and prune rather than accumulate, the soft character budget, the anomaly-log keep budget (`wiki-memory.md` rules 28–29)~~ |
 | ~~#7~~ | ~~Report contract states the staleness clock's model-facing half: `verified_patrol` is process-stamped (never computed by the model), `last_verified` advances only on actual re-verification, and unverified watching entries auto-expire (`wiki-memory.md` rules 20–22)~~ |
 | ~~#6~~ | ~~Report contract asks for recheck commands: every Watch-list entry carries a guard-acceptable `recheck:` pair in tool-argument form (`wiki-memory.md` rule 12a)~~ |

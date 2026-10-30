@@ -134,6 +134,7 @@ without ever rejecting a write.
 | `PATROL_MODEL` | — | model id on that endpoint (required) |
 | `KUBECTL` | `oc`→`kubectl` | cluster CLI |
 | `PATROL_NOTIFY_URLS` | — | if set, apprise sink URLs (comma/newline separated); notifications are also delivered to every configured sink |
+| `PATROL_NOTIFY_DIGEST_AFTER` | `7` | periodic-digest threshold in days: a standing watching wiki entry older than this many days, and not notified within this many days, is named by one process-authored digest; non-negative integer, `0` disables the digest (state-change notifications are unaffected) |
 | `PATROL_MAX_STEPS` | `30` | LLM-turn exploration budget per patrol (raised from 15 after real-cluster runs; GLM needs >15 turns even single-node — if exhausted, the reporting pass reports from observations so far) |
 | `PATROL_INTERVAL` | `21600` | seconds (`--loop`, 6 h) |
 | `PATROL_TOOL_TIMEOUT` | `60` | per-command timeout |

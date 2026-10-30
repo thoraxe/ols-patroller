@@ -79,7 +79,10 @@ under current policy (clean implementation review + `implementation-complete`):
   --loop` on a single process-lifetime event loop, the failed-patrol
   catch-and-continue on that same loop, and a clean ctrl-c exit — and the
   model-facing wiki size feedback of #67: the report pass's prompt carrying
-  the on-disk wiki's deterministic size note after `REPORT_CONTRACT`);
+  the on-disk wiki's deterministic size note after `REPORT_CONTRACT` — and the
+  notification-dedup wiring of #35: the four-patrol lifecycle (new → quiet
+  standing → escalation → resolution), the digest delivery + `last_notified`
+  stamp, and fail-open delivery on the minimal-write leg);
   `tests/test_wiki_schema.py` covers the
   wiki skeleton schema + validation-on-write contract (#5) plus the
   per-entry recheck-command contract (#6) plus the process-owned-value
@@ -117,7 +120,18 @@ under current policy (clean implementation review + `implementation-complete`):
   unconditional console line, the one-instance-per-invocation and
   per-message `notify` calls with the mapped `notify_type`, the skipped
   refused URL with its stderr line, the never-fatal failure modes, and the
-  module-level `NOTIFY_URLS` env wiring); and `tests/test_empty_report.py` covers the empty-report
+  module-level `NOTIFY_URLS` env wiring); and `tests/test_notification_dedup.py`
+  covers the state-change notification-dedup contract (#35: the
+  `notification_entry_id` matrix, the `wiki_entry_states` reader (both
+  metadata sections, optional severity/last_notified, duplicate-first,
+  fence-aware), the `filter_state_change_notifications` matrix (new entry,
+  severity change, status change, removal, standing-unchanged suppression,
+  untagged/unattributable fail-open, order and `notified_ids`), the
+  `digest_notifications` matrix (disabled, age/cadence boundaries,
+  resolved/excluded/soon-to-expire, ordering, singular/plural),
+  the `stamp_last_notified` matrix, the `NOTIFY_DIGEST_AFTER` config
+  surface, `validate_wiki`'s severity-pair matrix, and the `REPORT_CONTRACT`
+  dedup pins); and `tests/test_empty_report.py` covers the empty-report
   contract (#51: the report contract's wiki-required pins and the
   empty-wiki classification matrix over `shape_report` — the named
   corrective retry, the double-empty return, the composition and repair
