@@ -56,7 +56,7 @@ def test_every_whitelisted_verb_passes_the_guard():
             f"{command!r} is a whitelisted read-only command, got {out!r}")
 
 
-# ------------------------------------------------------- secret-value protection (rules 5-6)
+# ------------------------------------------------------------- secret access ban (rules 5-6)
 
 @pytest.mark.parametrize("command", [
     "get secret demo-secret -o yaml",
@@ -69,18 +69,22 @@ def test_every_whitelisted_verb_passes_the_guard():
 def test_secret_value_reads_refused(command):
     out = guard(command)
     assert out.startswith("REFUSED:"), f"{command!r} must be refused, got {out!r}"
-    assert "Secret values" in out
+    assert "Secret access is off-limits" in out
 
 
 @pytest.mark.parametrize("command", [
-    "get secrets",                # names/metadata only
-    "get secret demo-secret",     # no output format -> no values
+    "get secrets",                # names/metadata
+    "get secret demo-secret",     # no output format
+    "get secret demo-secret -o name",
     "describe secret demo-secret",
 ])
-def test_secret_names_and_metadata_allowed(command):
+def test_secret_names_and_metadata_refused(command):
+    """Rule 5 (#33 flip): names/metadata are refused too — Secret access is
+    banned in full, not only value reads (was allowed before #33)."""
     out = guard(command)
-    assert not out.startswith("REFUSED:"), (
-        f"{command!r} reads names/metadata only, got {out!r}")
+    assert out.startswith("REFUSED:"), (
+        f"{command!r} accesses a Secret and must be refused, got {out!r}")
+    assert "Secret access is off-limits" in out
 
 
 def test_overbroad_secret_match_refuses_jsonpath_on_non_secret():
@@ -89,7 +93,7 @@ def test_overbroad_secret_match_refuses_jsonpath_on_non_secret():
     out = guard("get deployment demo -o "
                 "jsonpath={.spec.template.spec.volumes[0].secret.secretName}")
     assert out.startswith("REFUSED:")
-    assert "Secret values" in out
+    assert "Secret access is off-limits" in out
 
 
 # ------------------------------------------------------------- parse failures (rule 4)
@@ -275,7 +279,7 @@ def test_raw_check_runs_after_the_verb_whitelist():
 
 
 def test_secret_and_raw_double_match_still_refused():
-    """Rule 6a: a command matching both a secret-value pattern and --raw is
+    """Rule 6a: a command matching both the Secret-access ban and --raw is
     refused — either refusal message is conformant."""
     out = guard("get secret demo-secret --raw -o yaml")
     assert out.startswith("REFUSED:")

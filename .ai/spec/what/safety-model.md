@@ -8,8 +8,9 @@ held to production standards: documented, unit-checked, and verified end-to-end.
 1. The patrol **never mutates the observed cluster**. Observation is the only cluster
    interaction; nothing in the codebase writes to the cluster.
 2. **Layer 1 — tool guard:** the only cluster tool is `kubectl_readonly` with its
-   verb whitelist, secret-value refusal, and raw-path (`--raw`) refusal
-   (`kubectl-guard.md`).
+   verb whitelist, Secret-access ban (all Secret access — names and metadata
+   included, not just values) [PLANNED: #33], raw-path (`--raw`) refusal, and
+   local-file/credential-flag refusal [PLANNED: #33] (`kubectl-guard.md`).
 3. **Layer 2 — engine tool surface:** the agent is built with `create_deep_agent`
    and **no backend**, so it has no shell and no filesystem tools; deepagents'
    default `FilesystemMiddleware` (ls/write_file/edit_file/delete/glob/grep/execute)
@@ -33,17 +34,23 @@ held to production standards: documented, unit-checked, and verified end-to-end.
 6a. **Guard unit tests** pin `kubectl-guard.md` behavior directly against
     `kubectl_readonly` — no engine, no model: non-whitelisted and mutation verbs
     are refused with the allowed-verb list (rule 3); unparseable and empty
-    commands are refused (rule 4); secret-value reads are refused across every
-    output format, including the deliberately over-broad jsonpath match, while
-    `get secrets` (names/metadata) and `describe secret` stay allowed (rules
-    5–6); a missing CLI binary (rule 9), a timed-out command (rule 8), the
+    commands are refused (rule 4); Secret access is refused in full — value-bearing
+    reads across every output format, names/metadata reads (`get secrets`, `get
+    secret <name> -o name`, `describe secret`), resource forms after flags, and
+    the deliberately over-broad substring match on unrelated names/fields (rules
+    5–6) and the local-file/credential-flag ban (rule 6b) [PLANNED: #33]; a
+    missing CLI binary (rule 9), a timed-out command
+    (rule 8), the
     stderr header and empty-output marker (rule 10), the `OUT_CAP` truncation
     marker with its #20 recovery hint (rule 11) [DONE: #20], the CLI
     resolution order (rule 12), and dry-mode fixture
     substitution with the no-fixture message (rule 13); the raw-path refusal
     joins these checks — every `--raw` flag form refused across verbs, bare-`raw`
     names allowed, the refusal ahead of subprocess execution and dry-mode
-    fixture lookup (rule 6a) [DONE: #11].
+    fixture lookup (rule 6a) [DONE: #11]. The #33 Secret-access and
+    local-file/credential-flag matrices live in `tests/test_secret_access.py` —
+    direct guard calls plus the system-prompt and report-contract pins
+    [PLANNED: #33].
 6b. **Fake-model e2e** drives complete patrols through the real engine — real
     `ChatOpenAI` + openai SDK + `create_deep_agent` + guard + shape pass + wiki
     git tail — with only the HTTP endpoint scripted and the cluster answered by
@@ -51,8 +58,9 @@ held to production standards: documented, unit-checked, and verified end-to-end.
     - every agent-turn request offers exactly the tools `[read_file,
       kubectl_readonly]`, and `execute`/`task` calls are rejected as invalid
       tools whose error lists that exact surface;
-    - guard refusals (a mutation verb, a secret-value read) reach the model as
-      `REFUSED:` tool results in the next request, so the model can recover;
+    - guard refusals (a mutation verb, a Secret access attempt — exercised with a
+      names/metadata form, not only a value form) reach the model as `REFUSED:`
+      tool results in the next request, so the model can recover [PLANNED: #33];
     - natural-termination and budget-cut patrols both flow through the same
       shape pass: the reporting request binds only the `PatrolReport` schema
       with forced tool choice, carries the report contract, and differs only
@@ -93,5 +101,6 @@ held to production standards: documented, unit-checked, and verified end-to-end.
 | ~~#2~~ | In-cluster manifests: SA + `cluster-reader` ClusterRoleBinding + RWO PVC at `/wiki` + single-replica non-root Deployment — makes Layer 3 real (`in-cluster-deployment.md`; ADR 0006) |
 | #12 | Remediation handoff: dispatch governed AgenticRuns for actionable findings; harvest their result CRs back into the wiki |
 | ~~#11~~ | Guard hardening: refuse `--raw` proxy/stats endpoints (`kubectl-guard.md` rule 6a) |
+| #33 | Secret hardening: ban all Kubernetes Secret access (names and metadata included, not only values) in the guard (`kubectl-guard.md` rules 5–6), close the local-file/credential-flag bypass (rule 6b: `-f`/`--filename`, kubeconfig/token/cert flags, template-file formats), and teach the ban in the system prompt (`patrol-engine.md` rule 2a) and report contract (`reporting-notifications.md` rule 5); broader sensitive-data filtering stays future scope (ADR 0028) |
 | ~~#4~~ | Commit guard unit tests + fake-model e2e into the repo |
 | ~~#5~~ | The e2e gains the wiki-skeleton wiring (rule 6b): repair-pass flow, stamped writes, keep-old-wiki on double failure |
