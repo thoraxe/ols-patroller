@@ -126,11 +126,24 @@ redefined here.
   pattern as the OLS agentic sandbox.
 - **Budget cut** — a patrol ended by exhausting `max_steps` LLM turns instead of
   self-terminating; the report then covers only what was observed.
+- **Token cut** — the cumulative input-token soft-stop (#10,
+  `patrol-engine.md` rule 8b): exploration stopped because the patrol's
+  summed input tokens (process-counted from `usage_metadata`) exceeded
+  `PATROL_TOKEN_BUDGET` (default 500,000; `0` disables). Shares the budget
+  cut's landing exactly — same reporting pass, report from observations so
+  far.
+- **Soft target** — the prompt's turn target `SOFT_TARGET_TURNS` (20, #10),
+  decoupled from the hard `max_steps` budget: the model aims for the target,
+  the process enforces the budget. GLM keys off the stated target
+  (self-terminated at 34/36 with "~30" stated), so the target is the tuning
+  surface and the budget the backstop.
 - **Dry-cluster** — demo mode (`--dry-cluster`) where cluster commands are answered
   from canned fixtures instead of a real cluster.
 - **Guard** (`kubectl_readonly`) — the single cluster tool: verb whitelist,
   secret-value refusal, raw-path (`--raw`) refusal, timeout, output cap.
-- **`OUT_CAP`** — hard-coded 15,000-char cap on tool output fed back to the model.
+- **`OUT_CAP`** — hard-coded 15,000-char cap envelope on tool output fed back to
+  the model; the truncated view itself is head+tail (`OUT_HEAD` 9,000 /
+  `OUT_TAIL` 5,000 around a middle-elision marker) once #10 lands.
 - **AgenticRun** — OLS-side governed execution CR (sandbox + approval + derived RBAC
   + audit). The patrol reads in-flight runs for dedup [today: best-effort] and is
   planned to dispatch remediation to them (#12).

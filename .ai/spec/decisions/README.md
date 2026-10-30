@@ -51,3 +51,4 @@ Date: YYYY-MM-DD · Status: proposed | accepted | superseded by NNNN
 | [0024](0024-total-failure-joins-the-minimal-write-net.md) | Total reporting failure joins the minimal-write net |
 | [0025](0025-wiki-size-feedback-not-prose-compaction.md) | Wiki budget feedback goes to the model, not through prose compaction |
 | [0026](0026-notification-dedup-state-change.md) | Notification dedup is state-change keyed against the wiki |
+| [0027](0027-cost-control-without-scoping.md) | Cost control without scoping: token soft-stop, decoupled soft target, head+tail |

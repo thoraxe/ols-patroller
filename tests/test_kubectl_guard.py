@@ -148,24 +148,26 @@ def test_empty_output_marker(tmp_path):
 
 
 def test_output_cap_truncation_marker(tmp_path):
-    """Rule 11: real-path output fed back to the model is capped at OUT_CAP
-    with a truncation marker naming the true length."""
+    """Rule 11 (#10 flip): real-path output fed back to the model is capped
+    head+tail with an elision marker naming the true total and the elided
+    middle — was head-only with `[truncated, N chars total]` before #10."""
     long_text = "x" * (patrol.OUT_CAP + 5000)
     cli = _fake_cli(tmp_path, f"printf '%s\\n' '{long_text}'")
     out = guard("get nodes", kubectl=cli, dry=False)
-    assert len(out) < patrol.OUT_CAP + 250  # cap + marker + #20's recovery hint
-    assert f"[truncated, {len(long_text) + 1} chars total]" in out
+    n = len(long_text) + 1  # printf adds the newline
+    m = n - patrol.OUT_HEAD - patrol.OUT_TAIL
+    assert f"[truncated, {n} chars total: middle {m} chars elided, head+tail kept]" in out
 
 
 def test_output_cap_truncation_hint(tmp_path):
-    """Rule 11 (#20): truncated output carries a recovery hint naming the
-    narrowing patterns (--field-selector, -o jsonpath) after the unchanged
-    marker — the model recovers systematically instead of retrying the dump."""
+    """Rule 11 (#20, #10 flip): truncated output carries a recovery hint
+    naming the narrowing patterns (--field-selector, -o jsonpath) after the
+    kept tail — the model recovers systematically instead of retrying the
+    same dump."""
     long_text = "x" * (patrol.OUT_CAP + 5000)
     cli = _fake_cli(tmp_path, f"printf '%s\\n' '{long_text}'")
     out = guard("get nodes", kubectl=cli, dry=False)
-    assert f"[truncated, {len(long_text) + 1} chars total]" in out  # marker unchanged
-    # the hint follows the marker (asserted on presence first so a missing
+    # the hint follows the kept tail (asserted on presence first so a missing
     # hint fails as a missing-behavior assertion, not a lookup error)
     assert "field-selector" in out
     assert out.index("[truncated,") < out.index("field-selector")

@@ -63,18 +63,30 @@ sees these messages and recovers based on them.
 ### Output Cap
 
 11. Tool output fed back to the model is capped at `OUT_CAP` = 15,000 chars
-    (hard-coded); truncated output appends `...[truncated, N chars total]` **plus
-    a recovery hint** naming the narrowing patterns — field selectors
-    (`--field-selector`), client-side formatters (`-o jsonpath`, custom-columns),
-    or a single-object drilldown — so the agent recovers systematically
-    instead of retrying the same dump [DONE: #20]. The
-    `[truncated, N chars total]` marker format is unchanged (the true total
-    stays in it); the hint follows the marker on the capped output, and the
-    whole appended suffix — marker plus hint — stays under 250 chars (a hint
-    anywhere near the cap in size would defeat its purpose). Dry-mode
-    fixture capping stays marker-free and hint-free (fixture text is demo
-    data, not cluster output — the dry-mode cap is this file's rule 13, the
-    fixture-set rationale is `patrol-engine.md` rules 13–13a). This is output shaping only — the refusal
+    (hard-coded). Truncated output is **head+tail, not head-only** [DONE:
+    #10]: the model sees the first `OUT_HEAD` (9,000) chars, an elision
+    marker, the last `OUT_TAIL` (5,000) chars, and — after the tail — the #20
+    recovery hint naming the narrowing patterns (field selectors
+    (`--field-selector`), client-side formatters (`-o jsonpath`,
+    custom-columns), or a single-object drilldown). `OUT_HEAD` + `OUT_TAIL`
+    (14,000) stays at or under `OUT_CAP`, and the whole appended suffix —
+    marker plus hint — stays under 250 chars (a hint anywhere near the cap in
+    size would defeat its purpose), so the capped result never exceeds
+    14,250 chars. The marker names the true total and the elided middle:
+    `...[truncated, {N} chars total: middle {M} chars elided, head+tail kept]`
+    with `N` the true output length and `M = N - OUT_HEAD - OUT_TAIL`. The
+    hint text is unchanged from #20 [DONE: #20]. Rationale (real-run
+    evidence): kubectl tables carry their headers and oldest rows at the
+    head; logs and events carry recency at the tail — head-only truncation
+    keeps one informative end and destroys the other, and the model burns
+    turns re-querying what it cannot see (patrol #6 fought node stats dumps
+    in exactly that loop). Head+tail keeps both ends deterministically,
+    without a summarization model call (ADR 0027). Dry-mode
+    fixture capping stays head-only, marker-free and hint-free (fixture text
+    is demo data, not cluster output — the dry-mode cap is this file's rule
+    13, the fixture-set rationale is `patrol-engine.md` rules 13–13a).
+    Before #10 lands, truncation is head-only with the marker
+    `...[truncated, N chars total]` plus the #20 hint [DONE: #20]. This is output shaping only — the refusal
     grammar (rules 2–6a) is untouched, so `guard_refusal` and the recheck
     validity it backs (ADR 0013) are unaffected; the guard never refuses a
     legal read for cost reasons (ADR 0016). The hint complements #10's
@@ -96,7 +108,11 @@ sees these messages and recovers based on them.
 
 - `PATROL_TOOL_TIMEOUT` — per-command timeout in seconds (default 60)
 - `KUBECTL` — CLI override (see rule 12)
-- `OUT_CAP` — hard-coded 15,000 chars (not env-configurable)
+- `OUT_CAP` — hard-coded 15,000 chars (not env-configurable): the overall cap
+  envelope on tool output fed back to the model
+- `OUT_HEAD` / `OUT_TAIL` — hard-coded 9,000 / 5,000 chars (not
+  env-configurable): the head+tail split of rule 11's truncated output
+  [DONE: #10]
 
 ## Constraints
 
@@ -120,3 +136,4 @@ sees these messages and recovers based on them.
 | ~~#6~~ | ~~Refusal grammar extracted as a shared pure predicate (`guard_refusal`); the wiki validator judges `recheck` citations with it — guard behavior itself unchanged (`wiki-memory.md` rule 12a)~~ |
 | ~~#11~~ | ~~Refuse any command containing `--raw` (rule 6a) — proxy/stats endpoints dump multi-hundred-KB JSON that truncates and gets retried, burning patrol turns~~ |
 | ~~#20~~ | ~~Truncation-marker recovery hint (rule 11): output capped at `OUT_CAP` appends, after the unchanged `[truncated, N chars total]` marker, the narrowing patterns (`--field-selector`, `-o jsonpath`/custom-columns, single-object drilldown) — output shaping only, the refusal grammar untouched (ADR 0016)~~ |
+| ~~#10~~ | ~~Head+tail truncation (rule 11): truncated output keeps `OUT_HEAD` 9,000 head chars + `OUT_TAIL` 5,000 tail chars around a middle-elision marker naming the true total; the #20 hint unchanged after the tail; dry-mode fixture capping unchanged. Impl commit also syncs `AGENTS.md`'s test list~~ |

@@ -82,7 +82,11 @@ under current policy (clean implementation review + `implementation-complete`):
   the on-disk wiki's deterministic size note after `REPORT_CONTRACT` — and the
   notification-dedup wiring of #35: the four-patrol lifecycle (new → quiet
   standing → escalation → resolution), the digest delivery + `last_notified`
-  stamp, and fail-open delivery on the minimal-write leg);
+  stamp, and fail-open delivery on the minimal-write leg — and the cost-control
+  wiring of #10: the user prompt's decoupled soft turn target alongside the
+  hard budget, the token soft-stop ending exploration through the budget-cut
+  path (report still lands, early stop, dangling-tool-call salvage), and
+  `--token-budget 0` disabling the stop);
   `tests/test_wiki_schema.py` covers the
   wiki skeleton schema + validation-on-write contract (#5) plus the
   per-entry recheck-command contract (#6) plus the process-owned-value
@@ -152,7 +156,13 @@ under current policy (clean implementation review + `implementation-complete`):
   the total-failure tail wiring — one FAILURE notification with the pinned
   message plus the rule-33 minimal write, fresh-deployment and on-disk legs —
   and the flipped attempt-failure log-line pins land in
-  `test_patrol_deepagents.py` and `test_empty_report.py`).
+  `test_patrol_deepagents.py` and `test_empty_report.py`); and
+  `tests/test_cost_control.py` covers the cost-control contract (#10:
+  the `SOFT_TARGET_TURNS`, `TOKEN_BUDGET`, and `OUT_HEAD`/`OUT_TAIL`
+  constants, the `--token-budget` CLI flag + `PATROL_TOKEN_BUDGET` env
+  fallback, and the guard's head+tail truncation matrix — both ends keep
+  their markers, the elision marker names the true total and the elided
+  middle, the #20 hint follows the tail, and the length bound).
 - `wiki/` (the wiki directory: `cluster-wiki.md` + its git repo) is a runtime
   artifact (gitignored) — never commit it.
 - Roadmap: GitHub issues + milestones, not documents. Spec files mark planned
