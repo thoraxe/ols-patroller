@@ -84,7 +84,9 @@ redefined here.
   the old wiki rewritten with the findings folded in. Its own findings are
   never delivered (it never saw the cluster); only its wiki is used.
 - **Minimal write** — the model-free fallback behind the wiki-repair pass
-  (#60, ADR 0022): when both model attempts fail to emit a wiki, the
+  (#60, ADR 0022) and behind total reporting failure (#66, ADR 0024, rule
+  33): when both model attempts fail to emit a wiki — or the reporting
+  pass fails wholesale — the
   patrol runs the accepted-write tail on the old wiki verbatim — content
   stale, `patrol_count`/`last_patrol`/`verified_patrol` clocks honest, so
   #7's expiry keeps working instead of freezing. No frontmatter block in the

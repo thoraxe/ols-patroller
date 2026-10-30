@@ -22,7 +22,8 @@ Covers (safety-model.md rules 6b-6c, wiki-memory.md rules 4f and 15-19):
 - wiki wiring deferred from #3: repo ensured at startup via main(), one commit
   per accepted wiki write (a byte-identical model rewrite still commits under
   #5 — the stamp advances patrol_count), push only when a remote is
-  configured, failed reporting pass leaves the wiki untouched
+  configured, a failed reporting pass minimal-writes and notifies (#66
+  rule 33 — flipped from the pre-#66 leaves-untouched pin)
 - wiki skeleton wiring of #5: an invalid updated_wiki triggers exactly one
   repair pass carrying the validation errors and the rejected wiki, the
   repaired wiki is written with process-stamped frontmatter (patrol_count
@@ -475,21 +476,54 @@ def test_budget_cut_flows_through_same_shape_pass(tmp_path, monkeypatch, capsys)
     assert "FINAL SUMMARY" not in endpoint.conversation_text(s)
 
 
-def test_failed_reporting_pass_leaves_wiki_untouched(tmp_path, monkeypatch, capsys):
-    """Shape pass fails twice (retry included) -> no report -> warning, and the
-    wiki is neither written nor committed."""
+def test_failed_reporting_pass_minimal_writes_and_notifies(tmp_path, monkeypatch, capsys):
+    """#66 rule 33 (flipped from the pre-#66 pin): the shape pass fails
+    twice (retry included) -> no report -> warning + one FAILURE
+    notification + the rule-31 minimal-write fallback. The wiki-repair
+    pass is skipped on this leg (no observed findings to merge), so the
+    shape-request count stays at 2 — and a fresh deployment writes the
+    stamped seed: the clock starts honest instead of frozen."""
     wiki = tmp_path / "wiki" / "cluster-wiki.md"
     endpoint = ScriptedEndpoint(turns=NATURAL_TURNS[:1], report=REPORT,
                                 report_mode="fail")
     run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
 
-    out = capsys.readouterr().out
-    assert "reporting pass produced no report" in out
-    # the retry happened: two shape requests, both answered unusably
+    captured = capsys.readouterr()
+    assert "reporting pass produced no report" in captured.out
+    # the retry happened: two shape requests, both answered unusably —
+    # and no wiki-repair pass behind them (rule 33: nothing to merge)
     assert len(endpoint.shape_requests) == 2
-    # wiki untouched: no file, and the startup-ensured repo has no commits
-    assert not wiki.exists()
-    assert commit_count(wiki.parent) == 0
+    # rule 7's #66 amendment: the failure notification, message verbatim
+    assert ("🔔 NOTIFY: patrol produced no report — both reporting-pass "
+            "attempts failed (see pod logs)") in captured.out
+    # no findings block — there is no report to print findings from
+    assert "findings (" not in captured.out
+    # rule 31's file-absent clause: the fallback stamps-and-writes the seed
+    assert "minimal write" in captured.out
+    assert wiki.exists()
+    assert frontmatter(wiki.read_text())["patrol_count"] == 1
+    assert commit_count(wiki.parent) == 1
+
+
+def test_failed_reporting_pass_advances_the_clock_on_disk(tmp_path, monkeypatch, capsys):
+    """#66 rule 33, on-disk leg: a total-failure patrol over an existing
+    wiki runs the accepted-write tail on the OLD wiki — content otherwise
+    unchanged, patrol_count advanced, one commit. A chronically 504ing
+    gateway degrades to honest staleness, never frozen staleness."""
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    (tmp_path / "wiki").mkdir()
+    wiki.write_text(wiki_text("on-disk marker", patrol_count=9))
+    endpoint = ScriptedEndpoint(turns=NATURAL_TURNS[:1], report=REPORT,
+                                report_mode="fail")
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
+
+    captured = capsys.readouterr()
+    assert "reporting pass produced no report" in captured.out
+    assert "minimal write" in captured.out
+    final = wiki.read_text()
+    assert "on-disk marker" in final          # the old content stands
+    assert frontmatter(final)["patrol_count"] == 10
+    assert commit_count(wiki.parent) == 1
 
 
 # --------------------------------------------------------------- wiki wiring (#3)

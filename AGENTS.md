@@ -120,7 +120,18 @@ under current policy (clean implementation review + `implementation-complete`):
   empty-result reason classification of #63: the pure
   `classify_empty_result` matrix over fake raw responses and the shape
   pass's attempt-failure log lines carrying the classified reasons via the
-  include_raw envelope, with the envelope parsing-error path).
+  include_raw envelope, with the envelope parsing-error path); and
+  `tests/test_shape_input.py` covers the shape-pass input-compaction and
+  failure-visibility contract (#66: the `compact_messages` matrix — tool-result
+  truncation with marker over langchain and dict forms, order/roles/non-tool
+  text preserved, input unmutated, the `keep_chars` parameter — the
+  `SHAPE_TOOL_KEEP` constant pin, the shape-pass prompt compaction across all
+  modes with the retry corrective appended after, the `classify_exception`
+  matrix over 5xx/timeout vs 4xx/plain, and the elapsed-seconds log-line pin;
+  the total-failure tail wiring — one FAILURE notification with the pinned
+  message plus the rule-33 minimal write, fresh-deployment and on-disk legs —
+  and the flipped attempt-failure log-line pins land in
+  `test_patrol_deepagents.py` and `test_empty_report.py`).
 - `wiki/` (the wiki directory: `cluster-wiki.md` + its git repo) is a runtime
   artifact (gitignored) — never commit it.
 - Roadmap: GitHub issues + milestones, not documents. Spec files mark planned

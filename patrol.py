@@ -102,6 +102,17 @@ REPORT_TIMEOUT  = 900  # seconds per structured reporting/repair call
 REQUEST_MAX_TOKENS = 16_000  # completion tokens per exploration turn
 REPORT_MAX_TOKENS  = 64_000  # completion tokens per structured reporting/repair call
 OUT_CAP    = 15_000  # max chars of tool output fed back to the model
+# Shape-pass compaction cap (reporting-notifications.md rule 7e, #66): the
+# tool-result keep budget for `compact_messages` — every shape-pass invocation
+# carries the compacted conversation. Hard-coded, not env-configurable (the
+# same convention as the rules-8a/8b request/token bounds): the shape pass's
+# input grew with the wiki until it flirted with the model gateway's ~900 s
+# request ceiling (both attempts 504ing at ~902 s on one soaked patrol), and a
+# client-side timeout raise cannot help while the *gateway* caps the request —
+# only shrinking what the pass carries can. A 1500-character excerpt of any
+# tool result is more citation than the report contract asks for; the full
+# text stays in the patrol's own transcript (pod logs) and the wiki's prose.
+SHAPE_TOOL_KEEP = 1500  # chars of each tool result the shape pass carries
 CLUSTER_ID = os.environ.get("PATROL_CLUSTER_ID", "local")  # wiki commit identity
 WIKI_REMOTE = os.environ.get("PATROL_WIKI_REMOTE", "")     # optional wiki replication
 # Wiki push bounds (wiki-memory.md rule 4e). Read at call time, not import time,
@@ -668,6 +679,57 @@ def _render_observed(items: list) -> str:
     return "\n".join(lines) if lines else "- (none)"
 
 
+def compact_messages(messages: list, *, keep_chars: int = SHAPE_TOOL_KEEP) -> list:
+    """Rule 7e (#66): pure conversation compaction for every shape-pass
+    invocation. Mechanical and lossy in exactly one dimension: every message
+    is kept, in order, with its role — but a tool-result body (a langchain
+    ToolMessage, or a dict with role == "tool") longer than `keep_chars`
+    characters is replaced by its first `keep_chars` characters plus the
+    marker line naming both lengths. Non-tool messages — the system prompt,
+    the initial user mission, every model turn, and the patrol's plain-text
+    final summary included — pass through verbatim, object identity included
+    for everything not truncated. Returns a new list; the input (the patrol's
+    exploration conversation, kept intact for pod-log visibility) is never
+    mutated. Duck-types both langchain message objects and plain dicts."""
+    out = []
+    for m in messages:
+        content = None
+        if isinstance(m, ToolMessage):
+            content = m.content
+        elif isinstance(m, dict) and m.get("role") == "tool":
+            content = m.get("content")
+        if not (isinstance(content, str) and len(content) > keep_chars):
+            out.append(m)  # at-or-under-cap tool bodies and all non-tool
+            continue       # messages pass through unchanged
+        marker = (f"[truncated by the patroller: first {keep_chars} "
+                  f"of {len(content)} characters — full text not shown]")
+        truncated = content[:keep_chars] + "\n" + marker
+        if isinstance(m, ToolMessage):
+            out.append(ToolMessage(content=truncated, tool_call_id=m.tool_call_id,
+                                    name=m.name))
+        else:
+            copy = dict(m)
+            copy["content"] = truncated
+            out.append(copy)
+    return out
+
+
+def classify_exception(exc: BaseException) -> str:
+    """Rule 7f (#66): pure classifier for an exception failure's reason —
+    string-based because the SDK's exception types are not importable
+    guarantees across langchain-openai versions. An OpenAI-style 5xx status
+    (`Error code: 5NN`) or a timeout marker (case-insensitive `timed out` /
+    `timeout`) means the model gateway failed the request: the reason becomes
+    `gateway failure (<original message>)`. Any other exception (4xx, plain
+    errors) keeps its own string. Never raises, no I/O."""
+    text = str(exc)
+    lowered = text.lower()
+    if (re.search(r"Error code: 5\d\d", text)
+            or "timed out" in lowered or "timeout" in lowered):
+        return f"gateway failure ({text})"
+    return text
+
+
 async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
                        repair: tuple[str, list[str]] | None = None,
                        wiki_repair: tuple[str, list, list] | None = None):
@@ -746,7 +808,14 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
                   "whose updated_wiki fixes EVERY validation error below:\n"
                   + "\n".join(f"- {e}" for e in wiki_errors)
                   + "\n\nThe rejected wiki was:\n\n" + rejected_wiki + "\n")
-    msgs: list = [*messages, {"role": "user", "content": prefix + REPORT_CONTRACT}]
+    # Rule 7e (#66): the pass carries the COMPACTED conversation, never the
+    # raw one — the compaction is uniform across every mode (report, repair,
+    # wiki-repair) and input-side only. The corrective retry messages this
+    # pass appends below ride after the compacted base, untruncated; the
+    # caller's messages list is never mutated (the exploration conversation
+    # stays intact for pod-log visibility).
+    base = compact_messages(messages)
+    msgs: list = [*base, {"role": "user", "content": prefix + REPORT_CONTRACT}]
     # Rule 7b (#51): the empty-wiki classification keys on the wiki field alone
     # (zero findings is legal and never triggers it). A wiki-less parse is a
     # failed attempt — retried with its own named corrective — and the last
@@ -758,6 +827,7 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
         corrective = "That was not a valid PatrolReport. Produce it now."
         structured = model.with_structured_output(
             PatrolReport, method="function_calling", include_raw=True)
+        started = time.monotonic()  # rule 7f (#66): the ceiling is measurable
         try:
             result = await structured.ainvoke(msgs)
             # include_raw envelope (rule 7c, #63): a dict carrying a 'parsed'
@@ -787,9 +857,10 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
                 if reason is None:
                     reason = "empty result"
         except Exception as e:  # noqa: BLE001
-            reason = str(e)
-        print(f"[patrol] reporting pass attempt {attempt} failed ({reason})",
-              file=sys.stderr)
+            reason = classify_exception(e)  # rule 7f (#66)
+        elapsed = int(time.monotonic() - started)
+        print(f"[patrol] reporting pass attempt {attempt} failed ({reason}, "
+              f"took {elapsed} s)", file=sys.stderr)
         msgs = [*msgs, {"role": "user", "content": corrective}]
     return last_parsed
 
@@ -1876,11 +1947,31 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
         return
 
     report = await shape_report(shape_model, messages, budget_cut)
-    if report is None:
+    # Rule 33 (#66, ADR 0024): a total failure (`shape_report` returned None —
+    # no attempt parsed, a different failure family from rule 30's
+    # still-empty outcome: there is no observed report at all) no longer stops
+    # at the warning. Ordering: the rule-7 warning (stdout, its existing
+    # channel) first, then one FAILURE notification through the standard
+    # notify path — a blind patrol is always wolf-worthy — then the rule-31
+    # minimal-write fallback run DIRECTLY (the wiki-repair pass is skipped on
+    # this leg: it exists to merge observed findings into the old wiki, and a
+    # total failure has none to merge). Everything else is rule 31 verbatim:
+    # the old wiki runs through the accepted-write tail, the seed takes that
+    # ride on a file-absent fresh deployment, a legacy no-frontmatter wiki
+    # writes nothing. Honest staleness, never frozen staleness.
+    total_failure = report is None
+    minimal_write = False
+    if total_failure:
         print("[patrol] WARNING: reporting pass produced no report; skipping wiki write.")
-        return
-
-    findings, notifications, new_wiki = report_fields(report)
+        notify(["patrol produced no report — both reporting-pass attempts "
+                "failed (see pod logs)"], notify_type="FAILURE")
+        findings, notifications, new_wiki = [], [], ""
+        still_empty = False
+        if _split_frontmatter(wiki) is not None:
+            new_wiki = wiki
+            minimal_write = True
+    else:
+        findings, notifications, new_wiki = report_fields(report)
 
     # Rule 7b (#51): an empty updated_wiki on arrival is a twice-failed
     # reporting attempt — shape_report already retried it once with the named
@@ -1888,8 +1979,7 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
     # the patrol's observations): its findings and notifications deliver below,
     # and this one stderr warning makes the no-op visible and countable, never
     # silent.
-    still_empty = not new_wiki
-    minimal_write = False
+    still_empty = not new_wiki and not total_failure
     if still_empty:
         print("[patrol] WARNING: reporting pass returned an empty updated_wiki; "
               "keeping the previous wiki, writing nothing", file=sys.stderr)
@@ -1962,15 +2052,18 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
 
     # Delivery (rule 16): findings and notifications are delivered after the
     # validation/repair decision resolves and before the physical write, so
-    # exactly one report — the final one — is delivered.
-    print(f"\n[patrol] findings ({len(findings)}):")
-    for f in findings:
-        print(f"  [{f.get('severity', '?'):>4}] {f.get('summary', '')}")
-        if verbose and f.get("evidence"):
-            print(f"         ↳ {f['evidence']}")
+    # exactly one report — the final one — is delivered. Rule 33 (#66): the
+    # total-failure leg delivers nothing here — its one FAILURE notification
+    # already fired above, and there is no report to print findings from.
+    if not total_failure:
+        print(f"\n[patrol] findings ({len(findings)}):")
+        for f in findings:
+            print(f"  [{f.get('severity', '?'):>4}] {f.get('summary', '')}")
+            if verbose and f.get("evidence"):
+                print(f"         ↳ {f['evidence']}")
 
-    notify([m for m in notifications if m],
-           notify_type=report_notify_type(findings))
+        notify([m for m in notifications if m],
+               notify_type=report_notify_type(findings))
 
     if new_wiki:
         # Rule 22 (#7): the expiry pass — pure and deterministic, after the

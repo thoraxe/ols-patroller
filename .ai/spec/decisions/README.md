@@ -48,3 +48,4 @@ Date: YYYY-MM-DD · Status: proposed | accepted | superseded by NNNN
 | [0021](0021-reporting-pass-own-token-bound.md) | Per-call-shape completion-token bounds: 16k exploration, 64k structured reporting |
 | [0022](0022-minimal-write-advances-the-clock.md) | The minimal-write fallback advances the patrol clock |
 | [0023](0023-apprise-multi-sink-notifications.md) | apprise for multi-sink notifications |
+| [0024](0024-total-failure-joins-the-minimal-write-net.md) | Total reporting failure joins the minimal-write net |
