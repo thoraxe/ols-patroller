@@ -64,11 +64,11 @@ in `how/reporting-pipeline.md`.
 6. The report is produced by a **tool-free structured-output pass** over the finished
    patrol conversation — never by an in-agent forced response format (see
    `patrol-engine.md` Constraints). The conversation the pass receives is the
-   **compacted** one (rule 7e) [PLANNED: #66] — the raw patrol conversation never
+   **compacted** one (rule 7e) [DONE: #66] — the raw patrol conversation never
    reaches the reporting call.
 7. The pass retries once on an invalid or empty result (a corrective user message is
    appended); total failure means no report and a warning is logged
-   [PLANNED: #66 — and the total-failure outcome no longer stops at the warning:
+   [DONE: #66 — and the total-failure outcome no longer stops at the warning:
    the patrol delivers one failure notification (rule 33) and runs the
    total-failure leg of the minimal-write net (`wiki-memory.md` rule 33) —
    the wiki-repair pass is skipped on this leg (there is no observed report,
@@ -168,7 +168,7 @@ in `how/reporting-pipeline.md`.
     that the call's own findings and notifications are never delivered
     (it never saw the cluster), and the minimal-write fallback behind
     it, are `wiki-memory.md` rules 30–32.
-7e. **Compacted shape-pass input** [PLANNED: #66]. Every invocation of
+7e. **Compacted shape-pass input** [DONE: #66]. Every invocation of
     this pass — the report pass, the rule-7a repair pass, and the rule-7d
     wiki-repair pass — carries a **compacted** copy of the patrol
     conversation, not the raw one, produced by the pure function
@@ -198,7 +198,7 @@ in `how/reporting-pipeline.md`.
     1500-character excerpt of any tool result is more citation than the
     report contract asks for; the full text remains in the patrol's own
     transcript (pod logs, rule 9a) and in the wiki's prose.
-7f. **Visible failure timing and gateway classification** [PLANNED: #66].
+7f. **Visible failure timing and gateway classification** [DONE: #66].
     Every attempt-failure log line (rules 7/7b/7c — the pass's internal
     retry, in every mode) carries the attempt's elapsed wall-time:
     `[patrol] reporting pass attempt N failed (<reason>, took E s)` with
@@ -325,7 +325,7 @@ in `how/reporting-pipeline.md`.
 
 | Ticket | Summary |
 |---|---|
-| #66 | Reporting-pass gateway-ceiling survival (rules 6, 7, 7e, 7f here; `wiki-memory.md` rule 33; ADR 0024): every shape-pass invocation carries the compacted conversation (pure `compact_messages`, `SHAPE_TOOL_KEEP` 1500 chars, tool-result bodies truncated with a marker); every attempt-failure log line carries elapsed seconds and exception reasons pass the pure `classify_exception` (5xx/timeout → `gateway failure (…)`); a total-failure patrol delivers one FAILURE notification (pinned message) and runs the rule-31 minimal-write fallback (wiki-repair pass skipped — no findings to merge). Impl commit also syncs `AGENTS.md`'s test list |
+| ~~#66~~ | Reporting-pass gateway-ceiling survival (rules 6, 7, 7e, 7f here; `wiki-memory.md` rule 33; ADR 0024): every shape-pass invocation carries the compacted conversation (pure `compact_messages`, `SHAPE_TOOL_KEEP` 1500 chars, tool-result bodies truncated with a marker); every attempt-failure log line carries elapsed seconds and exception reasons pass the pure `classify_exception` (5xx/timeout → `gateway failure (…)`); a total-failure patrol delivers one FAILURE notification (pinned message) and runs the rule-31 minimal-write fallback (wiki-repair pass skipped — no findings to merge). Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#60~~ | ~~Wiki-repair pass + minimal-write fallback (rule 7d here; the tail contract, bounds, and fallback are `wiki-memory.md` rules 30–32, ADR 0022): the shape pass gains a `wiki_repair=(old_wiki, findings, notifications)` mode — old wiki verbatim plus the observed findings, minimal-merge ask, shared binding/bounds/retry; its findings are never delivered. Impl commit also syncs `AGENTS.md`'s test list~~
 | ~~#63~~ | ~~Per-call-shape completion-token bounds + visible empty-result reasons (rules 7c + 8b): exploration `REQUEST_MAX_TOKENS` 16000, structured reporting/repair calls `REPORT_MAX_TOKENS` 64000 through the `make_model` seam; the attempt-failure log line names its cause (`truncated at max_tokens` vs `no tool call`) via a pure classifier over the raw response. Impl commit also syncs `AGENTS.md`'s test list and the stale `max_tokens` prose in `patrol.py`'s code comments (e.g. the working-set comment near the shape-pass budget)~~ |
 | ~~#51~~ | ~~Empty PatrolReport (rules 5 + 7b): the report contract requires `updated_wiki` on every report; an empty one is a failed attempt — one named corrective retry, then findings-only delivery with a stderr warning, wiki unchanged. Impl commit also syncs `AGENTS.md`'s test list~~ |

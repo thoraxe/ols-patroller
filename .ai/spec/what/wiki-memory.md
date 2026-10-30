@@ -34,7 +34,7 @@ knowledge base of the observed cluster.
    (rules 30–32; `reporting-notifications.md` rule 7d) give the tail a
    recoverable next step; the fallback is the only path by which an
    empty-content write may land (rule 31, ADR 0022).]
-   [PLANNED: #66 — "if the reporting pass fails, the wiki is left
+   [DONE: #66 — "if the reporting pass fails, the wiki is left
    untouched" gains the same exception #60 gave the empty-wiki leg: a
    total failure (`shape_report` returned `None`) warns, notifies, and
    minimal-writes the old wiki (rule 33, ADR 0024).]
@@ -77,7 +77,7 @@ knowledge base of the observed cluster.
     rule-31 minimal write is an accepted write and commits (ADR 0022);
     the stamp advances `patrol_count` on every accepted write, so the
     byte-identical case is long superseded too (rule 17).]
-    [PLANNED: #66 — the failed-reporting-pass leg's supersession: a
+    [DONE: #66 — the failed-reporting-pass leg's supersession: a
     total-failure patrol runs the rule-33 minimal write and commits
     (ADR 0024); "creates no commit" now describes only the legacy
     no-frontmatter legs of rules 31/33.]
@@ -110,7 +110,7 @@ knowledge base of the observed cluster.
     is pruned on the written wiki with one console line per pruned entry,
     an over-budget wiki still writes with one stderr warning, and a repair
     pass carries the budget warning (rules 28–29).]
-    [PLANNED: #66 — the e2e's failed-reporting-pass pin flips with rule 33:
+    [DONE: #66 — the e2e's failed-reporting-pass pin flips with rule 33:
     a total-failure patrol warns, sends the FAILURE notification, and
     minimal-writes (the stamped seed on a fresh deployment; the old wiki
     with the clock advanced on disk) — the wiki-repair pass skipped.]
@@ -835,7 +835,7 @@ write.
     failure writes the old wiki with the clock advanced (writes nothing
     at all on a legacy no-frontmatter wiki, and writes the stamped seed
     on a file-absent fresh deployment — rule 31).
-33. **Total-failure leg** [PLANNED: #66]. When the reporting pass ends in
+33. **Total-failure leg** [DONE: #66]. When the reporting pass ends in
     rule 7's total failure (`shape_report` returned `None` — no attempt
     parsed, a different failure family from rule 30's still-empty outcome:
     there is no observed report at all), the patrol tail runs the rule-31
@@ -930,7 +930,8 @@ write.
 
 | Ticket | Summary |
 |---|---|
-| #66 | Total-failure leg of the minimal-write net (rule 33; ADR 0024): a `report is None` patrol skips the wiki-repair pass (no findings to merge) and runs the rule-31 fallback directly — warning, FAILURE notification, then the accepted-write tail on the old wiki. The reporting-pass input compaction and failure-visibility halves of #66 live in `reporting-notifications.md` rules 7e/7f. Impl commit also syncs `AGENTS.md`'s test list |
+| ~~#66~~ | ~~Total-failure leg of the minimal-write net (rule 33; ADR 0024): a `report is None` patrol skips the wiki-repair pass (no findings to merge) and runs the rule-31 fallback directly — warning, FAILURE notification, then the accepted-write tail on the old wiki. The reporting-pass input compaction and failure-visibility halves of #66 live in `reporting-notifications.md` rules 7e/7f. Impl commit also syncs
+  `AGENTS.md`'s test list~~ |
 | ~~#60~~ | ~~Still-empty safety net (rules 30–32, ADR 0022; the call shape is `reporting-notifications.md` rule 7d): after the #51 still-empty outcome, one wiki-repair pass — the shape pass carrying the old wiki verbatim plus the observed findings, asking for a minimal merge; its findings are never delivered — and, when that fails too, a minimal-write fallback that runs the accepted-write tail on the old wiki (clock advanced, body preserved; no-op on a legacy no-frontmatter wiki). Impl commit also syncs `AGENTS.md`'s test list and `ARCHITECTURE.md`'s wiki prose if it mentions the terminal still-empty outcome~~
 | ~~#62~~ | ~~The gate does not judge the owned values (rules 10b + 14a + the rule-15 narrowing): frontmatter validation drops the value checks on `cluster_id`/`patrol_count`/`last_patrol` (presence, closed set, and `wiki_version` value stay), and `WIKI_SEED` must itself pass `validate_wiki` — the seed/gate single source of truth, pinned by test. Impl commit also syncs `AGENTS.md`'s test list~~
 | ~~#51~~ | ~~Empty-`updated_wiki` classification (rules 4 + 16 amendments): empty is a failed reporting attempt, not a no-update signal — retried and warned inside the reporting pass (`reporting-notifications.md` rule 7b); the write gate itself is unchanged (empty still writes nothing)~~ |

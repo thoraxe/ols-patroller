@@ -12,9 +12,9 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
 | `report_fields` | Normalizes the result (pydantic model or dict) into plain data |
 | `notify` | Console `🔔 NOTIFY` + apprise multi-sink delivery (`PATROL_NOTIFY_URLS`, rules 10a–10c) [DONE: #9] |
 | `classify_empty_result` | Pure classifier for a `None`/unparsed result's failure reason from the raw response (truncated-at-max_tokens vs no-tool-call) [DONE: #63] |
-| `classify_exception` | Pure classifier for an exception failure's reason — 5xx (`Error code: 5NN`) or timeout markers become `gateway failure (…)`; anything else keeps the exception's string [PLANNED: #66] |
-| `compact_messages` | Pure conversation compaction for every shape-pass invocation: all messages kept in order, tool-result bodies over `SHAPE_TOOL_KEEP` (1500) chars truncated with a marker; non-tool messages verbatim [PLANNED: #66] |
-| `run_patrol` (tail) | Validates the report's wiki against the skeleton (one repair pass on failure, `validate_wiki`), delivers findings/notifications, expires stale watch-list entries (`expire_stale_entries`) [DONE: #7], compacts the Anomaly log to its keep budget (`compact_anomaly_log`) [DONE: #40], stamps the frontmatter (`stamp_wiki`), then warns on soft-budget overshoot (`wiki_budget_warnings` on the final wiki, stderr — post-stamp, rule 29) [DONE: #40], writes the wiki atomically, commits + pushes it (wiki git persistence — `project-structure.md`) [#3: DONE; validation/repair/stamp: DONE: #5]; an empty `updated_wiki` on arrival (post-retry) logs one stderr warning naming it before delivery — the no-op is never silent [DONE: #51]; after that warning the tail runs the #60 safety net: one wiki-repair pass (rule 7d), then the minimal-write fallback — the accepted-write tail on the old wiki, no-op without a frontmatter block, one console line [DONE: #60]; a `None` report (total failure) warns, sends one FAILURE notification, and runs the rule-31 fallback directly — the wiki-repair pass skipped (rule 33) [PLANNED: #66] |
+| `classify_exception` | Pure classifier for an exception failure's reason — 5xx (`Error code: 5NN`) or timeout markers become `gateway failure (…)`; anything else keeps the exception's string [DONE: #66] |
+| `compact_messages` | Pure conversation compaction for every shape-pass invocation: all messages kept in order, tool-result bodies over `SHAPE_TOOL_KEEP` (1500) chars truncated with a marker; non-tool messages verbatim [DONE: #66] |
+| `run_patrol` (tail) | Validates the report's wiki against the skeleton (one repair pass on failure, `validate_wiki`), delivers findings/notifications, expires stale watch-list entries (`expire_stale_entries`) [DONE: #7], compacts the Anomaly log to its keep budget (`compact_anomaly_log`) [DONE: #40], stamps the frontmatter (`stamp_wiki`), then warns on soft-budget overshoot (`wiki_budget_warnings` on the final wiki, stderr — post-stamp, rule 29) [DONE: #40], writes the wiki atomically, commits + pushes it (wiki git persistence — `project-structure.md`) [#3: DONE; validation/repair/stamp: DONE: #5]; an empty `updated_wiki` on arrival (post-retry) logs one stderr warning naming it before delivery — the no-op is never silent [DONE: #51]; after that warning the tail runs the #60 safety net: one wiki-repair pass (rule 7d), then the minimal-write fallback — the accepted-write tail on the old wiki, no-op without a frontmatter block, one console line [DONE: #60]; a `None` report (total failure) warns, sends one FAILURE notification, and runs the rule-31 fallback directly — the wiki-repair pass skipped (rule 33) [DONE: #66] |
 
 ## Data Flow
 
@@ -23,16 +23,16 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
 1. `model.with_structured_output(PatrolReport, method="function_calling")` — a
    separate tool-free model call.
 2. Prompt = compacted conversation + user message (`prefix + REPORT_CONTRACT`)
-   — `compact_messages(messages)` in every mode (rule 7e) [PLANNED: #66]; the
+   — `compact_messages(messages)` in every mode (rule 7e) [DONE: #66]; the
    prefix
    differs by `budget_cut`: "completed and wrote its final summary" vs "CUT OFF …
    commands marked 'not executed' never ran. Report only on what was actually
    observed."
 3. On exception or empty result: append "That was not a valid PatrolReport. Produce
    it now." and retry once. Two failures → `None` — and the tail's `None` leg
-   warns, notifies (FAILURE), and minimal-writes (rule 33) [PLANNED: #66]. Every
+   warns, notifies (FAILURE), and minimal-writes (rule 33) [DONE: #66]. Every
    attempt-failure log line carries the attempt's elapsed seconds, and an
-   exception's reason passes `classify_exception` (rule 7f) [PLANNED: #66]. A
+   exception's reason passes `classify_exception` (rule 7f) [DONE: #66]. A
    parsed result whose
    `updated_wiki` is empty is equally a failed attempt
    (`reporting-notifications.md` rule 7b): its corrective message names the
@@ -132,7 +132,7 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
   choice) at ~1.02M — 4.7× cheaper.
 - No report → wiki untouched (rule: never let a failed reporting pass corrupt
   memory) — and no commit is created: history advances only on wiki writes
-  [DONE: #3]. [PLANNED: #66 — superseded by rule 33 for the total-failure
+  [DONE: #3]. [DONE: #66 — superseded by rule 33 for the total-failure
   leg: a no-report patrol warns, sends the FAILURE notification, and
   minimal-writes the old wiki through the accepted-write tail (ADR 0024);
   "no commit" now describes only the legacy no-frontmatter legs of
@@ -168,9 +168,9 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
   visibility). Truncation is the only lossy dimension — order, roles, and
   all non-tool text (the patrol's final summary included) are preserved —
   so the pass's behavior contract is unchanged; only what it carries
-  shrinks [PLANNED: #66].
+  shrinks [DONE: #66].
 - The failure-timing/classification half (#66, rule 7f) is, like #63,
   read-only diagnostics plus one new tail behavior (the `None` leg's
   notification and minimal write, rule 33); `classify_exception` is
   string-based because the SDK's exception types are not importable
-  guarantees across langchain-openai versions [PLANNED: #66].
+  guarantees across langchain-openai versions [DONE: #66].
