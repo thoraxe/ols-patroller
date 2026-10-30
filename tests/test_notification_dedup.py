@@ -295,7 +295,8 @@ def test_digest_respects_last_notified_cadence():
 
 
 def test_digest_excludes_closed_and_already_notified_entries():
-    old = build_wiki(watch=[entry("W-1", severity="warn")],
+    old = build_wiki(watch=[entry("W-1", first_seen="2026-10-29",
+                                  severity="warn")],
                      anomaly=[entry("A-1", status="resolved", recheck=None,
                                     severity="warn")])
     new = old
@@ -446,7 +447,7 @@ def test_validate_accepts_missing_and_valid_severity():
 
 
 def test_validate_rejects_unknown_severity():
-    wiki = build_wiki(watch=[entry("W-1", severity="urgent")])
+    wiki = build_wiki(watch=[entry("W-1", severity="urgent")], valid=False)
     errors = patrol.validate_wiki(wiki)
     assert errors, "an unknown severity value must fail validation"
     assert any("severity" in e and "W-1" in e for e in errors)

@@ -83,7 +83,7 @@ four notification-worthy events are: a **new entry**, a **severity change**
 re-opening), and a **periodic digest** for long-unfixed entries. A standing
 entry whose status and severity are unchanged is wiki-only.
 
-4a. **State-change filter** [PLANNED: #35]. Every notification the model
+4a. **State-change filter** [DONE: #35]. Every notification the model
     proposes carries its target wiki entry's id as a leading bracketed tag:
     `[<entry id>] <human-readable message>`. The tag is part of the delivered
     message (the human benefits from seeing which entry an alert concerns).
@@ -135,7 +135,7 @@ entry whose status and severity are unchanged is wiki-only.
     new state on disk, so there is nothing to dedup against, and an observed
     finding must never be lost because the wiki write failed. Findings are
     never filtered; only notification delivery is.
-4b. **Model-facing dedup contract** [PLANNED: #35]. `REPORT_CONTRACT`
+4b. **Model-facing dedup contract** [DONE: #35]. `REPORT_CONTRACT`
     carries the facts the mechanical filter depends on, verbatim
     (executable pins live in `test_notification_dedup.py`):
     - every notification begins with the entry-id tag —
@@ -157,7 +157,7 @@ entry whose status and severity are unchanged is wiki-only.
     materialized" escalation is expressed as a status or severity change in
     this vocabulary — no new status value (`materialized`) is added to the
     skeleton (rule 12's closed status set).
-4c. **Periodic digest** [PLANNED: #35]. A standing condition should nag
+4c. **Periodic digest** [DONE: #35]. A standing condition should nag
     occasionally, not every patrol. After rule-4a filtering, the process
     appends **at most one** digest notification for entries that have been
     unfixed long enough: the pure function
@@ -214,7 +214,7 @@ entry whose status and severity are unchanged is wiki-only.
     `ids` are the digest's entry ids in message
     order. When no candidate exists the digest is `None` with no ids. The
     function is pure — no I/O, no model calls.
-4d. **Last-notified stamp** [PLANNED: #35]. The digest cadence reads a
+4d. **Last-notified stamp** [DONE: #35]. The digest cadence reads a
     process-owned per-entry clock, `last_notified: YYYY-MM-DD` (the
     metadata-line pair of `wiki-memory.md` rule 12c) — the patrol start date
     on which the entry was last named by a delivered notification (state
@@ -235,7 +235,7 @@ entry whose status and severity are unchanged is wiki-only.
     skipped on a patrol that writes no wiki (empty, rejected, or
     total-failure legs) — no accepted write, no clock advance (rule 20's
     accepted-write semantics).
-4e. **Delivery order and scope** [PLANNED: #35]. `run_patrol` builds the
+4e. **Delivery order and scope** [DONE: #35]. `run_patrol` builds the
     delivered list as the rule-4a `delivered` messages in proposed order,
     followed by the rule-4c digest when one exists (and only when a
     model-authored accepted wiki exists — the minimal-write and keep-old-wiki
@@ -504,7 +504,7 @@ entry whose status and severity are unchanged is wiki-only.
     Non-negative integer, default 7; `0` disables the digest (state-change
     notifications are unaffected). Read once at import; an unparseable or
     negative value fails startup with a config error — the patrol never runs
-    on a silently wrong digest cadence [PLANNED: #35]
+    on a silently wrong digest cadence [DONE: #35]
 - ~~`SLACK_WEBHOOK_URL`~~ — removed by #9; superseded by `PATROL_NOTIFY_URLS`
   (a Slack incoming webhook is expressed as its apprise `slack://` URL)
 
@@ -535,7 +535,7 @@ entry whose status and severity are unchanged is wiki-only.
 | ~~#51~~ | ~~Empty PatrolReport (rules 5 + 7b): the report contract requires `updated_wiki` on every report; an empty one is a failed attempt — one named corrective retry, then findings-only delivery with a stderr warning, wiki unchanged. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#49~~ | ~~Per-call-shape request bounds (rule 8a): exploration turns `REQUEST_TIMEOUT` 300 s, structured reporting/repair calls `REPORT_TIMEOUT` 900 s — two `make_model` instances through the same seam; the specced constants in `agent-engine.md` / `system-overview.md` updated to the split, bounds pinned by test. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#9~~ | apprise multi-sink notifications (rules 10a–10c): `PATROL_NOTIFY_URLS` (comma/newline-separated apprise URLs, pure `parse_notify_urls`) replaces the removed `SLACK_WEBHOOK_URL`; patrol-level `notify_type` via pure `report_notify_type` (crit anywhere → FAILURE, else WARNING); per-sink best-effort delivery, failures logged to stderr, never fatal; apprise joins the pinned dependency set (`container-image.md` rules 6–7), `requests` drops from the top-level set (transitive via apprise); manifest Secret optional key becomes `PATROL_NOTIFY_URLS`. Impl commit also syncs `AGENTS.md`'s test list, the repo `README.md`'s env/config table (`SLACK_WEBHOOK_URL` → `PATROL_NOTIFY_URLS`) and any remaining Slack prose, and the `run_patrol_cli` test docstring's env pin list |
-| #35 | Notification dedup, state-keyed (rules 4a–4e; `wiki-memory.md` rules 12b–12c and the rule-16 write-path amendment; ADR 0026): notifications carry `[<entry id>]` tags and are filtered against the old-vs-new wiki diff — new entry, severity change, status change, or removal delivers; a standing unchanged entry is wiki-only (suppressed, count on stderr). Entries gain an optional `severity` pair (judged when present) so severity changes are diffable, and the model contract requires the tag and the severity pair. A process-authored weekly digest (`PATROL_NOTIFY_DIGEST_AFTER`, default 7 days, `0` disables) names long-unfixed watching entries; entries notified this patrol get a process-stamped `last_notified` date after compaction. Per-notification severity and apprise-tag sink routing stay deferred. Impl commit also syncs `README.md`'s config table and `AGENTS.md`'s test list |
+| ~~#35~~ | ~~Notification dedup, state-keyed (rules 4a–4e; `wiki-memory.md` rules 12b–12c and the rule-16 write-path amendment; ADR 0026): notifications carry `[<entry id>]` tags and are filtered against the old-vs-new wiki diff — new entry, severity change, status change, or removal delivers; a standing unchanged entry is wiki-only (suppressed, count on stderr). Entries gain an optional `severity` pair (judged when present) so severity changes are diffable, and the model contract requires the tag and the severity pair. A process-authored weekly digest (`PATROL_NOTIFY_DIGEST_AFTER`, default 7 days, `0` disables) names long-unfixed watching entries; entries notified this patrol get a process-stamped `last_notified` date after compaction. Per-notification severity and apprise-tag sink routing stay deferred. Impl commit also syncs `README.md`'s config table and `AGENTS.md`'s test list~~ |
 | ~~#40~~ | ~~Report contract states the working-set expectations: the wiki is a working set (git history is the archive), summarize and prune rather than accumulate, the soft character budget, the anomaly-log keep budget (`wiki-memory.md` rules 28–29)~~ |
 | ~~#7~~ | ~~Report contract states the staleness clock's model-facing half: `verified_patrol` is process-stamped (never computed by the model), `last_verified` advances only on actual re-verification, and unverified watching entries auto-expire (`wiki-memory.md` rules 20–22)~~ |
 | ~~#6~~ | ~~Report contract asks for recheck commands: every Watch-list entry carries a guard-acceptable `recheck:` pair in tool-argument form (`wiki-memory.md` rule 12a)~~ |

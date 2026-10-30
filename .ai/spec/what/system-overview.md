@@ -69,7 +69,7 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
     console/apprise-sink delivery (`reporting-notifications.md`) [DONE: #9 —
     was console/Slack]. Notifications are state-change keyed: a `[<entry id>]`
     tag plus an old-vs-new wiki diff suppresses standing unchanged entries, and
-    a weekly process digest names long-unfixed watching entries [PLANNED: #35].
+    a weekly process digest names long-unfixed watching entries [DONE: #35].
 11. **Safety model** — layered read-only enforcement spanning guard, engine, and
     (planned) in-cluster RBAC (`safety-model.md`).
 12. **CLI & scheduling** — argument parsing, once/loop modes, wiki path
@@ -100,9 +100,9 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
 14. Each patrol: load wiki → gather in-flight AgenticRuns context (best-effort) →
     agentic exploration → reporting pass → validate the wiki skeleton (one repair
     pass on failure) [DONE: #5] → print findings, filter/emit notifications
-    (state-change dedup + weekly digest) [PLANNED: #35], expire
+    (state-change dedup + weekly digest) [DONE: #35], expire
     stale watch-list entries [DONE: #7], compact the Anomaly log to its keep
-    budget [DONE: #40], stamp the per-entry notify clock [PLANNED: #35] and the
+    budget [DONE: #40], stamp the per-entry notify clock [DONE: #35] and the
     frontmatter counters
     [DONE: #5], rewrite the wiki atomically, commit it to the wiki repo, push
     if `PATROL_WIKI_REMOTE` is set [DONE: #3].
@@ -138,7 +138,7 @@ Environment variables:
   watching entry older than this, and not notified within this window, is named
   by one process-authored digest; non-negative integer, default `7`, `0`
   disables the digest. Read once at import; invalid/negative fails startup
-  [PLANNED: #35]
+  [DONE: #35]
 - `PATROL_MAX_STEPS` — LLM-turn exploration budget per patrol (default `30`)
 - `PATROL_INTERVAL` — seconds between patrols in `--loop` mode (default
   `21600`, six hours) [DONE: #25 — was `900`]

@@ -219,11 +219,11 @@ the history #7 expires into) carry per-entry structure; everything else is prose
       ` · `-separated pairs — any other trailing text is a validation failure.
       Unknown keys are not judged — `recheck` and `severity` are the
       additional keys the validator judges (rules 12a–12b) [DONE: #6]
-      [PLANNED: #35 — `severity`]. A `verified_patrol` pair
+      [DONE: #35 — `severity`]. A `verified_patrol` pair
       (#7, rule 20) stays unjudged: it is process-stamped and overwritten
       wholesale, so the model may copy, drop, or mangle it freely
       [DONE: #7]. A `last_notified` pair (#35, rule 12c) is equally
-      process-stamped and unjudged [PLANNED: #35].
+      process-stamped and unjudged [DONE: #35].
     - Free prose is the indented continuation of the list item (sub-bullets
       allowed) — the natural-language hypothesis. Prose is never validated and
       never appears on the metadata line itself: a trailing text after the
@@ -268,7 +268,7 @@ the history #7 expires into) carry per-entry structure; everything else is prose
     - Each recheck error names the section, the entry id, and the reason —
       missing, duplicate, prefixed, or refused (carrying the guard's refusal
       reason) — so the repair pass (rule 18) can fix it in one round.
-12b. **Severity pair** [PLANNED: #35]. An entry metadata line may carry a
+12b. **Severity pair** [DONE: #35]. An entry metadata line may carry a
     `severity: <info|warn|crit>` pair among its additional pairs — the
     current severity of the condition the entry tracks, in the same
     vocabulary as a finding's severity (`reporting-notifications.md` rule
@@ -283,7 +283,7 @@ the history #7 expires into) carry per-entry structure; everything else is prose
     change when the other side carries one (fail-open). The pair records
     the current grade only — the history is git's (rule 4a) — so the model
     rewrites it as the condition moves; the process never stamps it.
-12c. **Last-notified clock** [PLANNED: #35]. An entry metadata line may
+12c. **Last-notified clock** [DONE: #35]. An entry metadata line may
     carry a process-owned `last_notified: YYYY-MM-DD` pair — the patrol
     start date on which the entry was last named by a delivered
     notification (`reporting-notifications.md` rule 4d). The patroller
@@ -363,7 +363,7 @@ attempt, and then the old wiki wins. Persistence problems degrade, never block.
       [DONE: #40 — the compaction pass (rule 28) joins between expiry
       and the stamp — expire → compact → stamp → write → commit → push —
       and the soft-budget warning (rule 29) fires on the final wiki];
-      [PLANNED: #35 — the notification stamp (`stamp_last_notified`,
+      [DONE: #35 — the notification stamp (`stamp_last_notified`,
       `reporting-notifications.md` rule 4d) joins after compaction and
       before the frontmatter stamp, and only on accepted writes: expire →
       compact → notify stamp → stamp → write → commit → push];
@@ -1017,7 +1017,7 @@ write.
 
 | Ticket | Summary |
 |---|---|
-| #35 | Notification dedup, state-keyed (rules 12b–12c plus the rule-16 write-path amendment; behavior in `reporting-notifications.md` rules 4a–4e, ADR 0026): entries gain an optional `severity` pair (judged when present) so severity changes are diffable across patrols, and a process-owned `last_notified` date pair that the write path stamps for every entry a notification named this patrol (after compaction, before the frontmatter stamp, accepted writes only). The wiki is the dedup baseline; standing unchanged entries stay wiki-only. Impl commit also syncs `README.md`'s config table and `AGENTS.md`'s test list |
+| ~~#35~~ | ~~Notification dedup, state-keyed (rules 12b–12c plus the rule-16 write-path amendment; behavior in `reporting-notifications.md` rules 4a–4e, ADR 0026): entries gain an optional `severity` pair (judged when present) so severity changes are diffable across patrols, and a process-owned `last_notified` date pair that the write path stamps for every entry a notification named this patrol (after compaction, before the frontmatter stamp, accepted writes only). The wiki is the dedup baseline; standing unchanged entries stay wiki-only. Impl commit also syncs `README.md`'s config table and `AGENTS.md`'s test list~~ |
 | ~~#67~~ | ~~Model-facing wiki size feedback (rule 29a; the contract amendment is `reporting-notifications.md` rule 5): every report-pass invocation carries a deterministic `wiki_size_note` line — the wiki-in-play's character count, the budget, the floored percentage, and the excess (over budget, with a named prune target) or headroom (under budget) — appended after `REPORT_CONTRACT`; the report pass reports the on-disk wiki, the validation-repair pass the rejected wiki, and the wiki-repair pass carries none. The contract names the consequence chain (over-budget wiki → slower reporting pass → gateway ceiling → the next patrol re-reading prose) and requires the returned wiki to be smaller when over budget unless new facts require the space. ADR 0025 rejects process-side prose compaction. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#66~~ | ~~Total-failure leg of the minimal-write net (rule 33; ADR 0024): a `report is None` patrol skips the wiki-repair pass (no findings to merge) and runs the rule-31 fallback directly — warning, FAILURE notification, then the accepted-write tail on the old wiki. The reporting-pass input compaction and failure-visibility halves of #66 live in `reporting-notifications.md` rules 7e/7f. Impl commit also syncs
   `AGENTS.md`'s test list~~ |
