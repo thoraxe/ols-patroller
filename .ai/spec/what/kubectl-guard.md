@@ -85,7 +85,7 @@ sees these messages and recovers based on them.
     fixture capping stays head-only, marker-free and hint-free (fixture text
     is demo data, not cluster output — the dry-mode cap is this file's rule
     13, the fixture-set rationale is `patrol-engine.md` rules 13–13a).
-    Before #10 lands, truncation is head-only with the marker
+    Before #10, truncation was head-only with the marker
     `...[truncated, N chars total]` plus the #20 hint [DONE: #20]. This is output shaping only — the refusal
     grammar (rules 2–6a) is untouched, so `guard_refusal` and the recheck
     validity it backs (ADR 0013) are unaffected; the guard never refuses a
