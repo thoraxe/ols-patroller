@@ -77,7 +77,9 @@ under current policy (clean implementation review + `implementation-complete`):
   the repair-still-empty fall to the keep-old-wiki outcome — and the
   one-event-loop loop-mode wiring of #50: two patrols through `main()
   --loop` on a single process-lifetime event loop, the failed-patrol
-  catch-and-continue on that same loop, and a clean ctrl-c exit);
+  catch-and-continue on that same loop, and a clean ctrl-c exit — and the
+  model-facing wiki size feedback of #67: the report pass's prompt carrying
+  the on-disk wiki's deterministic size note after `REPORT_CONTRACT`);
   `tests/test_wiki_schema.py` covers the
   wiki skeleton schema + validation-on-write contract (#5) plus the
   per-entry recheck-command contract (#6) plus the process-owned-value
@@ -100,7 +102,12 @@ under current policy (clean implementation review + `implementation-complete`):
   `test_kubectl_guard.py`); and `tests/test_wiki_budget.py` covers the wiki
   length-budget contract (#40: the `compact_anomaly_log` and
   `wiki_budget_warnings` matrices, the `wiki_stats` size keys, the
-  `--wiki-stats` size line, and the report contract's working-set pins); and
+  `--wiki-stats` size line, and the report contract's working-set pins;
+  plus the model-facing size-note contract of #67 — the `wiki_size_note`
+  matrix (within/over budget, empty content, exactly-at-budget boundary,
+  call-time `WIKI_CHAR_BUDGET`), the contract's consequence-chain/shrink
+  pins, and the shape-pass prompt wiring across modes with retry
+  persistence); and
   `tests/test_request_bounds.py` covers the per-call-shape request-bound
   contract (#49 and #63: the two timeout constants, the two completion-token
   bound constants, and the `make_model` timeout + `max_tokens` passthrough);

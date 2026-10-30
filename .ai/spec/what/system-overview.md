@@ -64,7 +64,7 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
    report invocation carries a deterministic size line (count, budget,
    over-budget excess or headroom) and the report contract names the
    consequence chain, so an over-budget wiki is pruned by the model instead
-   of only warned about by the process [PLANNED: #67].
+   of only warned about by the process [DONE: #67].
 10. **Reporting & notifications** — typed report schema, severity vocabulary,
     console/apprise-sink delivery (`reporting-notifications.md`) [DONE: #9 —
     was console/Slack].

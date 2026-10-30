@@ -645,6 +645,14 @@ Produce the final PatrolReport for the cluster patrol above:
      characters (frontmatter included). The Anomaly log keeps only the
      last {WIKI_ANOMALY_KEEP} resolved/expired entries (the patroller prunes
      older closed ones) — never hoard closed history there.
+
+A size line may be appended below: the current wiki's character count and the
+soft budget. An over-budget wiki slows this reporting pass, risks the model
+gateway's request ceiling, and makes the next patrol re-read prose that should
+have been pruned. When the size line says the wiki is over budget, the
+updated_wiki you return must be smaller than the current wiki — prune at least the stated excess — unless this patrol observed new facts that genuinely require the space;
+then prune elsewhere to pay for them. Use the line: retain what is
+load-bearing, drop what is not.
 """
 
 
@@ -732,7 +740,8 @@ def classify_exception(exc: BaseException) -> str:
 
 async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
                        repair: tuple[str, list[str]] | None = None,
-                       wiki_repair: tuple[str, list, list] | None = None):
+                       wiki_repair: tuple[str, list, list] | None = None,
+                       current_wiki: str | None = None):
     """Tool-free structured-output pass over the finished patrol conversation.
 
     Same pattern as the OLS agentic sandbox's "shape pass": the agent explores
@@ -777,6 +786,15 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
     output parsing errors reported in the envelope (rather than raised) keep
     their own message as the reason. Read-only diagnostics: the retry, the
     corrective message, and the keep-old-wiki outcomes are untouched.
+
+    `current_wiki` is the wiki in play (wiki-memory.md rule 29a, #67): every
+    report-pass invocation appends its deterministic `wiki_size_note` as the
+    last text of the attempt's prompt — after REPORT_CONTRACT on the first
+    attempt, after the corrective on a retry, a blank line between. The
+    report pass passes the on-disk wiki; the validation-repair mode measures
+    its `rejected_wiki` argument instead; the wiki-repair mode appends none
+    (its ask is a minimal merge that preserves the old wiki). No
+    `current_wiki` (or an empty one) renders no note.
     """
     if repair is None and wiki_repair is None:
         prefix = ("You are the REPORTING PASS for the cluster patrol recorded above. "
@@ -814,8 +832,19 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
     # pass appends below ride after the compacted base, untruncated; the
     # caller's messages list is never mutated (the exploration conversation
     # stays intact for pod-log visibility).
+    # Rule 29a (#67): the size note measures the wiki-in-play — the rejected
+    # wiki in validation-repair mode, none at all in wiki-repair mode — and
+    # rides after the contract / corrective on every attempt.
+    if wiki_repair is not None:
+        note = ""
+    elif repair is not None:
+        note = wiki_size_note(repair[0])
+    else:
+        note = wiki_size_note(current_wiki or "")
+    note_suffix = f"\n\n{note}" if note else ""
     base = compact_messages(messages)
-    msgs: list = [*base, {"role": "user", "content": prefix + REPORT_CONTRACT}]
+    msgs: list = [*base, {"role": "user",
+                          "content": prefix + REPORT_CONTRACT + note_suffix}]
     # Rule 7b (#51): the empty-wiki classification keys on the wiki field alone
     # (zero findings is legal and never triggers it). A wiki-less parse is a
     # failed attempt — retried with its own named corrective — and the last
@@ -861,7 +890,7 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
         elapsed = int(time.monotonic() - started)
         print(f"[patrol] reporting pass attempt {attempt} failed ({reason}, "
               f"took {elapsed} s)", file=sys.stderr)
-        msgs = [*msgs, {"role": "user", "content": corrective}]
+        msgs = [*msgs, {"role": "user", "content": corrective + note_suffix}]
     return last_parsed
 
 
@@ -1619,6 +1648,33 @@ def compact_anomaly_log(content: str, keep: int) -> tuple[str, list[str]]:
     return "\n".join(out), [entry_id for _idx, entry_id in closed[:beyond]]
 
 
+def wiki_size_note(content: str, *, budget: int | None = None) -> str:
+    """Rule 29a (#67): the model-facing size feedback — pure.
+
+    Exactly one deterministic line naming the content's character count, the
+    soft budget, and the floored percentage of budget, plus the over-budget
+    excess (with a named prune target) or the headroom. Empty content renders
+    nothing. `budget` defaults to WIKI_CHAR_BUDGET read at call time (the
+    rule-28/29 convention); the boundary `count == budget` is within budget
+    (0 characters of headroom), matching rule 29's strict overshoot test.
+    """
+    if not content:
+        return ""
+    if budget is None:
+        budget = WIKI_CHAR_BUDGET
+    count = len(content)
+    share = int(100 * count / budget)
+    head = (f"Current wiki size: {count} characters ({share}% of the "
+            f"{budget}-character soft budget) — ")
+    if count > budget:
+        excess = count - budget
+        return (f"{head}{excess} characters OVER budget. Prune at least "
+                f"{excess} characters: rewrite existing prose tighter and "
+                "drop what no longer earns its place.")
+    return (f"{head}{budget - count} characters of headroom. Do not grow it "
+            "without pruning something else.")
+
+
 def wiki_budget_warnings(content: str) -> list[str]:
     """Rule 29 (#40): the soft whole-wiki character budget — pure.
 
@@ -1946,7 +2002,8 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
         print("[patrol] WARNING: patrol made no observations; skipping wiki write.")
         return
 
-    report = await shape_report(shape_model, messages, budget_cut)
+    report = await shape_report(shape_model, messages, budget_cut,
+                                current_wiki=wiki)
     # Rule 33 (#66, ADR 0024): a total failure (`shape_report` returned None —
     # no attempt parsed, a different failure family from rule 30's
     # still-empty outcome: there is no observed report at all) no longer stops
