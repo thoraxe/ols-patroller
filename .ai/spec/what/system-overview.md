@@ -44,8 +44,9 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
 7. **Patrol engine** — deepagents agent loop, tool surface, step budget, termination,
    dry-cluster mode (`patrol-engine.md`).
 8. **Read-only guard** — the single cluster tool `kubectl_readonly`: verb whitelist,
-   secret-value refusal, raw-path (`--raw`) refusal, timeouts, output cap
-   (`kubectl-guard.md`).
+   Secret-access ban (all Secret access — names and metadata included, not just
+   values) [PLANNED: #33], raw-path (`--raw`) refusal, local-file/credential-flag
+   refusal [PLANNED: #33], timeouts, output cap (`kubectl-guard.md`).
 9. **Wiki memory** — persistent markdown memory, seeded on first run, wholly
    rewritten each patrol, git-backed: one wiki-changing patrol, one commit
    [DONE: #3]; skeleton-validated on write — frontmatter, fixed section set,
@@ -207,5 +208,5 @@ documents). Milestone shape:
 | v0.1 (#1–#4, #9, #11, #24, #25, #27, #28) | In-cluster: Containerfile, manifests (SA + cluster-reader + PVC + Deployment), git-backed wiki, e2e tests in-repo, deployment defaults & observability (6 h cadence, unbuffered + verbose logs, git-safe `/wiki`), guard `--raw` refusal [#9 was later re-scoped to apprise multi-sink (v0.3) with its original dedup scope moved to #35] |
 | v0.2 (#5–#8, #20, #39, #40) | Compounding wiki: skeleton schema + validation-on-write, per-entry recheck commands, `stale_after` expiry, `--wiki-stats`, efficient-sweep guidance, deploy-key remote-push wiring, wiki length budget |
 | v0.2.1 (#49, #50, #51) | Real-cluster validation fixes: per-call-shape request bounds (300 s exploration / 900 s structured reporting, #49), empty-`updated_wiki` classification — the contract requires the wiki every report, one named retry + stderr warning (#51), one event loop per `--loop` process (#50); in-cluster operational acceptance is deferred to the v0.2.1 release validation. Impl commits sync `AGENTS.md`'s test list |
-| v0.3 (#10, #35, #63, #67) | Operational hardening: cost control (token soft-stop, soft turn target decoupled from the hard budget, head+tail truncation; scoping settled whole-cluster by ADR 0027), state-change notification dedup + periodic digest reminder for long-unfixed entries (#35), per-call-shape completion-token bounds + visible empty-result reasons (rules 7c + 8b), model-facing wiki size feedback so the model prunes the over-budget wiki (rule 29a) |
+| v0.3 (#10, #33, #35, #63, #67) | Operational hardening: cost control (token soft-stop, soft turn target decoupled from the hard budget, head+tail truncation; scoping settled whole-cluster by ADR 0027), secret hardening — all Kubernetes Secret access and the local-file/credential-flag bypass banned in the guard + taught in the prompt/report contract (#33, ADR 0028), state-change notification dedup + periodic digest reminder for long-unfixed entries (#35), per-call-shape completion-token bounds + visible empty-result reasons (rules 7c + 8b), model-facing wiki size feedback so the model prunes the over-budget wiki (rule 29a) |
 | future (#12–#16, #41) | Remediation handoff to AgenticRuns, fleet/multicluster, CRD dispatcher, pluggable investigation engine, MCP-memory decision record, external runbook referencing |

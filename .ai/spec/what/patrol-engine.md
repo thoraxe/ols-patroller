@@ -14,6 +14,12 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
    STALE, or INCOMPLETE (live cluster is the single source of truth; never trust the
    wiki over observation); do not re-investigate anything covered by in-flight
    AgenticRuns.
+2a. **Secret access is forbidden** [PLANNED: #33]. The prompt's hard rules add
+    exactly: Kubernetes Secrets are OFF-LIMITS in full — never read them, not
+    even names or metadata. The guard refuses any command containing `secret`;
+    inspect workload metadata (`get pods`, `describe deployment`, `get events`)
+    instead. This is teaching aligned with the guard (`kubectl-guard.md` rules
+    5–6), not a substitute for it.
 3. Patrol order mandated by the prompt: (1) map topology (operators, key workloads,
    namespaces, wiring) with the layered sweep (rules 3a–3e) [DONE: #20 — was
    "a broad sweep first"], then drill into anything suspicious; (2) compare
@@ -227,6 +233,7 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
 | ~~#10~~ | ~~Cost control: token soft-stop (rule 8b), soft turn target decoupled from the hard budget (rule 8a), head+tail truncation replacing head-only `OUT_CAP` capping (`kubectl-guard.md` rule 11) — scoping settled whole-cluster by ADR 0027 (the wiki economy of rule 3e already is the scoping mechanism; per-namespace rounds rejected). Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#49~~ | ~~Per-call-shape request bounds: `REQUEST_TIMEOUT` 300 s exploration / `REPORT_TIMEOUT` 900 s structured reporting — the engine-constants line above; the behavioral rule is `reporting-notifications.md` rule 8a~~ |
 | ~~#20~~ | ~~Efficient cluster sweep: the layered sweep + field-selection teaching in the system prompt (rules 3a–3e), dry-cluster fixtures modeling the taught sweep (rules 13–13a), and the guard truncation marker's recovery hint (`kubectl-guard.md` rule 11) — prompt guidance and fixture data only: no new config surface, no guard refusal changes (ADR 0016). Impl commit also syncs `AGENTS.md`'s test list~~ |
+| #33 | Prompt teaching for the guard's Secret-access ban (rule 2a): Secrets are off-limits in full, the guard refuses any command containing `secret`, recover via workload metadata |
 | #14 | CRD-based dispatcher (`PatrolSchedule`) replacing the `--loop` process |
 | #15 | Pluggable investigation engine — evaluate HolmesGPT as the RCA phase; keep the current loop swappable |
 | #12 | Remediation handoff: warn/crit findings with known remediation dispatch governed AgenticRuns |

@@ -19,8 +19,9 @@ cost instrument alongside its safety role.
 Cost steering lives in the prompt (the layered-sweep teaching,
 `patrol-engine.md` rules 3a–3e) and in output shaping (the truncation marker's
 recovery hint, `kubectl-guard.md` rule 11) — never in the guard's refusal
-grammar. The guard refuses only for safety (verb whitelist, secret values,
-raw paths); it never refuses a legal read for cost reasons.
+grammar. The guard refuses only for safety (verb whitelist, Secret access,
+raw paths, local-file/credential flags); it never refuses a legal read for
+cost reasons.
 
 ## Consequences
 

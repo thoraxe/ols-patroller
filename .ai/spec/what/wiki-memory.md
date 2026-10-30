@@ -254,13 +254,16 @@ the history #7 expires into) carry per-entry structure; everything else is prose
       non-empty and shlex-parseable.
     - **Guard-bounded.** The value must be a command the guard would accept,
       not refuse: the guard's pre-execution refusal grammar (`kubectl-guard.md`
-      rules 2–6a — parseability, verb whitelist, secret-value protection,
-      raw-path refusal) is the single source of truth for what a recheck may
+      rules 2–6b — parseability, verb whitelist, Secret-access ban, raw-path
+      refusal, local-file/credential-flag refusal) is the single source of truth
+      for what a recheck may
       cite, checked by the same logic the guard itself uses and never by
       executing the command (the validator stays pure, rule 15). A recheck the
       guard would refuse is a validation failure: the wiki's citations are
       bounded by the same read-only channel as the patrol itself, so memory
-      can never teach or require a command outside layer 1 (ADR 0013).
+      can never teach or require a command outside layer 1 (ADR 0013). The
+      guard's Secret-access ban therefore invalidates any recheck that reads a
+      Secret (`kubectl-guard.md` rules 5–6) [PLANNED: #33].
     - **Metadata-line pair, not prose.** Only a `recheck` pair on the metadata
       line satisfies the Watch-list requirement; a `recheck:`-looking line in
       the entry's indented prose is unvalidated prose (rule 12) and does not
@@ -1029,4 +1032,5 @@ write.
 | ~~#6~~ | ~~Per-entry `recheck:` commands — every Watch-list entry carries exactly one guard-acceptable `recheck:` pair (rule 12a): the `kubectl_readonly` argument string that re-verifies it, tool-argument form (no `kubectl`/`oc` prefix), judged by the guard's refusal grammar through shared code; optional in the Anomaly log; the report contract asks for it and the patrol prompt consumes it (ADR 0013). Impl commit also syncs `ARCHITECTURE.md`'s wiki prose (the planned-next line) and `AGENTS.md`'s test list~~ |
 | ~~#7~~ | ~~`stale_after`: auto-expire watch-list entries not re-verified within N patrols (flip to `expired`, keep in anomaly log) — process-stamped `verified_patrol` clock + expiry flip (rules 20–22, ADR 0014); impl commit also syncs `ARCHITECTURE.md`'s wiki prose (the planned-next line), `AGENTS.md`'s test list, and `README.md`'s config table (`PATROL_WIKI_STALE_AFTER`)~~ |
 | ~~#8~~ | ~~`--wiki-stats`: the four wiki-health numbers (rules 23–27, ADR 0015) — verification rate (`verified_patrol` == frontmatter `patrol_count` over the Watch-list), resolution ratio (status counts over both metadata sections), confidence spread with the lopsided warning (≥ 2/3 of ≥ 5 graded entries), churn (prose-only comparison over the last `WIKI_CHURN_WINDOW` = 5 commits, flagged when every pair changed with no status change); a fully offline mode (no `PATROL_*` env, no cluster, no repo init) that degrades to `n/a`, never fails. Impl commit also syncs `README.md` (usage + config table), `AGENTS.md`'s test list, and `ARCHITECTURE.md`'s wiki prose (the planned-next line)~~ |
+| #33 | Secret access in rechecks (rule 12a cross-reference): because the validator shares the guard's refusal grammar, the guard's full Secret-access ban (`kubectl-guard.md` rules 5–6) invalidates any `recheck` that reads a Secret — names/metadata forms included, not only value reads (ADR 0028) |
 | ~~#40~~ | ~~Wiki length budget (rules 28–29, ADR 0017): the Anomaly log becomes a bounded working set — the patroller keeps every watching entry plus the last `WIKI_ANOMALY_KEEP` (20) resolved/expired entries in document order, pruning older whole items on every accepted write (pure `compact_anomaly_log`, fence-aware, one console line per prune, recoverable from git history); a soft whole-wiki character budget `WIKI_CHAR_BUDGET` (20,000) that never gates validation — it warns on the write path (stderr), rides the repair pass's error list, and surfaces in `--wiki-stats` (the `size:` line + over-budget warning; `wiki_stats` gains `char_count`/`over_budget`, ten keys); the report contract carries the summarize-and-prune expectations. Impl commit also syncs `ARCHITECTURE.md`'s wiki prose (the planned-next line), `AGENTS.md`'s test list, the `--wiki-stats` argparse help (the size number), and `README.md`'s `--wiki-stats` prose (usage + config table: the four numbers gain the size line)~~ |

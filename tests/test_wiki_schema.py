@@ -432,12 +432,14 @@ def test_validate_rejects_prefixed_recheck(prefix):
 @pytest.mark.parametrize("command", [
     "delete pod demo-6b5c-xyz -n demo-app",                    # mutating verb
     "get secret demo-secret -n demo-app -o yaml",              # secret value
+    "get secret demo-secret",                                  # secret access (#33)
+    "get -f /tmp/manifest.yaml",                               # local file (#33)
     "get --raw /api/v1/nodes/worker-0/proxy/stats/summary",    # raw path
     "get nodes -o jsonpath='{.status",                          # unparseable
 ])
 def test_validate_rejects_recheck_the_guard_would_refuse(command):
     """Rule 12a: a recheck the guard would refuse (kubectl-guard.md rules
-    2–6a) is a validation failure — the wiki's citations are bounded by the
+    2–6b) is a validation failure — the wiki's citations are bounded by the
     read-only channel (ADR 0013)."""
     wiki = build_wiki(bodies={"Watch-list": recheck_line(command=command)})
     errors = patrol.validate_wiki(wiki)
@@ -480,6 +482,8 @@ def test_recheck_grammar_is_the_guards_grammar():
     same grammar, checked without executing anything."""
     refused = ["delete pod demo -n app",
                "get secret db -o jsonpath='{.data.password}'",
+               "get secret db",
+               "get -f /tmp/manifest.yaml",
                "get --raw /api/v1/nodes/n/proxy/stats/summary",
                "get nodes -o jsonpath='{.status",
                " "]

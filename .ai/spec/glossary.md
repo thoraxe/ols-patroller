@@ -140,7 +140,18 @@ redefined here.
 - **Dry-cluster** — demo mode (`--dry-cluster`) where cluster commands are answered
   from canned fixtures instead of a real cluster.
 - **Guard** (`kubectl_readonly`) — the single cluster tool: verb whitelist,
-  secret-value refusal, raw-path (`--raw`) refusal, timeout, output cap.
+  Secret-access ban (all Secret access, names and metadata included),
+  raw-path (`--raw`) refusal, local-file/credential-flag refusal, timeout,
+  output cap [PLANNED: #33].
+- **Secret-access ban** — the guard's rule that any command containing `secret`
+  is refused, regardless of which whitelisted verb is used, output format, or
+  position: Secret names and metadata are off-limits just like values
+  (`kubectl-guard.md` rules 5–6, ADR 0028) [PLANNED: #33].
+- **Local-file/credential-flag ban** — the guard refuses kubectl flags that
+  read local files (`-f`/`--filename`, template-file output formats) or take
+  alternate credentials (`--kubeconfig`, token/cert flags), closing the
+  `get -f <secret-manifest>` and local-file/credential bypasses
+  (`kubectl-guard.md` rule 6b) [PLANNED: #33].
 - **`OUT_CAP`** — hard-coded 15,000-char cap envelope on tool output fed back to
   the model; the truncated view itself is head+tail (`OUT_HEAD` 9,000 /
   `OUT_TAIL` 5,000 around a middle-elision marker) [DONE: #10].
@@ -179,8 +190,9 @@ redefined here.
   real-cluster validation fixes (#60: still-empty safety net — wiki-repair
   pass + minimal write; #61: `imagePullPolicy: Always` for the rolling tag;
   #62: the seed passes the gate), v0.3 operational
-  hardening (#10 plus #35's state-change notification dedup + weekly
-  digest; #9 re-scoped to apprise multi-sink; #63 — reporting token bound +
+  hardening (#10; #33's full Secret-access ban in the guard + prompt;
+  #35's state-change notification dedup + weekly digest; #9 re-scoped to
+  apprise multi-sink; #63 — reporting token bound +
   visible empty-result reasons — was filed here but pulled forward and
   closed after the frozen-wiki diagnosis), future (#12–#16, #41). Plans live
   in GitHub issues; #9/#11 were promoted into v0.1 (#9's original dedup scope

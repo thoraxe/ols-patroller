@@ -26,7 +26,9 @@ in `how/reporting-pipeline.md`.
    frontmatter keys, the section set, and the entry metadata line [DONE: #5],
    and the recheck requirement with its tool-argument form (no leading
    `kubectl`/`oc`; validated against the guard's refusal grammar)
-   [DONE: #6]. [DONE: #7 — the contract also carries the staleness
+   [DONE: #6]. The recheck guidance must also state exactly: `A recheck must
+   never read a Secret — not even names or metadata.` [PLANNED: #33].
+   [DONE: #7 — the contract also carries the staleness
    clock's model-facing half: entry metadata lines may carry a
    `verified_patrol` pair that the patroller re-stamps after validation
    (copy or drop it freely, never compute it); `last_verified` advances only
@@ -539,5 +541,6 @@ entry whose status and severity are unchanged is wiki-only.
 | ~~#40~~ | ~~Report contract states the working-set expectations: the wiki is a working set (git history is the archive), summarize and prune rather than accumulate, the soft character budget, the anomaly-log keep budget (`wiki-memory.md` rules 28–29)~~ |
 | ~~#7~~ | ~~Report contract states the staleness clock's model-facing half: `verified_patrol` is process-stamped (never computed by the model), `last_verified` advances only on actual re-verification, and unverified watching entries auto-expire (`wiki-memory.md` rules 20–22)~~ |
 | ~~#6~~ | ~~Report contract asks for recheck commands: every Watch-list entry carries a guard-acceptable `recheck:` pair in tool-argument form (`wiki-memory.md` rule 12a)~~ |
+| #33 | Recheck guidance carries the full Secret-access ban (rule 5): the contract states exactly that a recheck must never read a Secret — not even names or metadata — matching the guard's rules 5–6b (ADR 0028). Impl commit also syncs the `REPORT_CONTRACT` text and `AGENTS.md`'s test list |
 | ~~#27~~ | Per-turn output stream on by default (`-q/--quiet` opts out); evidence prints with findings (rule 9a) |
 | ~~#5~~ | Wiki-skeleton validation on `updated_wiki` with one shape-pass repair retry; final-report delivery ordering (rule 7a; contract in `wiki-memory.md` rules 15–19) |

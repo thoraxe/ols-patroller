@@ -17,16 +17,32 @@ sees these messages and recovers based on them.
    Mutation verbs (`apply`, `delete`, `edit`, `patch`, …) are refused by this rule.
 4. An unparseable command (shlex error) or an empty command is refused.
 
-### Secret-Value Protection
+### Secret Access Ban
 
-5. A command is refused if, case-insensitively, the string `secret` appears anywhere
-   in it **and** any of `-o yaml`, `-o json`, `jsonpath`, `-o go-template` appears
-   anywhere in it. Reading Secret *values* is off-limits; `get secrets`
-   (names/metadata only) remains allowed.
+5. A command is refused if, case-insensitively, the substring `secret` appears
+   anywhere in the whitespace-joined parsed arguments — regardless of which
+   whitelisted verb is used, the output format, or the syntactic position. **All**
+   Kubernetes Secret access is off-limits, not just values: names/metadata reads (`get secrets`, `get secret
+   <name>`, `get secret <name> -o name`, `describe secret <name>`, and resource
+   forms after flags such as `get -n <ns> secret <name>`) are refused exactly like
+   value-bearing forms (`-o yaml`, `-o json`, `-o jsonpath`, `-o go-template`,
+   `-o custom-columns`, `--template`, and the `-o=`/`--output=` spellings). One
+   rule covers every form; there is no output-format enumeration to bypass
+   [PLANNED: #33]. The verb whitelist (rule 3) still runs first: a
+   non-whitelisted verb with `secret` keeps its verb refusal.
+   - The refusal message is exactly: `REFUSED: Secret access is off-limits — names and metadata included. Do not retry with another output format; inspect workload metadata (get pods, describe deployment, get events) instead.` It never suggests a Secret read as the recovery path.
 6. This match is deliberately over-broad (substring on the whole command): it also
-   catches e.g. jsonpath extraction of a `credentialsSecret` field from a non-Secret
-   resource. Observed in a real patrol — the model recovered via a plain
-   `get -o yaml`. Strict by design; do not narrow without updating `safety-model.md`.
+   refuses a command that merely contains the word — a workload named
+   `my-secret-app`, a namespace/label value containing `secret`, or a jsonpath
+   expression naming a `credentialsSecret` field on a non-Secret resource. Strict
+   by design: a false refusal costs a recoverable retry, while a miss leaks a
+   credential. Do not narrow this rule without updating `safety-model.md` and
+   recording an ADR (weakening a safety layer). Scope is Kubernetes Secret
+   resources only; broader sensitive-data filtering (ConfigMap values, literal
+   env values, Route TLS material, other embedded credentials) is out of scope and
+   tracked separately. Incidental Secret *names* inside otherwise-allowed workload
+   output (e.g. a pod spec's `secretName`) are not Secret-resource reads and stay
+   allowed. [PLANNED: #33].
 
 ### Raw-Path Refusal
 
@@ -41,13 +57,44 @@ sees these messages and recovers based on them.
     `raw`: names like `raw-worker-1` stay allowed. The check runs with the other
     pre-execution refusals — after the verb whitelist, before dry-mode fixture
     lookup and subprocess execution — in both dry and real mode; a command
-    matching both a secret-value pattern (rules 5–6) and `--raw` is conformant
+    matching both the Secret-access ban (rules 5–6) and `--raw` is conformant
     with either refusal message. The message names `--raw`, says raw paths dump
     high-volume output that truncates, and steers recovery to typed read commands
     (`get`/`describe`/`logs`/`top`) instead of retrying raw paths. This rule only
     refuses more than before — a strictness increase, not a guard weakening; any
     future carve-out (an explicit raw-path allowlist) is a weakening and needs an
     ADR in `decisions/` [DONE: #11].
+
+### Local-File & Credential Flags
+
+6b. A command is refused if it uses a flag that makes kubectl read a local file
+    or accept alternate credentials — same pre-execution slot as rules 5–6 and
+    6a, in both dry and real mode [PLANNED: #33]. The refused forms, judged
+    case-insensitively over the parsed arguments:
+    - **File input:** `--filename` (space, `=`, or attached forms) and a
+      single-dash token in which `f` is parsed as a shorthand *option letter* —
+      not when `f` merely occurs in an attached value. Concretely, walk the
+      token's leading option letters (after the single `-`, up to `=`): `A`,
+      `h`, `w` are boolean and continue the walk; `n`, `o`, `l`, `c`, `p`, `L`,
+      `v` take a value and end it; `f` is the file flag. So `-f`, `-f=…`,
+      `-fpath`, `-Af`, `-wf`, and `-Afi` are refused, while `-nfoo`,
+      `-lapp=frontend`, and `-o=jsonpath={.metadata.labels.foo}` are not.
+      Exception: when the verb is `logs`, `f` is boolean `--follow` and
+      continues the walk instead; `--filename` is still refused there.
+    - **Credential/config input:** `--kubeconfig`, `--token`, `--username`,
+      `--password`, `--client-key`, `--client-certificate`,
+      `--certificate-authority` (space, `=`, or attached forms).
+    - **Template-file output formats:** an `-o`/`--output` value naming a local
+      file — `go-template-file`, `jsonpath-file`, `templatefile`,
+      `custom-columns-file`. Inline `go-template`, `jsonpath`, and
+      `custom-columns` remain allowed.
+    The refusal message is exactly: `REFUSED: local-file and credential flags are off-limits — kubectl must use ambient configuration and inline resource names, never read local files or take alternate credentials.` Rationale:
+    `get -f <file>` reads a local manifest (or `/proc/self/environ`) and can
+    fetch or echo its contents; credential and template-file flags read local
+    files too. Inline resource names and inline formatters are the read-only
+    forms. A command matching both this rule and the Secret-access ban (rules
+    5–6) or `--raw` (rule 6a) is conformant with either refusal message. This is
+    a strictness increase, not a weakening; a future carve-out needs an ADR.
 
 ### Execution
 
@@ -87,7 +134,7 @@ sees these messages and recovers based on them.
     13, the fixture-set rationale is `patrol-engine.md` rules 13–13a).
     Before #10, truncation was head-only with the marker
     `...[truncated, N chars total]` plus the #20 hint [DONE: #20]. This is output shaping only — the refusal
-    grammar (rules 2–6a) is untouched, so `guard_refusal` and the recheck
+    grammar (rules 2–6b) is untouched, so `guard_refusal` and the recheck
     validity it backs (ADR 0013) are unaffected; the guard never refuses a
     legal read for cost reasons (ADR 0016). The hint complements #10's
     smarter-truncation work and echoes the prompt's sweep teaching
@@ -120,11 +167,14 @@ sees these messages and recovers based on them.
   in-cluster, the pod ServiceAccount's RBAC is the server-side enforcement boundary
   [DONE: #2] (see `safety-model.md`).
 - Guard behavior is unit-checked in-repo (`tests/test_kubectl_guard.py`): refusal
-  rules 3–6 and 6a, execution rules 8–11, CLI resolution rule 12, dry-mode rule 13
+  rules 3–6b, execution rules 8–11, CLI resolution rule 12, dry-mode rule 13
   — see `safety-model.md` rule 6a [DONE: #4]. Rule 6a's tests land with its spec
-  PR and pass with its implementation [DONE: #11].
-- The refusal grammar (rules 2–6a: parseability, non-empty, verb whitelist,
-  secret-value protection, raw-path refusal) is the single source of truth for
+  PR and pass with its implementation [DONE: #11]. The #33 Secret-access and
+  local-file/credential-flag matrices live in `tests/test_secret_access.py`
+  [PLANNED: #33].
+- The refusal grammar (rules 2–6b: parseability, non-empty, verb whitelist,
+  Secret-access ban, raw-path refusal, local-file/credential-flag refusal) is
+  the single source of truth for
   "a command `kubectl_readonly` accepts". The wiki validator reuses it to
   judge `recheck` citations (`wiki-memory.md` rule 12a) through shared code,
   never by executing the command [DONE: #6].
@@ -137,3 +187,4 @@ sees these messages and recovers based on them.
 | ~~#11~~ | ~~Refuse any command containing `--raw` (rule 6a) — proxy/stats endpoints dump multi-hundred-KB JSON that truncates and gets retried, burning patrol turns~~ |
 | ~~#20~~ | ~~Truncation-marker recovery hint (rule 11): output capped at `OUT_CAP` appends, after the unchanged `[truncated, N chars total]` marker, the narrowing patterns (`--field-selector`, `-o jsonpath`/custom-columns, single-object drilldown) — output shaping only, the refusal grammar untouched (ADR 0016)~~ |
 | ~~#10~~ | ~~Head+tail truncation (rule 11): truncated output keeps `OUT_HEAD` 9,000 head chars + `OUT_TAIL` 5,000 tail chars around a middle-elision marker naming the true total; the #20 hint unchanged after the tail; dry-mode fixture capping unchanged. Impl commit also syncs `AGENTS.md`'s test list~~ |
+| #33 | Secret access is banned in full (rules 5–6): any command containing `secret` is refused regardless of verb/output format/position — names and metadata included, not only values. The local-file/credential channel is closed too (rule 6b): `-f`/`--filename`, `--kubeconfig`/token/cert flags, and template-file output formats are refused, closing the `get -f <secret-manifest>` bypass. The refusal names the ban and steers to workload metadata; over-broad by design (ADR 0028). The prompt teaching is `patrol-engine.md` rule 2a; the report contract teaches the recheck limit (`reporting-notifications.md` rule 5). Impl commit also syncs `README.md`'s guard bullets, `ARCHITECTURE.md`'s guard labels, `AGENTS.md`'s test list, and `REPORT_CONTRACT`'s recheck wording (the model-facing text must say rechecks may not read a Secret — names/metadata included, not only values) |
