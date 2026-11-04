@@ -38,4 +38,7 @@ is accepted — the operator surface is small and documented in the spec.
 Per-notification severity and per-severity sink routing (apprise tags) are
 deferred to the #35 follow-up family; dedup on state change is #35 proper.
 The configured sinks become the patrol's deliberate outbound notification
-allowlist — network-level egress control stays #34's problem.
+allowlist — network-level egress control is now specified in
+`what/egress-control.md` (ADR 0030), which derives the default-deny allowlist
+from this same `PATROL_NOTIFY_URLS` surface rather than from a hand-kept CIDR
+list (#34).

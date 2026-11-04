@@ -19,12 +19,18 @@ layer 3 (RBAC boundary) real, and what the CI-published image
    the committed `deploy-key-patch.yaml.example` template — likewise a
    template, not a resource (rule 16a) — the committed
    `pvc-patch.yaml.example` template — likewise a template, not a resource
-   (rule 5a) [DONE: #68] — and, once the operator follows
+   (rule 5a) [DONE: #68] — the committed
+   `egress-networkpolicy.yaml.example` template — likewise a template, not a
+   resource (`egress-control.md` rule 8) [PLANNED: #34] — and, once the
+   operator follows
    rule 14, the gitignored `secret.yaml` itself, plus, once the operator
    follows rule 16c, the gitignored `deploy-key-patch.yaml` copy and the
    matching `patches:` entry in the operator's `kustomization.yaml`, plus,
    once the operator follows rule 5a, the gitignored `pvc-patch.yaml` copy
-   and its matching `patches:` entry [DONE: #68];
+   and its matching `patches:` entry [DONE: #68], plus, once the operator
+   follows `egress-control.md` rule 8, the gitignored
+   `egress-networkpolicy.yaml` policy artifact — applied out-of-band with
+   `oc apply -f`, never a resource of this kustomization [PLANNED: #34];
    nothing else [DONE: #2] [example templates + opt-in copy: DONE: #39].
 2. Every namespaced object carries the literal `metadata.namespace:
    ols-patroller`, the `ClusterRoleBinding`'s subject namespace is the same,
@@ -317,6 +323,11 @@ layer 3 (RBAC boundary) real, and what the CI-published image
   optional remote-push patch; the operator's gitignored
   `deploy-key-patch.yaml` copy + the `patches:` entry in their
   `kustomization.yaml` are the opt-in (rules 16a, 16c) [DONE: #39]
+- `manifests/egress-networkpolicy.yaml.example` — committed template for the
+  optional default-deny egress allowlist; the operator's gitignored
+  `egress-networkpolicy.yaml` is rendered with `--egress-policy` (or copied
+  from the template) and applied with `oc apply -f`, never as a kustomization
+  resource [PLANNED: #34] (`egress-control.md`)
 - `GIT_SSH_COMMAND` — literal env added by the opt-in patch; consumed by
   git's ssh, not by `patrol.py` (rule 16a) [DONE: #39]
 - `.github/workflows/image.yml` — the CI that publishes the deployed image
@@ -343,10 +354,14 @@ layer 3 (RBAC boundary) real, and what the CI-published image
   itself remains best-effort and local-first (`wiki-memory.md` rule 4e) —
   the wiring changes where commits replicate, never whether a patrol
   succeeds [DONE: #39].
-- PoC grade applies (`constraints.md` rule 6): no NetworkPolicy, no probes
-  (no HTTP surface; the loop self-heals via Deployment restarts), no
-  monitoring/telemetry wiring, no priority class. The human surface
-  in-cluster is pod logs + notifications.
+- PoC grade applies (`constraints.md` rule 6): no probes (no HTTP surface; the
+  loop self-heals via Deployment restarts), no monitoring/telemetry wiring, no
+  priority class. The human surface in-cluster is pod logs + notifications.
+  Network egress control is **no longer exempt**: it is the opt-in derived
+  default-deny allowlist of `egress-control.md` (rules 1–10, ADR 0030),
+  applied out-of-band and never part of the committed base (rule 1)
+  [PLANNED: #34 — this bullet previously read “no NetworkPolicy”; #34
+  supersedes that sentence].
 - The deployment adds no patrol behavior: same `patrol.py`, same guard, same
   env contract — wiring only. No new **patrol** configuration exists; the only
   change to `system-overview.md`'s Configuration Surface is a pointer to this
@@ -356,6 +371,7 @@ layer 3 (RBAC boundary) real, and what the CI-published image
 
 | Ticket | Summary |
 |---|---|
+| #34 | The optional egress allowlist artifact (rule 1's directory amendment + the Configuration Surface entry): a committed `manifests/egress-networkpolicy.yaml.example` template, the gitignored operator `egress-networkpolicy.yaml` rendered by `--egress-policy` and applied with `oc apply -f`, and the superseded “no NetworkPolicy” constraint. Contract: `egress-control.md` (ADR 0030) |
 | ~~#68~~ | ~~The storage-class override patch (rule 5a + the rule 1 directory amendment): a committed `manifests/pvc-patch.yaml.example` strategic-merge template setting exactly `spec.storageClassName`, the gitignored operator copy + `patches:` opt-in (the deploy-key pattern), and the README procedure. Impl commit also syncs `AGENTS.md`'s test list~~
 | ~~#61~~ | ~~`imagePullPolicy: Always` on the patrol container while the kustomization tag is rolling (rule 8a), the static-suite invariant (mutable tag → Always; `sha-…`/digest pin is the other legal form), and rule 17 step 6's image-pull premise stated. Impl commit also syncs `AGENTS.md`'s test list~~
 | ~~#2~~ | This file's contract: manifests (rules 1–17) + the CI workflow that publishes the deployed image (`container-image.md` rules 13–16) |

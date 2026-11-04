@@ -9,8 +9,9 @@ held to production standards: documented, unit-checked, and verified end-to-end.
    interaction; nothing in the codebase writes to the cluster.
 2. **Layer 1 — tool guard:** the only cluster tool is `kubectl_readonly` with its
    verb whitelist, Secret-access ban (all Secret access — names and metadata
-   included, not just values) [DONE: #33], raw-path (`--raw`) refusal, and
-   local-file/credential-flag refusal [DONE: #33] (`kubectl-guard.md`).
+   included, not just values) [DONE: #33], raw-path (`--raw`) refusal,
+   local-file/credential-flag refusal [DONE: #33], and endpoint-override
+   (`--server`/`-s`) refusal [PLANNED: #34] (`kubectl-guard.md`).
 3. **Layer 2 — engine tool surface:** the agent is built with `create_deep_agent`
    and **no backend**, so it has no shell and no filesystem tools; deepagents'
    default `FilesystemMiddleware` (ls/write_file/edit_file/delete/glob/grep/execute)
@@ -27,10 +28,12 @@ held to production standards: documented, unit-checked, and verified end-to-end.
    remediation becomes a governed AgenticRun (sandbox + approval + derived RBAC +
    audit) [PLANNED: #12]. The patrol itself stays read-only forever — it is the eyes
    and memory; the AgenticRun is the hands.
-6. The read-only layers are test-enforced in-repo: the guard is unit-checked
-   (`tests/test_kubectl_guard.py`) and the engine tool surface plus both termination
-   paths are verified end-to-end by a scripted fake-model e2e
-   (`tests/test_patrol_deepagents.py`) [DONE: #4].
+6. The read-only layers (1–3) are test-enforced in-repo: the guard is
+   unit-checked (`tests/test_kubectl_guard.py`) and the engine tool surface plus
+   both termination paths are verified end-to-end by a scripted fake-model e2e
+   (`tests/test_patrol_deepagents.py`) [DONE: #4]. Layer 4 is enforced
+   cluster-side by the operator-applied policy, so its done-when is the
+   acceptance procedure of `egress-control.md` rule 10, not a pytest check.
 6a. **Guard unit tests** pin `kubectl-guard.md` behavior directly against
     `kubectl_readonly` — no engine, no model: non-whitelisted and mutation verbs
     are refused with the allowed-verb list (rule 3); unparseable and empty
@@ -50,7 +53,10 @@ held to production standards: documented, unit-checked, and verified end-to-end.
     fixture lookup (rule 6a) [DONE: #11]. The #33 Secret-access and
     local-file/credential-flag matrices live in `tests/test_secret_access.py` —
     direct guard calls plus the system-prompt and report-contract pins
-    [DONE: #33].
+    [DONE: #33]. The endpoint-override refusal (rule 6c) joins them in
+    `tests/test_egress_control.py`: every `--server`/`-s` spelling refused
+    ahead of execution and in dry mode, `--server-print` and plain non-secret
+    reads still accepted [PLANNED: #34].
 6b. **Fake-model e2e** drives complete patrols through the real engine — real
     `ChatOpenAI` + openai SDK + `create_deep_agent` + guard + shape pass + wiki
     git tail — with only the HTTP endpoint scripted and the cluster answered by
@@ -82,6 +88,16 @@ held to production standards: documented, unit-checked, and verified end-to-end.
     an in-process OpenAI-compatible fake behind the `make_model` seam, and the
     wiki, its repo, and any remote are test-local temporaries. It runs as part
     of the default test invocation and finishes in seconds.
+7. **Layer 4 — network egress allowlist** [PLANNED: #34]: in-cluster, the pod's
+   egress is default-deny, allowing only cluster DNS, the kube-apiserver, and
+   the destinations derived from the patrol's own egress configuration
+   (`PATROL_BASE_URL`, `PATROL_NOTIFY_URLS`, `PATROL_WIKI_REMOTE`) — a policy
+   rendered from that configuration and applied by the operator
+   (`egress-control.md` rules 1–10, ADR 0030). It is the layer that holds when
+   a dependency is compromised or the egress configuration itself is tampered
+   with: layers 1–3 judge commands and identities, layer 4 bounds destinations.
+   The one in-agent egress channel — `kubectl --server` — is closed in layer 1
+   (guard rule 6c).
 
 ## Constraints
 
@@ -89,6 +105,10 @@ held to production standards: documented, unit-checked, and verified end-to-end.
   agenticrun`), no OLS code imports — see `constraints.md`.
 - Weakening any layer (narrowing the guard, re-enabling filesystem tools, granting
   write RBAC) requires an ADR in `decisions/`.
+- Layer 4 is **opt-in operator wiring**, not a shipped default: no committed
+  manifest includes the allowlist, and enabling it is a render-and-apply
+  procedure (`egress-control.md` rules 8–8c, ADR 0030). Making it part of the
+  base apply is a separate decision, not a spec detail.
 - The e2e pins observable wire behavior — the tool surface offered to the model,
   invalid-tool rejection, guard refusals as the model sees them, shape-pass
   mechanics — not deepagents/langchain internals. It is the tripwire that catches
@@ -98,6 +118,7 @@ held to production standards: documented, unit-checked, and verified end-to-end.
 
 | Ticket | Summary |
 |---|---|
+| #34 | Layer 4 — the network egress allowlist (rule 7): default-deny pod egress allowing only cluster DNS, the kube-apiserver, and the destinations derived from the patrol's own egress configuration, rendered by the offline `--egress-policy` mode and applied by the operator (`egress-control.md`, ADR 0030). Layer 1 gains the endpoint-override refusal (rule 6a's list; `kubectl-guard.md` rule 6c) |
 | ~~#2~~ | In-cluster manifests: SA + `cluster-reader` ClusterRoleBinding + RWO PVC at `/wiki` + single-replica non-root Deployment — makes Layer 3 real (`in-cluster-deployment.md`; ADR 0006) |
 | #12 | Remediation handoff: dispatch governed AgenticRuns for actionable findings; harvest their result CRs back into the wiki |
 | ~~#11~~ | Guard hardening: refuse `--raw` proxy/stats endpoints (`kubectl-guard.md` rule 6a) |
