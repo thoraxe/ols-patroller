@@ -45,8 +45,8 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
    dry-cluster mode (`patrol-engine.md`).
 8. **Read-only guard** — the single cluster tool `kubectl_readonly`: verb whitelist,
    Secret-access ban (all Secret access — names and metadata included, not just
-   values) [PLANNED: #33], raw-path (`--raw`) refusal, local-file/credential-flag
-   refusal [PLANNED: #33], timeouts, output cap (`kubectl-guard.md`).
+   values) [DONE: #33], raw-path (`--raw`) refusal, local-file/credential-flag
+   refusal [DONE: #33], timeouts, output cap (`kubectl-guard.md`).
 9. **Wiki memory** — persistent markdown memory, seeded on first run, wholly
    rewritten each patrol, git-backed: one wiki-changing patrol, one commit
    [DONE: #3]; skeleton-validated on write — frontmatter, fixed section set,

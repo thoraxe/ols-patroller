@@ -9,8 +9,8 @@ held to production standards: documented, unit-checked, and verified end-to-end.
    interaction; nothing in the codebase writes to the cluster.
 2. **Layer 1 — tool guard:** the only cluster tool is `kubectl_readonly` with its
    verb whitelist, Secret-access ban (all Secret access — names and metadata
-   included, not just values) [PLANNED: #33], raw-path (`--raw`) refusal, and
-   local-file/credential-flag refusal [PLANNED: #33] (`kubectl-guard.md`).
+   included, not just values) [DONE: #33], raw-path (`--raw`) refusal, and
+   local-file/credential-flag refusal [DONE: #33] (`kubectl-guard.md`).
 3. **Layer 2 — engine tool surface:** the agent is built with `create_deep_agent`
    and **no backend**, so it has no shell and no filesystem tools; deepagents'
    default `FilesystemMiddleware` (ls/write_file/edit_file/delete/glob/grep/execute)
@@ -38,7 +38,7 @@ held to production standards: documented, unit-checked, and verified end-to-end.
     reads across every output format, names/metadata reads (`get secrets`, `get
     secret <name> -o name`, `describe secret`), resource forms after flags, and
     the deliberately over-broad substring match on unrelated names/fields (rules
-    5–6) and the local-file/credential-flag ban (rule 6b) [PLANNED: #33]; a
+    5–6) and the local-file/credential-flag ban (rule 6b) [DONE: #33]; a
     missing CLI binary (rule 9), a timed-out command
     (rule 8), the
     stderr header and empty-output marker (rule 10), the `OUT_CAP` truncation
@@ -50,7 +50,7 @@ held to production standards: documented, unit-checked, and verified end-to-end.
     fixture lookup (rule 6a) [DONE: #11]. The #33 Secret-access and
     local-file/credential-flag matrices live in `tests/test_secret_access.py` —
     direct guard calls plus the system-prompt and report-contract pins
-    [PLANNED: #33].
+    [DONE: #33].
 6b. **Fake-model e2e** drives complete patrols through the real engine — real
     `ChatOpenAI` + openai SDK + `create_deep_agent` + guard + shape pass + wiki
     git tail — with only the HTTP endpoint scripted and the cluster answered by
@@ -60,7 +60,7 @@ held to production standards: documented, unit-checked, and verified end-to-end.
       tools whose error lists that exact surface;
     - guard refusals (a mutation verb, a Secret access attempt — exercised with a
       names/metadata form, not only a value form) reach the model as `REFUSED:`
-      tool results in the next request, so the model can recover [PLANNED: #33];
+      tool results in the next request, so the model can recover [DONE: #33];
     - natural-termination and budget-cut patrols both flow through the same
       shape pass: the reporting request binds only the `PatrolReport` schema
       with forced tool choice, carries the report contract, and differs only
@@ -101,6 +101,6 @@ held to production standards: documented, unit-checked, and verified end-to-end.
 | ~~#2~~ | In-cluster manifests: SA + `cluster-reader` ClusterRoleBinding + RWO PVC at `/wiki` + single-replica non-root Deployment — makes Layer 3 real (`in-cluster-deployment.md`; ADR 0006) |
 | #12 | Remediation handoff: dispatch governed AgenticRuns for actionable findings; harvest their result CRs back into the wiki |
 | ~~#11~~ | Guard hardening: refuse `--raw` proxy/stats endpoints (`kubectl-guard.md` rule 6a) |
-| #33 | Secret hardening: ban all Kubernetes Secret access (names and metadata included, not only values) in the guard (`kubectl-guard.md` rules 5–6), close the local-file/credential-flag bypass (rule 6b: `-f`/`--filename`, kubeconfig/token/cert flags, template-file formats), and teach the ban in the system prompt (`patrol-engine.md` rule 2a) and report contract (`reporting-notifications.md` rule 5); broader sensitive-data filtering stays future scope (ADR 0028) |
+| ~~#33~~ | ~~Secret hardening: ban all Kubernetes Secret access (names and metadata included, not only values) in the guard (`kubectl-guard.md` rules 5–6), close the local-file/credential-flag bypass (rule 6b: `-f`/`--filename`, kubeconfig/token/cert flags, template-file formats), and teach the ban in the system prompt (`patrol-engine.md` rule 2a) and report contract (`reporting-notifications.md` rule 5); broader sensitive-data filtering stays future scope (ADR 0028)~~ |
 | ~~#4~~ | Commit guard unit tests + fake-model e2e into the repo |
 | ~~#5~~ | The e2e gains the wiki-skeleton wiring (rule 6b): repair-pass flow, stamped writes, keep-old-wiki on double failure |

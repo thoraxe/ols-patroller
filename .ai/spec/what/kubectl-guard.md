@@ -28,7 +28,7 @@ sees these messages and recovers based on them.
    value-bearing forms (`-o yaml`, `-o json`, `-o jsonpath`, `-o go-template`,
    `-o custom-columns`, `--template`, and the `-o=`/`--output=` spellings). One
    rule covers every form; there is no output-format enumeration to bypass
-   [PLANNED: #33]. The verb whitelist (rule 3) still runs first: a
+   [DONE: #33]. The verb whitelist (rule 3) still runs first: a
    non-whitelisted verb with `secret` keeps its verb refusal.
    - The refusal message is exactly: `REFUSED: Secret access is off-limits — names and metadata included. Do not retry with another output format; inspect workload metadata (get pods, describe deployment, get events) instead.` It never suggests a Secret read as the recovery path.
 6. This match is deliberately over-broad (substring on the whole command): it also
@@ -42,7 +42,7 @@ sees these messages and recovers based on them.
    env values, Route TLS material, other embedded credentials) is out of scope and
    tracked separately. Incidental Secret *names* inside otherwise-allowed workload
    output (e.g. a pod spec's `secretName`) are not Secret-resource reads and stay
-   allowed. [PLANNED: #33].
+   allowed. [DONE: #33].
 
 ### Raw-Path Refusal
 
@@ -69,7 +69,7 @@ sees these messages and recovers based on them.
 
 6b. A command is refused if it uses a flag that makes kubectl read a local file
     or accept alternate credentials — same pre-execution slot as rules 5–6 and
-    6a, in both dry and real mode [PLANNED: #33]. The refused forms, judged
+    6a, in both dry and real mode [DONE: #33]. The refused forms, judged
     case-insensitively over the parsed arguments:
     - **File input:** `--filename` (space, `=`, or attached forms) and a
       single-dash token in which `f` is parsed as a shorthand *option letter* —
@@ -171,7 +171,7 @@ sees these messages and recovers based on them.
   — see `safety-model.md` rule 6a [DONE: #4]. Rule 6a's tests land with its spec
   PR and pass with its implementation [DONE: #11]. The #33 Secret-access and
   local-file/credential-flag matrices live in `tests/test_secret_access.py`
-  [PLANNED: #33].
+  [DONE: #33].
 - The refusal grammar (rules 2–6b: parseability, non-empty, verb whitelist,
   Secret-access ban, raw-path refusal, local-file/credential-flag refusal) is
   the single source of truth for
@@ -187,4 +187,4 @@ sees these messages and recovers based on them.
 | ~~#11~~ | ~~Refuse any command containing `--raw` (rule 6a) — proxy/stats endpoints dump multi-hundred-KB JSON that truncates and gets retried, burning patrol turns~~ |
 | ~~#20~~ | ~~Truncation-marker recovery hint (rule 11): output capped at `OUT_CAP` appends, after the unchanged `[truncated, N chars total]` marker, the narrowing patterns (`--field-selector`, `-o jsonpath`/custom-columns, single-object drilldown) — output shaping only, the refusal grammar untouched (ADR 0016)~~ |
 | ~~#10~~ | ~~Head+tail truncation (rule 11): truncated output keeps `OUT_HEAD` 9,000 head chars + `OUT_TAIL` 5,000 tail chars around a middle-elision marker naming the true total; the #20 hint unchanged after the tail; dry-mode fixture capping unchanged. Impl commit also syncs `AGENTS.md`'s test list~~ |
-| #33 | Secret access is banned in full (rules 5–6): any command containing `secret` is refused regardless of verb/output format/position — names and metadata included, not only values. The local-file/credential channel is closed too (rule 6b): `-f`/`--filename`, `--kubeconfig`/token/cert flags, and template-file output formats are refused, closing the `get -f <secret-manifest>` bypass. The refusal names the ban and steers to workload metadata; over-broad by design (ADR 0028). The prompt teaching is `patrol-engine.md` rule 2a; the report contract teaches the recheck limit (`reporting-notifications.md` rule 5). Impl commit also syncs `README.md`'s guard bullets, `ARCHITECTURE.md`'s guard labels, `AGENTS.md`'s test list, and `REPORT_CONTRACT`'s recheck wording (the model-facing text must say rechecks may not read a Secret — names/metadata included, not only values) |
+| ~~#33~~ | ~~Secret access is banned in full (rules 5–6): any command containing `secret` is refused regardless of verb/output format/position — names and metadata included, not only values. The local-file/credential channel is closed too (rule 6b): `-f`/`--filename`, `--kubeconfig`/token/cert flags, and template-file output formats are refused, closing the `get -f <secret-manifest>` bypass. The refusal names the ban and steers to workload metadata; over-broad by design (ADR 0028). The prompt teaching is `patrol-engine.md` rule 2a; the report contract teaches the recheck limit (`reporting-notifications.md` rule 5). Impl commit also syncs `README.md`'s guard bullets, `ARCHITECTURE.md`'s guard labels, `AGENTS.md`'s test list, and `REPORT_CONTRACT`'s recheck wording (the model-facing text must say rechecks may not read a Secret — names/metadata included, not only values)~~ |

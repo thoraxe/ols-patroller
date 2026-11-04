@@ -142,16 +142,16 @@ redefined here.
 - **Guard** (`kubectl_readonly`) — the single cluster tool: verb whitelist,
   Secret-access ban (all Secret access, names and metadata included),
   raw-path (`--raw`) refusal, local-file/credential-flag refusal, timeout,
-  output cap [PLANNED: #33].
+  output cap [DONE: #33].
 - **Secret-access ban** — the guard's rule that any command containing `secret`
   is refused, regardless of which whitelisted verb is used, output format, or
   position: Secret names and metadata are off-limits just like values
-  (`kubectl-guard.md` rules 5–6, ADR 0028) [PLANNED: #33].
+  (`kubectl-guard.md` rules 5–6, ADR 0028) [DONE: #33].
 - **Local-file/credential-flag ban** — the guard refuses kubectl flags that
   read local files (`-f`/`--filename`, template-file output formats) or take
   alternate credentials (`--kubeconfig`, token/cert flags), closing the
   `get -f <secret-manifest>` and local-file/credential bypasses
-  (`kubectl-guard.md` rule 6b) [PLANNED: #33].
+  (`kubectl-guard.md` rule 6b) [DONE: #33].
 - **`OUT_CAP`** — hard-coded 15,000-char cap envelope on tool output fed back to
   the model; the truncated view itself is head+tail (`OUT_HEAD` 9,000 /
   `OUT_TAIL` 5,000 around a middle-elision marker) [DONE: #10].

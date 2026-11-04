@@ -235,6 +235,9 @@ looking at things instead of waiting for alarms.
 Hard rules:
 - You can ONLY observe. You have a single tool, `kubectl_readonly`, restricted to read-only verbs.
 - You cannot and must not change anything in the cluster.
+- Kubernetes Secrets are OFF-LIMITS in full — never read them, not even names or metadata.
+  The guard refuses any command containing `secret`; inspect workload metadata
+  (`get pods`, `describe deployment`, `get events`) instead.
 - The WIKI provided below is your own prior notes. It may be WRONG, STALE, or INCOMPLETE.
   The live cluster is the single source of truth. Re-validate wiki claims against reality and
   correct/expire anything stale. Never trust the wiki over what you actually observe.
@@ -445,11 +448,89 @@ def fixture_for(args: list[str]) -> str:
             f"variations of this command.")
 
 
+SECRET_REFUSAL = (
+    "REFUSED: Secret access is off-limits — names and metadata included. "
+    "Do not retry with another output format; inspect workload metadata "
+    "(get pods, describe deployment, get events) instead.")
+
+LOCAL_FILE_REFUSAL = (
+    "REFUSED: local-file and credential flags are off-limits — kubectl must use "
+    "ambient configuration and inline resource names, never read local files or "
+    "take alternate credentials.")
+
+# Rule 6b (#33): flags that make kubectl read a local file or take alternate
+# credentials. Judged case-insensitively over the parsed arguments, so the
+# space, `=`, and attached spellings all match.
+LOCAL_FILE_CREDENTIAL_FLAGS = (
+    "--filename", "--kubeconfig", "--token", "--username", "--password",
+    "--client-key", "--client-certificate", "--certificate-authority",
+)
+# Rule 6b: output formats whose value names a local template file. Their inline
+# counterparts (go-template, jsonpath, custom-columns) stay allowed.
+LOCAL_FILE_OUTPUT_FORMATS = (
+    "go-template-file", "jsonpath-file", "templatefile", "custom-columns-file",
+)
+
+
+def _shorthand_file_flag(token: str, verb: str) -> bool:
+    """Rule 6b: does this single-dash token use `f` as a shorthand option
+    letter? Walk the leading option letters (after the single `-`, up to `=`):
+    `A`, `h`, `w` are boolean and continue; `n`, `o`, `l`, `c`, `p`, `L`, `v`
+    take a value and end the walk; anything else ends it too. So `-nfoo` is not
+    a file flag but `-Af` and `-f=...` are. For `logs`, `f` is boolean follow
+    and continues the walk."""
+    body = token[1:].lower()
+    for ch in body:
+        if ch == "=":
+            return False
+        if ch == "f":
+            if verb == "logs":
+                continue
+            return True
+        if ch in "ahw":
+            continue
+        return False
+    return False
+
+
+def _local_file_output_format(args: list[str]) -> bool:
+    """Rule 6b: is an `-o`/`--output` value one of the local-file formats?"""
+    for i, token in enumerate(args):
+        lower = token.lower()
+        value = None
+        if lower in ("-o", "--output"):
+            value = args[i + 1].lower() if i + 1 < len(args) else ""
+        elif lower.startswith("--output="):
+            value = lower.split("=", 1)[1]
+        elif lower.startswith("-o="):
+            value = lower.split("=", 1)[1]
+        elif lower.startswith("-o"):
+            value = lower[2:]
+        if value is not None and any(
+                value.lstrip("=").startswith(f) for f in LOCAL_FILE_OUTPUT_FORMATS):
+            return True
+    return False
+
+
+def _uses_local_file_or_credential_flag(args: list[str], verb: str) -> bool:
+    """Rule 6b: the complete local-file/credential-flag check."""
+    for token in args:
+        lower = token.lower()
+        if lower.startswith("--"):
+            if any(lower.startswith(flag) for flag in LOCAL_FILE_CREDENTIAL_FLAGS):
+                return True
+        elif lower.startswith("-") and len(lower) > 1:
+            if _shorthand_file_flag(token, verb):
+                return True
+    return _local_file_output_format(args)
+
+
 def guard_refusal(command: str) -> str | None:
-    """The guard's pre-execution refusal grammar (kubectl-guard.md rules 2-6a):
-    parseability, non-empty, verb whitelist, secret-value protection, raw-path
-    refusal. Returns the REFUSED message for a command the guard would refuse,
-    None for one it accepts. Pure — no I/O, nothing executed.
+    """The guard's pre-execution refusal grammar (kubectl-guard.md rules 2-6b):
+    parseability, non-empty, verb whitelist, Secret-access ban, local-file/
+    credential flags, raw-path refusal. Returns the REFUSED message for a
+    command the guard would refuse, None for one it accepts. Pure — no I/O,
+    nothing executed.
 
     Single source of truth for "a command kubectl_readonly accepts"
     (ADR 0013): the wiki validator judges `recheck` citations with this same
@@ -468,10 +549,19 @@ def guard_refusal(command: str) -> str | None:
         return (f"REFUSED: '{verb}' is not a read-only verb. "
                 f"Allowed: {sorted(READONLY_VERBS)}")
 
-    # Never leak Secret VALUES.
+    # Never access Secrets at all (rules 5-6, #33): names and metadata are
+    # off-limits exactly like values, so this is a substring ban on the whole
+    # parsed command rather than an output-format enumeration. Deliberately
+    # over-broad — a false refusal costs a retry, a miss leaks a credential.
     lower = " ".join(args).lower()
-    if "secret" in lower and any(f in lower for f in ("-o yaml", "-o json", "jsonpath", "-o go-template")):
-        return "REFUSED: reading Secret values is off-limits. Use `get secrets` (names/metadata) only."
+    if "secret" in lower:
+        return SECRET_REFUSAL
+
+    # Never read local files or take alternate credentials (rule 6b, #33):
+    # `get -f <secret-manifest>` and the credential/template-file flags are a
+    # second secret-access channel, closed before any execution.
+    if _uses_local_file_or_credential_flag(args, verb):
+        return LOCAL_FILE_REFUSAL
 
     # Never serve raw proxy/stats paths: they dump multi-hundred-KB output that
     # truncates at OUT_CAP and gets retried (a real patrol burned three turns in
@@ -672,8 +762,9 @@ Produce the final PatrolReport for the cluster patrol above:
      re-verifies the entry, with no leading kubectl or oc token — the value is
      everything after the CLI name, e.g. 'recheck: get pods -n demo-app'.
      The recheck is validated against the guard's refusal grammar (read-only
-     verbs only, no Secret-value reads, no --raw paths), so it must be a
-     command the guard would accept. Anomaly-log entries may carry a recheck
+     verbs only, no --raw paths, no local-file or credential flags), so it must
+     be a command the guard would accept. A recheck must never read a Secret —
+     not even names or metadata. Anomaly-log entries may carry a recheck
      too (optional). The recheck lives on the metadata line, never in prose.
      Entry metadata lines may also carry a verified_patrol: <int> pair — the
      patroller re-stamps it after validation, so copy or drop it freely and
