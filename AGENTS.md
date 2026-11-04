@@ -58,6 +58,15 @@ under current policy (clean implementation review + `implementation-complete`):
 - Dependencies are PEP 723 inline metadata in `patrol.py`; `uv` resolves them — no
   separate install step. `pyproject.toml` mirrors them for the test environment
   only (`uv run patrol.py` still uses the PEP 723 script mode).
+- The dev Python is pinned in `.python-version` (3.12). Leave it there: `uv` will
+  otherwise pick the newest interpreter it can find, and `zstandard` (via
+  `deepagents` → `langsmith`) publishes no cp315 wheel — the resolve falls back
+  to a source build that needs MSVC, so a bare `uv run` fails before any test
+  runs. With the pin, every command below works as written on Linux and Windows.
+- Host portability is in progress (#77): the suite is green on Linux, but 22
+  tests still fail on Windows for harness reasons (POSIX fake CLIs, a subprocess
+  env without `SystemRoot`, locale-dependent wiki I/O). On Windows, judge a
+  change by its failure *delta* against `main`, not by a bare red count.
 - Tests: `uv run --group dev pytest tests/ -q` — `tests/test_wiki_git.py` covers
   the wiki git persistence contract (#3); `tests/test_container_image.py` covers
   the image contract (#1); `tests/test_kubectl_guard.py` covers the guard
