@@ -12,12 +12,12 @@ land with #20's spec PR and fail until #20's implementation makes them pass.
 
 Run: uv run --group dev pytest tests/ -q
 """
-import stat
 from types import SimpleNamespace
 
 import pytest
 
 import patrol
+from support import fake_cli
 
 
 def guard(command, *, kubectl="oc", dry=True, verbose=False):
@@ -118,16 +118,16 @@ def test_missing_binary_refused_with_hint():
 
 
 def _fake_cli(tmp_path, body):
-    """A throwaway executable standing in for oc/kubectl in real mode."""
-    script = tmp_path / "fake-cli"
-    script.write_text(f"#!/bin/sh\n{body}\n")
-    script.chmod(script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    return str(script)
+    """A throwaway executable standing in for oc/kubectl in real mode.
+
+    `body` is Python source (host-portable, #77) — see tests/support.py.
+    """
+    return fake_cli(tmp_path, body)
 
 
 def test_timeout_returns_error_not_exception(tmp_path, monkeypatch):
     """Rule 8: a timed-out command returns an ERROR message."""
-    cli = _fake_cli(tmp_path, "sleep 30")
+    cli = _fake_cli(tmp_path, "import time\ntime.sleep(5)")
     monkeypatch.setattr(patrol, "TOOL_TIMEOUT", 1)
     out = guard("get nodes", kubectl=cli, dry=False)
     assert out.startswith("ERROR:")
@@ -137,7 +137,7 @@ def test_timeout_returns_error_not_exception(tmp_path, monkeypatch):
 
 def test_stderr_appended_under_header(tmp_path):
     """Rule 10: stderr lands in the output under a [stderr] header."""
-    cli = _fake_cli(tmp_path, "echo out-line; echo err-line >&2")
+    cli = _fake_cli(tmp_path, "import sys\nprint('out-line')\nprint('err-line', file=sys.stderr)")
     out = guard("get nodes", kubectl=cli, dry=False)
     assert "out-line" in out
     assert "[stderr]" in out
@@ -146,7 +146,7 @@ def test_stderr_appended_under_header(tmp_path):
 
 def test_empty_output_marker(tmp_path):
     """Rule 10: empty output becomes (no output)."""
-    cli = _fake_cli(tmp_path, "true")
+    cli = _fake_cli(tmp_path, "pass")
     out = guard("get nodes", kubectl=cli, dry=False)
     assert out == "(no output)"
 
@@ -156,9 +156,9 @@ def test_output_cap_truncation_marker(tmp_path):
     head+tail with an elision marker naming the true total and the elided
     middle — was head-only with `[truncated, N chars total]` before #10."""
     long_text = "x" * (patrol.OUT_CAP + 5000)
-    cli = _fake_cli(tmp_path, f"printf '%s\\n' '{long_text}'")
+    cli = _fake_cli(tmp_path, f"print({long_text!r})")
     out = guard("get nodes", kubectl=cli, dry=False)
-    n = len(long_text) + 1  # printf adds the newline
+    n = len(long_text) + 1  # print adds the newline
     m = n - patrol.OUT_HEAD - patrol.OUT_TAIL
     assert f"[truncated, {n} chars total: middle {m} chars elided, head+tail kept]" in out
 
@@ -169,7 +169,7 @@ def test_output_cap_truncation_hint(tmp_path):
     kept tail — the model recovers systematically instead of retrying the
     same dump."""
     long_text = "x" * (patrol.OUT_CAP + 5000)
-    cli = _fake_cli(tmp_path, f"printf '%s\\n' '{long_text}'")
+    cli = _fake_cli(tmp_path, f"print({long_text!r})")
     out = guard("get nodes", kubectl=cli, dry=False)
     # the hint follows the kept tail (asserted on presence first so a missing
     # hint fails as a missing-behavior assertion, not a lookup error)
@@ -183,7 +183,7 @@ def test_output_cap_truncation_hint(tmp_path):
 def test_no_hint_when_output_fits(tmp_path):
     """Rule 11 (#20): the hint rides only truncated output — output that fits
     carries neither marker nor hint."""
-    cli = _fake_cli(tmp_path, "echo all good")
+    cli = _fake_cli(tmp_path, "print('all good')")
     out = guard("get nodes", kubectl=cli, dry=False)
     assert "truncated" not in out
     assert "field-selector" not in out and "jsonpath" not in out
@@ -216,6 +216,11 @@ def test_cli_resolution_env_override(monkeypatch):
 
 
 def test_cli_resolution_fallback_chain(monkeypatch):
+    """Rule 12: the production probe is POSIX `bash -lc` (the Linux container
+    is the deployment target; #77 is dev/test parity only, no Windows
+    deployment). The subprocess is faked, so this test itself stays
+    host-portable — the assertion pins the production shape, not a host
+    assumption."""
     def fake_run(cmd, **kwargs):
         assert cmd[:2] == ["bash", "-lc"]
         probe = cmd[2]
@@ -301,7 +306,7 @@ def test_bare_raw_still_allowed(command):
 def test_raw_refusal_preempts_execution(tmp_path):
     """Rule 6a: the refusal fires before any subprocess runs — the CLI is
     never invoked for a --raw command."""
-    cli = _fake_cli(tmp_path, "echo SHOULD-NOT-RUN")
+    cli = _fake_cli(tmp_path, "print('SHOULD-NOT-RUN')")
     out = guard("get --raw /api/v1/nodes/master-0/proxy/stats/summary",
                 kubectl=cli, dry=False)
     assert out.startswith("REFUSED:")

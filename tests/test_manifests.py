@@ -72,7 +72,7 @@ def _load(path: Path) -> dict:
         f"{path.relative_to(REPO)} must exist "
         f"(.ai/spec/what/in-cluster-deployment.md, #2)"
     )
-    return yaml.safe_load(path.read_text())
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
 def _kustomization() -> dict:
@@ -217,7 +217,7 @@ def test_no_bespoke_rbac_objects():
         "manifests/ must exist (.ai/spec/what/in-cluster-deployment.md, #2)"
     )
     for path in MANIFESTS.glob("*.yaml"):
-        doc = yaml.safe_load(path.read_text())
+        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
         assert doc.get("kind") in ALLOWED_KINDS, (
             f"{path.name}: unexpected kind {doc.get('kind')!r} — the only "
             f"RBAC object is the single ClusterRoleBinding (rule 4)"
@@ -452,7 +452,7 @@ def test_secret_template_placeholders():
         "manifests/secret.yaml.example must be committed as the Secret "
         "template (rule 14)"
     )
-    raw = example.read_text()
+    raw = example.read_text(encoding="utf-8")
     doc = yaml.safe_load(raw)
     assert doc.get("kind") == "Secret"
     assert doc["metadata"]["name"] == NAMESPACE
@@ -476,7 +476,7 @@ def test_secret_template_placeholders():
 
 
 def test_real_secret_is_gitignored():
-    gitignore = (REPO / ".gitignore").read_text()
+    gitignore = (REPO / ".gitignore").read_text(encoding="utf-8")
     assert re.search(r"^manifests/secret\.yaml\s*$", gitignore, re.M), (
         ".gitignore must ignore manifests/secret.yaml — real credentials are "
         "never committed (rule 14)"
@@ -503,7 +503,7 @@ def test_no_secret_values_in_committed_manifests():
     )
     for name in tracked:
         if name.endswith(".yaml") and name != "manifests/secret.yaml.example":
-            text = (REPO / name).read_text()
+            text = (REPO / name).read_text(encoding="utf-8")
             for key in SECRET_ENV_KEYS:
                 assert key not in text, (
                     f"{key} must not appear outside the Secret template "
@@ -515,7 +515,7 @@ def test_no_secret_values_in_committed_manifests():
 
 def test_base_has_no_deploy_key_dependency():
     _load(MANIFESTS / "deployment.yaml")  # asserts existence with the right message
-    text = (MANIFESTS / "deployment.yaml").read_text()
+    text = (MANIFESTS / "deployment.yaml").read_text(encoding="utf-8")
     for needle in ("deploy-key", "GIT_SSH_COMMAND", "id_ed25519", "id_rsa"):
         assert needle not in text, (
             f"the base Deployment must not reference deploy-key wiring "
@@ -531,7 +531,7 @@ def _deploy_key_patch() -> dict:
         "manifests/deploy-key-patch.yaml.example must be committed as the "
         "deploy-key patch template (rule 16a, #39)"
     )
-    return yaml.safe_load(DEPLOY_KEY_PATCH_EXAMPLE.read_text())
+    return yaml.safe_load(DEPLOY_KEY_PATCH_EXAMPLE.read_text(encoding="utf-8"))
 
 
 def _deploy_key_pod_spec() -> dict:
@@ -621,7 +621,7 @@ def test_deploy_key_patch_documents_pinned_host_key_variant():
     # Rule 16b (#39): the fully pinned variant lives in the template as
     # commented lines.
     _deploy_key_patch()  # asserts the template exists with the right message
-    raw = DEPLOY_KEY_PATCH_EXAMPLE.read_text()
+    raw = DEPLOY_KEY_PATCH_EXAMPLE.read_text(encoding="utf-8")
     for needle in (
         "known_hosts",
         "StrictHostKeyChecking=yes",
@@ -659,7 +659,7 @@ def test_base_kustomization_has_no_patches_or_deploy_key():
 def test_deploy_key_patch_copy_is_gitignored():
     # Rule 16c (#39): the operator's copied-in patch is gitignored like
     # secret.yaml — real wiring never commits.
-    gitignore = (REPO / ".gitignore").read_text()
+    gitignore = (REPO / ".gitignore").read_text(encoding="utf-8")
     assert re.search(r"^manifests/deploy-key-patch\.yaml\s*$", gitignore, re.M), (
         ".gitignore must ignore manifests/deploy-key-patch.yaml — the "
         "operator's copy is never committed (rule 16c)"
@@ -676,7 +676,7 @@ def test_deploy_key_patch_copy_is_gitignored():
 def test_secret_template_points_at_deploy_key_wiring():
     # Rule 14 (#39): the PATROL_WIKI_REMOTE placeholder shows the SSH form
     # and cross-references the patch template.
-    raw = (MANIFESTS / "secret.yaml.example").read_text()
+    raw = (MANIFESTS / "secret.yaml.example").read_text(encoding="utf-8")
     line = next(
         (ln for ln in raw.splitlines()
          if re.match(r"^\s*#\s*PATROL_WIKI_REMOTE\s*:", ln)),
@@ -699,7 +699,7 @@ def test_secret_template_points_at_deploy_key_wiring():
 def test_readme_documents_deploy_key_procedure():
     # Rule 16d (#39): the README's in-cluster deployment section carries the
     # procedure end-to-end, self-sufficiently.
-    readme = (REPO / "README.md").read_text()
+    readme = (REPO / "README.md").read_text(encoding="utf-8")
     assert re.search(r"^## Deploy in-cluster\s*$", readme, re.M), (
         "README.md must have a 'Deploy in-cluster' section (rule 16d, #39)"
     )
@@ -725,7 +725,7 @@ def test_deploy_key_patch_comments_state_0440_rationale():
     # Rule 16a (#39): the 0440/SCC rationale is stated in the template's
     # comments — the example teaches the operator, not just the machine.
     _deploy_key_patch()  # asserts the template exists with the right message
-    raw = DEPLOY_KEY_PATCH_EXAMPLE.read_text()
+    raw = DEPLOY_KEY_PATCH_EXAMPLE.read_text(encoding="utf-8")
     assert "0440" in raw, (
         "the template's comments must explain the 0440 mode (rule 16a)"
     )
@@ -746,7 +746,7 @@ def test_readme_deploy_section_is_self_sufficient():
     # Rule 16d (#39): the README section never references .ai/spec/ — an
     # operator enables replication from the README plus the committed
     # templates alone.
-    readme = (REPO / "README.md").read_text()
+    readme = (REPO / "README.md").read_text(encoding="utf-8")
     m = re.search(
         r"^## Deploy in-cluster\s*$\n(.*?)(?=^## |\Z)", readme, re.M | re.S
     )
@@ -763,7 +763,7 @@ def test_secret_env_keys_in_example_templates_are_comments_only():
     # Rule 15 (#39): secret env key names may appear in the deploy-key
     # template's comments, never as uncommented assignments with values.
     _deploy_key_patch()  # asserts the template exists with the right message
-    raw = DEPLOY_KEY_PATCH_EXAMPLE.read_text()
+    raw = DEPLOY_KEY_PATCH_EXAMPLE.read_text(encoding="utf-8")
     for ln in raw.splitlines():
         hit = next((k for k in SECRET_ENV_KEYS if k in ln), None)
         if hit:
@@ -783,7 +783,7 @@ def test_pvc_patch_example_template():
         "manifests/pvc-patch.yaml.example must exist (rule 5a, #68) — the "
         "committed template for the no-default-storage-class override"
     )
-    doc = yaml.safe_load(path.read_text())
+    doc = yaml.safe_load(path.read_text(encoding="utf-8"))
     assert doc["apiVersion"] == "v1", "the patch is a v1 PVC patch"
     assert doc["kind"] == "PersistentVolumeClaim"
     assert doc["metadata"]["name"] == PVC_NAME, "the patch keys on the base PVC"
@@ -800,7 +800,7 @@ def test_pvc_patch_example_template():
 def test_pvc_patch_copy_is_gitignored():
     # Rule 5a (#68): the operator's copied-in patch is gitignored like
     # secret.yaml — real wiring never commits.
-    gitignore = (REPO / ".gitignore").read_text()
+    gitignore = (REPO / ".gitignore").read_text(encoding="utf-8")
     assert re.search(r"^manifests/pvc-patch\.yaml\s*$", gitignore, re.M), (
         ".gitignore must ignore manifests/pvc-patch.yaml — the operator's "
         "copy is never committed (rule 5a, #68)"
@@ -818,7 +818,7 @@ def test_readme_documents_pvc_patch_procedure():
     # Rule 5a (#68): the README's in-cluster deployment section carries the
     # storage-class override procedure end-to-end, self-sufficiently (the
     # rule-16d standard applied to the volume).
-    readme = (REPO / "README.md").read_text()
+    readme = (REPO / "README.md").read_text(encoding="utf-8")
     assert re.search(r"^### No default storage class", readme, re.M), (
         "the README must carry the 'No default storage class?' subsection "
         "(rule 5a, #68)"

@@ -19,17 +19,17 @@ exactly as a human runs it, with no PATROL_* env).
 
 Run: uv run --group dev pytest tests/ -q
 """
-import os
 import subprocess
 import sys
 from pathlib import Path
 
 import patrol
+from support import patrol_free_env
 
 
 REPO = Path(__file__).resolve().parent.parent
 PATROL = REPO / "patrol.py"
-SOURCE = PATROL.read_text()
+SOURCE = PATROL.read_text(encoding="utf-8")
 
 SECTIONS = ["Topology", "Baselines", "Watch-list", "Open questions", "Anomaly log"]
 
@@ -84,14 +84,22 @@ def commit_rev(wiki_path, content):
 
 
 def run_stats(wiki, *extra):
-    """Run the stats mode exactly as a human would — as a subprocess with a
-    minimal env carrying NO PATROL_* variables (rule 23: the mode is fully
-    offline; PATH for git, PYTHONIOENCODING so the middle dot prints the
-    same everywhere)."""
-    env = {"PATH": os.environ.get("PATH", ""), "PYTHONIOENCODING": "utf-8"}
-    return subprocess.run(
+    """Run the stats mode exactly as a human would — as a subprocess with the
+    real environment minus any `PATROL_*` variables (rule 23: the mode is
+    fully offline).
+
+    The captured output is decoded as UTF-8, never the host locale: the
+    process pins the console to UTF-8/LF (#77, rule 9b). Starting from
+    `os.environ` keeps Windows' required `SystemRoot`; deleting `PATROL_*`
+    alone is what rule 23 asks for (a hand-built minimal env made the child
+    die on `import asyncio` with WinError 10106).
+    """
+    r = subprocess.run(
         [sys.executable, str(PATROL), "--wiki-stats", "--wiki", str(wiki), *extra],
-        capture_output=True, text=True, timeout=240, env=env)
+        capture_output=True, timeout=240, env=patrol_free_env())
+    return subprocess.CompletedProcess(r.args, r.returncode,
+                                       r.stdout.decode("utf-8"),
+                                       r.stderr.decode("utf-8", "replace"))
 
 
 # ---------------------------------------------------------- config surface (rules 25/27)
@@ -423,7 +431,7 @@ def test_wiki_history_empty_without_repo_or_commits(tmp_path):
     empty series — churn n/a, never an error."""
     wiki_path = tmp_path / "wiki" / "cluster-wiki.md"
     wiki_path.parent.mkdir(parents=True)
-    wiki_path.write_text(build_wiki())
+    wiki_path.write_text(build_wiki(), encoding="utf-8", newline="\n")
     assert patrol.wiki_history(wiki_path, window=5) == []
     patrol.ensure_wiki_repo(wiki_path.parent)  # repo present, zero commits
     assert patrol.wiki_history(wiki_path, window=5) == []
@@ -492,7 +500,7 @@ def test_stats_mode_lopsided_warning_and_file_only_churn(tmp_path):
                        recheck=None),
                  entry(id="A-3", status="expired", confidence="low",
                        recheck=None)],
-        patrol_count=2))
+        patrol_count=2), encoding="utf-8", newline="\n")
     r = run_stats(wiki_path)
     assert r.returncode == 0, r.stderr[-400:]
     assert "lopsided" in r.stdout and "4/6" in r.stdout and "high" in r.stdout
@@ -517,7 +525,7 @@ def test_stats_mode_rejects_loop(tmp_path):
     argparse usage line always names --loop; the message must too)."""
     wiki_path = tmp_path / "wiki" / "cluster-wiki.md"
     wiki_path.parent.mkdir(parents=True)
-    wiki_path.write_text(build_wiki())
+    wiki_path.write_text(build_wiki(), encoding="utf-8", newline="\n")
     r = run_stats(wiki_path, "--loop")
     assert r.returncode == 2
     assert "cannot be combined" in r.stderr
@@ -529,7 +537,7 @@ def test_stats_mode_invalid_wiki_still_prints_with_warning(tmp_path):
     (defensively parsed) with one stderr warning naming the failure; exit 0."""
     wiki_path = tmp_path / "wiki" / "cluster-wiki.md"
     wiki_path.parent.mkdir(parents=True)
-    wiki_path.write_text("# not a skeleton wiki\n\n## Topology\n- t\n")
+    wiki_path.write_text("# not a skeleton wiki\n\n## Topology\n- t\n", encoding="utf-8", newline="\n")
     r = run_stats(wiki_path)
     assert r.returncode == 0, r.stderr[-400:]
     assert "verification:" in r.stdout   # stats still print

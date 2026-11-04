@@ -53,3 +53,4 @@ Date: YYYY-MM-DD · Status: proposed | accepted | superseded by NNNN
 | [0026](0026-notification-dedup-state-change.md) | Notification dedup is state-change keyed against the wiki |
 | [0027](0027-cost-control-without-scoping.md) | Cost control without scoping: token soft-stop, decoupled soft target, head+tail |
 | [0028](0028-secret-access-banned-in-full.md) | Secret access is banned in full: any command containing `secret` is refused, names/metadata included; local-file/credential flags are refused too |
+| [0029](0029-host-portable-text-io.md) | Host-portable text I/O: UTF-8 and LF are pinned, not inherited from the locale |

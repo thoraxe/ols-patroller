@@ -32,7 +32,7 @@ def _wf() -> dict:
         ".github/workflows/image.yml must exist — post-merge image build & "
         "publish (.ai/spec/what/container-image.md rules 13-16, #2)"
     )
-    return yaml.safe_load(WORKFLOW.read_text())
+    return yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
 
 
 def _triggers(wf: dict) -> dict:

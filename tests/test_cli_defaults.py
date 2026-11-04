@@ -19,7 +19,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 PATROL = REPO / "patrol.py"
-SOURCE = PATROL.read_text()
+SOURCE = PATROL.read_text(encoding="utf-8")
 
 
 # ------------------------------------------------------------------ #25: cadence
@@ -112,7 +112,7 @@ STALE_DOC_PATTERNS = (
 
 def test_doc_surfaces_carry_the_new_defaults():
     for name in DOC_SURFACES:
-        text = (REPO / name).read_text()
+        text = (REPO / name).read_text(encoding="utf-8")
         for pattern, what in STALE_DOC_PATTERNS:
             assert not re.search(pattern, text), (
                 f"{name} carries a stale default: {what} — every surface "
@@ -133,7 +133,7 @@ def test_source_and_containerfile_carry_the_new_defaults():
             f"(system-overview.md rule 16)"
         )
     # Containerfile: the loop comment names the cadence.
-    cf = (REPO / "Containerfile").read_text()
+    cf = (REPO / "Containerfile").read_text(encoding="utf-8")
     assert not re.search(r"every[^\n]{0,30}900", cf), (
         "the Containerfile loop comment must not name the stale 900 s "
         "cadence (system-overview.md rule 16)"

@@ -29,11 +29,12 @@ import re
 from pathlib import Path
 
 import patrol
+from support import fake_cli
 
 
 REPO = Path(__file__).resolve().parent.parent
 PATROL = REPO / "patrol.py"
-SOURCE = PATROL.read_text()
+SOURCE = PATROL.read_text(encoding="utf-8")
 
 
 # ------------------------------------------------------------- rule 8a: soft target
@@ -93,12 +94,13 @@ def test_head_tail_constants():
 
 def _fake_cli(tmp_path):
     """A fake cluster CLI whose `get nodes` prints a distinguishable
-    head...tail payload (the test_kubectl_guard.py pattern, with markers)."""
-    cli = tmp_path / "kubectl"
+    head...tail payload (the test_kubectl_guard.py pattern, with markers).
+
+    Host-portable (#77): the payload is printed by Python, not a POSIX shell
+    `printf` (see tests/support.py)."""
     payload = "HEADMARK" + "x" * (patrol.OUT_CAP + 5000) + "TAILMARK"
-    cli.write_text(f'#!/bin/sh\nprintf \'%s\\n\' "{payload}"\n')
-    cli.chmod(0o755)
-    return str(cli), payload + "\n"
+    cli = fake_cli(tmp_path, f"print({payload!r})", name="kubectl")
+    return cli, payload + "\n"
 
 
 def test_truncation_keeps_head_and_tail(tmp_path):
@@ -150,10 +152,8 @@ def test_truncation_length_bound(tmp_path):
 
 def test_short_output_is_not_truncated(tmp_path):
     """Rule 11 (unchanged): output under the cap passes through whole."""
-    cli = tmp_path / "kubectl"
-    cli.write_text('#!/bin/sh\necho "all good"\n')
-    cli.chmod(0o755)
-    out = patrol.kubectl_readonly("get nodes", kubectl=str(cli), dry=False,
+    cli = fake_cli(tmp_path, "print('all good')", name="kubectl")
+    out = patrol.kubectl_readonly("get nodes", kubectl=cli, dry=False,
                                   verbose=False)
     assert out == "all good"
     assert "truncated" not in out

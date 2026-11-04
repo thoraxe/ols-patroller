@@ -44,7 +44,7 @@ def _cf() -> list[str]:
         "Containerfile must exist at the repo root "
         "(.ai/spec/what/container-image.md rule 1, #1)"
     )
-    joined = re.sub(r"\\\s*\n", " ", CONTAINERFILE.read_text())
+    joined = re.sub(r"\\\s*\n", " ", CONTAINERFILE.read_text(encoding="utf-8"))
     lines = [ln.strip() for ln in joined.splitlines()]
     return [ln for ln in lines if ln and not ln.startswith("#")]
 
@@ -54,7 +54,7 @@ def _req() -> list[str]:
         "requirements.txt must exist at the repo root "
         "(.ai/spec/what/container-image.md rule 6, #1)"
     )
-    raw = REQUIREMENTS.read_text().splitlines()
+    raw = REQUIREMENTS.read_text(encoding="utf-8").splitlines()
     return [ln.strip() for ln in raw if ln.strip() and not ln.strip().startswith("#")]
 
 
@@ -73,7 +73,7 @@ def _pinned_names(lines: list[str]) -> set[str]:
 
 def _pep723_names() -> set[str]:
     """Top-level dependency names from patrol.py's PEP 723 uv header (rule 7)."""
-    text = PATROL.read_text()
+    text = PATROL.read_text(encoding="utf-8")
     m = re.search(r"# /// script\n(.*?)# ///", text, re.S)
     assert m, "patrol.py must keep its PEP 723 uv header (rule 7)"
     return {_norm(n) for n in
@@ -82,7 +82,7 @@ def _pep723_names() -> set[str]:
 
 def _pyproject_project_names() -> set[str]:
     """Dependency names from pyproject.toml's [project] section only (rule 7)."""
-    text = PYPROJECT.read_text()
+    text = PYPROJECT.read_text(encoding="utf-8")
     m = re.search(r"^\[project\]\n(.*?)(?=^\[|\Z)", text, re.S | re.M)
     assert m, "pyproject.toml must keep its [project] dependencies (rule 7)"
     return {_norm(n) for n in

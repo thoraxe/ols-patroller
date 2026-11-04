@@ -24,12 +24,12 @@ end-to-end by the fake-model e2e in test_patrol_deepagents.py.
 Run: uv run --group dev pytest tests/ -q
 """
 import asyncio
-import os
 import subprocess
 import sys
 from pathlib import Path
 
 import patrol
+from support import patrol_free_env
 from langchain_core.messages import HumanMessage
 
 
@@ -156,12 +156,18 @@ def pairs_of(meta):
 
 
 def run_stats(wiki, *extra):
-    """The stats mode as a human runs it — a subprocess with a minimal env
-    carrying NO PATROL_* variables (rule 23: the mode is fully offline)."""
-    env = {"PATH": os.environ.get("PATH", ""), "PYTHONIOENCODING": "utf-8"}
-    return subprocess.run(
+    """The stats mode as a human runs it — a subprocess with the real
+    environment minus `PATROL_*` (rule 23: the mode is fully offline).
+
+    Output is decoded as UTF-8: the process pins the console to UTF-8/LF
+    (#77, rule 9b). See `test_wiki_stats.run_stats` for the env rationale.
+    """
+    r = subprocess.run(
         [sys.executable, str(PATROL), "--wiki-stats", "--wiki", str(wiki), *extra],
-        capture_output=True, text=True, timeout=240, env=env)
+        capture_output=True, timeout=240, env=patrol_free_env())
+    return subprocess.CompletedProcess(r.args, r.returncode,
+                                       r.stdout.decode("utf-8"),
+                                       r.stderr.decode("utf-8", "replace"))
 
 
 # ---------------------------------------------------------- config surface (rules 28-29)
@@ -351,7 +357,7 @@ def test_stats_mode_prints_size_line_and_over_budget_warning(tmp_path):
     wiki_path = tmp_path / "wiki" / "cluster-wiki.md"
     wiki_path.parent.mkdir(parents=True)
     content = big_wiki()
-    wiki_path.write_text(content)
+    wiki_path.write_text(content, encoding="utf-8", newline="\n")
     r = run_stats(wiki_path)
     assert r.returncode == 0, r.stderr[-400:]
     out = r.stdout
@@ -368,7 +374,7 @@ def test_stats_mode_size_line_under_budget_without_warning(tmp_path):
     wiki_path = tmp_path / "wiki" / "cluster-wiki.md"
     wiki_path.parent.mkdir(parents=True)
     content = build_wiki()
-    wiki_path.write_text(content)
+    wiki_path.write_text(content, encoding="utf-8", newline="\n")
     r = run_stats(wiki_path)
     assert r.returncode == 0, r.stderr[-400:]
     assert f"size: {len(content)} chars" in r.stdout

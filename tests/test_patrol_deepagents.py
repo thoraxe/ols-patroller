@@ -375,6 +375,9 @@ def run_patrol_cli(monkeypatch, endpoint, wiki, *extra_args, wiki_remote="",
     monkeypatch.setattr(patrol, "NOTIFY_URLS", [])
     monkeypatch.setattr(patrol, "WIKI_REMOTE", wiki_remote)
     monkeypatch.setattr(patrol, "NOTIFY_DIGEST_AFTER", digest_after, raising=False)
+    # #77: dry-cluster e2e never executes the CLI; pin it so resolve_kubectl
+    # does not need `bash -lc` on the dev host (accidental Windows dependency).
+    monkeypatch.setattr(patrol, "KUBECTL", "oc")
     monkeypatch.setattr(sys, "argv",
                         ["patrol.py", "--once", "--dry-cluster", "--wiki", str(wiki),
                          *extra_args])
@@ -394,13 +397,13 @@ def test_natural_termination_full_patrol(tmp_path, monkeypatch, capsys):
     run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
 
     # wiki written with the report's updated_wiki and committed once
-    assert "e2e wiki marker" in wiki.read_text()
+    assert "e2e wiki marker" in wiki.read_text(encoding="utf-8")
     log = git("log", "-1", "--format=%ae|%s", cwd=wiki.parent).stdout.strip()
     assert log == "patrol@e2e-cluster|patrol 1: 2 findings, 1 warn"
 
     # #5: written in the skeleton, with process-stamped frontmatter — the
     # model's guesses (patrol_count 9, cluster_id model-guess) were overridden
-    fm = frontmatter(wiki.read_text())
+    fm = frontmatter(wiki.read_text(encoding="utf-8"))
     assert fm["wiki_version"] == 1
     assert fm["cluster_id"] == "e2e-cluster"
     assert fm["patrol_count"] == 1
@@ -473,9 +476,9 @@ def test_budget_cut_flows_through_same_shape_pass(tmp_path, monkeypatch, capsys)
     assert "step budget exhausted; command not executed." in endpoint.tool_results(s)
 
     # the report still landed: wiki written, committed once, stamped
-    assert "e2e wiki marker" in wiki.read_text()
+    assert "e2e wiki marker" in wiki.read_text(encoding="utf-8")
     assert commit_count(wiki.parent) == 1
-    fm = frontmatter(wiki.read_text())
+    fm = frontmatter(wiki.read_text(encoding="utf-8"))
     assert fm["patrol_count"] == 1 and fm["cluster_id"] == "e2e-cluster"
 
     # and the model genuinely never wrote a final summary: no assistant text
@@ -501,7 +504,7 @@ def test_user_prompt_carries_decoupled_soft_target(tmp_path, monkeypatch, capsys
     # the hard budget, quoted as specced (rule 8a), with the CLI's actual value
     assert "The hard budget is 8 turns" in prompt
     # and the patrol completed normally (the target is advice, not a cut)
-    assert "e2e wiki marker" in wiki.read_text()
+    assert "e2e wiki marker" in wiki.read_text(encoding="utf-8")
 
 
 def test_token_soft_stop_ends_exploration_like_a_budget_cut(tmp_path, monkeypatch, capsys):
@@ -537,7 +540,7 @@ def test_token_soft_stop_ends_exploration_like_a_budget_cut(tmp_path, monkeypatc
     assert "step budget exhausted; command not executed." in endpoint.tool_results(s)
 
     # the report still landed: wiki written and committed
-    assert "e2e wiki marker" in wiki.read_text()
+    assert "e2e wiki marker" in wiki.read_text(encoding="utf-8")
     assert commit_count(wiki.parent) == 1
 
 
@@ -553,7 +556,7 @@ def test_token_budget_zero_disables_the_soft_stop(tmp_path, monkeypatch, capsys)
     out = capsys.readouterr().out
     assert "token budget" not in out
     assert "exploration budget" in out and "exhausted" in out
-    assert "e2e wiki marker" in wiki.read_text()
+    assert "e2e wiki marker" in wiki.read_text(encoding="utf-8")
 
 
 def test_failed_reporting_pass_minimal_writes_and_notifies(tmp_path, monkeypatch, capsys):
@@ -581,7 +584,7 @@ def test_failed_reporting_pass_minimal_writes_and_notifies(tmp_path, monkeypatch
     # rule 31's file-absent clause: the fallback stamps-and-writes the seed
     assert "minimal write" in captured.out
     assert wiki.exists()
-    assert frontmatter(wiki.read_text())["patrol_count"] == 1
+    assert frontmatter(wiki.read_text(encoding="utf-8"))["patrol_count"] == 1
     assert commit_count(wiki.parent) == 1
 
 
@@ -592,7 +595,7 @@ def test_failed_reporting_pass_advances_the_clock_on_disk(tmp_path, monkeypatch,
     gateway degrades to honest staleness, never frozen staleness."""
     wiki = tmp_path / "wiki" / "cluster-wiki.md"
     (tmp_path / "wiki").mkdir()
-    wiki.write_text(wiki_text("on-disk marker", patrol_count=9))
+    wiki.write_text(wiki_text("on-disk marker", patrol_count=9), encoding="utf-8", newline="\n")
     endpoint = ScriptedEndpoint(turns=NATURAL_TURNS[:1], report=REPORT,
                                 report_mode="fail")
     run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
@@ -600,7 +603,7 @@ def test_failed_reporting_pass_advances_the_clock_on_disk(tmp_path, monkeypatch,
     captured = capsys.readouterr()
     assert "reporting pass produced no report" in captured.out
     assert "minimal write" in captured.out
-    final = wiki.read_text()
+    final = wiki.read_text(encoding="utf-8")
     assert "on-disk marker" in final          # the old content stands
     assert frontmatter(final)["patrol_count"] == 10
     assert commit_count(wiki.parent) == 1
@@ -629,7 +632,7 @@ def test_wiki_git_wiring_end_to_end(tmp_path, monkeypatch, capsys):
     assert (wiki.parent / ".git").is_dir(), "main() must ensure the wiki repo at startup"
     head1 = git("rev-parse", "HEAD", cwd=wiki.parent).stdout.strip()
     assert commit_count(wiki.parent) == 1
-    assert frontmatter(wiki.read_text())["patrol_count"] == 1
+    assert frontmatter(wiki.read_text(encoding="utf-8"))["patrol_count"] == 1
     assert git("rev-parse", "--verify", "refs/heads/main",
                cwd=remote_a).stdout.strip() == head1, "commit must be pushed to the remote"
 
@@ -642,7 +645,7 @@ def test_wiki_git_wiring_end_to_end(tmp_path, monkeypatch, capsys):
                                                  report=report_with("v1")), wiki,
                    "--max-steps", "8")
     assert commit_count(wiki.parent) == 2
-    assert frontmatter(wiki.read_text())["patrol_count"] == 2
+    assert frontmatter(wiki.read_text(encoding="utf-8"))["patrol_count"] == 2
     out = capsys.readouterr().out
     assert "wiki push" not in out, "no push may be attempted without PATROL_WIKI_REMOTE"
 
@@ -686,8 +689,8 @@ def test_invalid_wiki_triggers_one_repair_pass(tmp_path, monkeypatch, capsys):
     assert "REJECTED-WIKI-MARKER" in repair_text            # the rejected wiki
 
     # the repaired report won: its wiki on disk (stamped), its findings delivered
-    assert "repaired marker" in wiki.read_text()
-    fm = frontmatter(wiki.read_text())
+    assert "repaired marker" in wiki.read_text(encoding="utf-8")
+    fm = frontmatter(wiki.read_text(encoding="utf-8"))
     assert fm["patrol_count"] == 1 and fm["cluster_id"] == "e2e-cluster"
     out = capsys.readouterr().out
     assert "repaired finding" in out
@@ -719,8 +722,8 @@ def test_missing_recheck_triggers_one_repair_pass(tmp_path, monkeypatch, capsys)
     assert "REJECTED-WIKI-MARKER" in repair_text  # the rejected wiki
 
     # the repaired report won: its wiki (with the recheck) is on disk
-    assert "repaired marker" in wiki.read_text()
-    assert " · recheck: get nodes" in wiki.read_text()
+    assert "repaired marker" in wiki.read_text(encoding="utf-8")
+    assert " · recheck: get nodes" in wiki.read_text(encoding="utf-8")
     assert commit_count(wiki.parent) == 1
 
 
@@ -732,7 +735,7 @@ def test_twice_invalid_wiki_keeps_old_wiki(tmp_path, monkeypatch, capsys):
     wiki_dir.mkdir()
     wiki = wiki_dir / "cluster-wiki.md"
     old_wiki = wiki_text("old world", patrol_count=5)
-    wiki.write_text(old_wiki)
+    wiki.write_text(old_wiki, encoding="utf-8", newline="\n")
 
     rejected = wiki_text("REJECTED-WIKI-MARKER").replace(
         "patrol_count: 9\n", "patrol_count: 9\nbogus_key: 1\n")
@@ -742,7 +745,7 @@ def test_twice_invalid_wiki_keeps_old_wiki(tmp_path, monkeypatch, capsys):
     run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
 
     assert len(endpoint.shape_requests) == 2   # report + the one repair pass
-    assert wiki.read_text() == old_wiki        # byte-for-byte
+    assert wiki.read_text(encoding="utf-8") == old_wiki        # byte-for-byte
     assert commit_count(wiki_dir) == 0         # startup-ensured repo, no commits
 
     # the patrol's observations survived the wiki rejection
@@ -763,21 +766,68 @@ def test_stamp_derives_patrol_count_from_disk(tmp_path, monkeypatch):
     wiki = wiki_dir / "cluster-wiki.md"
 
     # on-disk wiki at patrol_count 5 -> next write stamps 6
-    wiki.write_text(wiki_text("v0", patrol_count=5))
+    wiki.write_text(wiki_text("v0", patrol_count=5), encoding="utf-8", newline="\n")
     run_patrol_cli(monkeypatch, ScriptedEndpoint(
         turns=NATURAL_TURNS[:1],
         report=dict(REPORT, updated_wiki=wiki_text("v1", patrol_count=99))), wiki,
         "--max-steps", "8")
-    assert frontmatter(wiki.read_text())["patrol_count"] == 6
+    assert frontmatter(wiki.read_text(encoding="utf-8"))["patrol_count"] == 6
 
     # legacy pre-#5 wiki (no frontmatter at all) counts as 0 -> stamps 1
-    wiki.write_text("# Cluster Wiki\n\n## Topology\n- legacy prose-only wiki\n")
+    wiki.write_text("# Cluster Wiki\n\n## Topology\n- legacy prose-only wiki\n", encoding="utf-8", newline="\n")
     run_patrol_cli(monkeypatch, ScriptedEndpoint(
         turns=NATURAL_TURNS[:1],
         report=dict(REPORT, updated_wiki=wiki_text("v2", patrol_count=99))), wiki,
         "--max-steps", "8")
-    assert frontmatter(wiki.read_text())["patrol_count"] == 1
-    assert "v2" in wiki.read_text()
+    assert frontmatter(wiki.read_text(encoding="utf-8"))["patrol_count"] == 1
+    assert "v2" in wiki.read_text(encoding="utf-8")
+
+
+def test_patrol_reads_a_legacy_locale_encoded_wiki(tmp_path, monkeypatch, capsys):
+    """Rule 4g (#77): `run_patrol`'s startup read decodes a pre-#77/legacy
+    wiki leniently instead of dying — the patrol runs and its accepted write
+    lands as UTF-8. The bytes include 0x81, undefined in cp1252 and invalid
+    as UTF-8, so a locale read crashes on Windows and a strict UTF-8 read
+    crashes everywhere; only the lenient explicit-UTF-8 read survives."""
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    wiki.parent.mkdir()
+    legacy = wiki_text("legacy memory", patrol_count=4).encode("cp1252")
+    legacy = legacy.replace(b"legacy memory", b"legacy \x81 memory", 1)
+    wiki.write_bytes(legacy)
+
+    run_patrol_cli(monkeypatch, ScriptedEndpoint(
+        turns=NATURAL_TURNS[:1],
+        report=dict(REPORT, updated_wiki=wiki_text("legacy memory",
+                                                   patrol_count=4))),
+        wiki, "--max-steps", "8")
+
+    final = wiki.read_text(encoding="utf-8")   # strict: the write is UTF-8
+    assert "legacy memory" in final
+    assert frontmatter(final)["patrol_count"] == 5
+
+
+def test_total_failure_on_a_legacy_wiki_writes_nothing(tmp_path, monkeypatch, capsys):
+    """Rule 31's #77 legacy leg: the minimal-write fallback writes only
+    skeleton-valid content. A legacy cp1252 wiki decodes leniently (rule 4g)
+    but its ` · ` separators become U+FFFD, so it is not re-written — rule 4's
+    keep-old-wiki outcome, byte-identical on disk, no commit."""
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    wiki.parent.mkdir()
+    legacy = wiki_text("legacy memory", patrol_count=4).encode("cp1252")
+    legacy = legacy.replace(b"legacy memory", b"legacy \x81 memory", 1)
+    wiki.write_bytes(legacy)
+
+    endpoint = ScriptedEndpoint(turns=NATURAL_TURNS[:1], report=REPORT,
+                                report_mode="fail")
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
+
+    assert wiki.read_bytes() == legacy, \
+        "a leniently-decoded legacy wiki must not be re-written by the fallback"
+    assert commit_count(wiki.parent) == 0
+    assert len(endpoint.shape_requests) == 2, \
+        "the legacy leg must not burn a validation-repair round (rule 31)"
+    captured = capsys.readouterr()
+    assert "reporting pass produced no report" in captured.out
 
 
 # --------------------------------------------------------------- stale-entry expiry (#7)
@@ -799,8 +849,8 @@ def test_stale_entry_expires_and_reverified_entry_survives(tmp_path, monkeypatch
     run_patrol_cli(monkeypatch, ScriptedEndpoint(turns=NATURAL_TURNS[:1],
                                                  report=report_with(WATCH_V1)), wiki,
                    "--max-steps", "8")
-    assert frontmatter(wiki.read_text())["patrol_count"] == 1
-    assert wiki.read_text().count("verified_patrol: 1") == 2
+    assert frontmatter(wiki.read_text(encoding="utf-8"))["patrol_count"] == 1
+    assert wiki.read_text(encoding="utf-8").count("verified_patrol: 1") == 2
 
     capsys.readouterr()  # scope the patrol-2 assertions to patrol 2
 
@@ -812,7 +862,7 @@ def test_stale_entry_expires_and_reverified_entry_survives(tmp_path, monkeypatch
                                                  report=report_with(watch_v2)), wiki,
                    "--max-steps", "8")
 
-    final = wiki.read_text()
+    final = wiki.read_text(encoding="utf-8")
     assert frontmatter(final)["patrol_count"] == 2
     assert patrol.validate_wiki(final) == []
 
@@ -861,7 +911,7 @@ def test_anomaly_log_compaction_wiring(tmp_path, monkeypatch, capsys):
                                                  report=report), wiki,
                    "--max-steps", "8")
 
-    final = wiki.read_text()
+    final = wiki.read_text(encoding="utf-8")
     assert patrol.validate_wiki(final) == []
     al = final.split("## Anomaly log", 1)[1]
     assert "id: A-3" in al and "id: A-4" in al         # the last keep=2 survive
@@ -895,13 +945,13 @@ def test_pruned_entries_recoverable_from_git_history(tmp_path, monkeypatch, caps
     run_patrol_cli(monkeypatch, ScriptedEndpoint(turns=NATURAL_TURNS[:1],
                                                  report=report), wiki,
                    "--max-steps", "8")
-    assert "id: A-1" in wiki.read_text()
+    assert "id: A-1" in wiki.read_text(encoding="utf-8")
 
     monkeypatch.setattr(patrol, "WIKI_ANOMALY_KEEP", 2)   # patrol 2: budget cut
     run_patrol_cli(monkeypatch, ScriptedEndpoint(turns=NATURAL_TURNS[:1],
                                                  report=report), wiki,
                    "--max-steps", "8")
-    final = wiki.read_text()
+    final = wiki.read_text(encoding="utf-8")
     assert "id: A-1" not in final and "id: A-2" not in final  # pruned on write
     assert "id: A-3" in final and "id: A-4" in final
     assert commit_count(wiki.parent) == 2
@@ -926,7 +976,7 @@ def test_over_budget_wiki_writes_with_stderr_warning(tmp_path, monkeypatch, caps
         turns=NATURAL_TURNS[:1], report=dict(REPORT, updated_wiki=big)),
         wiki, "--max-steps", "8")
 
-    assert "big but valid" in wiki.read_text()   # written anyway (soft)
+    assert "big but valid" in wiki.read_text(encoding="utf-8")   # written anyway (soft)
     assert commit_count(wiki.parent) == 1        # committed anyway
     captured = capsys.readouterr()
     assert "findings (2):" in captured.out       # the patrol delivered
@@ -943,7 +993,7 @@ def test_shape_pass_prompt_carries_the_wiki_size_feedback(tmp_path, monkeypatch,
     monkeypatch.setattr(patrol, "WIKI_CHAR_BUDGET", 500)
     on_disk = wiki_text("on-disk memory marker")
     assert len(on_disk) > 500 and patrol.validate_wiki(on_disk) == []
-    wiki.write_text(on_disk)
+    wiki.write_text(on_disk, encoding="utf-8", newline="\n")
     endpoint = ScriptedEndpoint(turns=NATURAL_TURNS[:1], report=REPORT)
     run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
 
@@ -980,7 +1030,7 @@ def test_repair_prompt_carries_the_budget_warning(tmp_path, monkeypatch, capsys)
     assert "length budget" in repair_text     # the budget warning rides along
     assert "summarize" in repair_text
     # acceptance stayed structural: the over-budget repaired wiki was written
-    assert "repaired marker" in wiki.read_text()
+    assert "repaired marker" in wiki.read_text(encoding="utf-8")
     assert commit_count(wiki.parent) == 1
 
 
@@ -989,7 +1039,7 @@ def test_wiki_flag_default_is_the_wiki_directory():
     wiki directory is the repo root) — wiki-memory.md rule 1. Argparse wraps the
     long default across lines in --help, so the default is pinned on the
     argparse wiring (same pattern as test_cli_defaults.py)."""
-    source = Path(patrol.__file__).read_text()
+    source = Path(patrol.__file__).read_text(encoding="utf-8")
     m = re.search(r'"--wiki",\s*default=str\(Path\(__file__\)\.parent\s*/\s*"wiki"\s*/\s*"cluster-wiki\.md"\)',
                   source)
     assert m, "--wiki must default to wiki/cluster-wiki.md beside patrol.py"
@@ -1021,7 +1071,7 @@ def test_loop_mode_runs_patrols_on_one_event_loop(tmp_path, monkeypatch, capsys)
     assert len(loops) == 2
     assert loops[0] is loops[1]                   # one loop for all patrols
     assert commit_count(wiki.parent) == 2         # both patrols wrote + committed
-    assert frontmatter(wiki.read_text())["patrol_count"] == 2
+    assert frontmatter(wiki.read_text(encoding="utf-8"))["patrol_count"] == 2
     captured = capsys.readouterr()
     assert "[patrol] stopped." in captured.out    # clean ctrl-c exit
     assert "Event loop is closed" not in captured.err
@@ -1098,7 +1148,7 @@ def test_repair_reuses_the_shape_pass_model(tmp_path, monkeypatch, capsys):
                    model_factory=recording_model)
     assert len(endpoint.shape_requests) == 2      # the repair pass ran
     assert bounds == [patrol.REQUEST_TIMEOUT, patrol.REPORT_TIMEOUT]
-    assert "repaired marker" in wiki.read_text()
+    assert "repaired marker" in wiki.read_text(encoding="utf-8")
 
 
 def test_shape_pass_model_carries_the_reporting_token_bound(tmp_path, monkeypatch, capsys):
@@ -1153,7 +1203,7 @@ def test_empty_wiki_report_retries_and_recovers(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "worker-1 NotReady" in out            # the retry's findings deliver
     assert "control-plane operators degraded" not in out  # first report replaced
-    assert "e2e wiki marker" in wiki.read_text()  # the retry's wiki was written
+    assert "e2e wiki marker" in wiki.read_text(encoding="utf-8")  # the retry's wiki was written
     assert commit_count(wiki.parent) == 1
 
 
@@ -1180,7 +1230,7 @@ def test_still_empty_wiki_warns_and_preserves_findings(tmp_path, monkeypatch, ca
     # rule 31's file-absent clause: the fallback stamps-and-writes the seed
     assert "minimal write" in captured.out
     assert wiki.exists()
-    assert frontmatter(wiki.read_text())["patrol_count"] == 1
+    assert frontmatter(wiki.read_text(encoding="utf-8"))["patrol_count"] == 1
     assert commit_count(wiki.parent) == 1
 
 
@@ -1252,8 +1302,8 @@ def test_still_empty_runs_the_wiki_repair_pass(tmp_path, monkeypatch, capsys):
             "keeping the previous wiki, writing nothing") in captured.err
     # the repaired wiki writes through the standard tail (expire → compact
     # → stamp → write → commit)
-    assert "wiki-repair-marker" in wiki.read_text()
-    assert frontmatter(wiki.read_text())["patrol_count"] == 1
+    assert "wiki-repair-marker" in wiki.read_text(encoding="utf-8")
+    assert frontmatter(wiki.read_text(encoding="utf-8"))["patrol_count"] == 1
     assert commit_count(wiki.parent) == 1
 
 
@@ -1265,7 +1315,7 @@ def test_wiki_repair_failure_minimal_writes_the_old_wiki(tmp_path, monkeypatch, 
     old = wiki_text("on-disk-marker", patrol_count=3)
     wiki = tmp_path / "wiki" / "cluster-wiki.md"
     wiki.parent.mkdir(parents=True)
-    wiki.write_text(old)
+    wiki.write_text(old, encoding="utf-8", newline="\n")
     endpoint = ScriptedEndpoint(turns=NATURAL_TURNS[:1],
                                 reports=[EMPTY_WIKI_REPORT] * 4)
     run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
@@ -1275,7 +1325,7 @@ def test_wiki_repair_failure_minimal_writes_the_old_wiki(tmp_path, monkeypatch, 
     captured = capsys.readouterr()
     assert "control-plane operators degraded" in captured.out  # findings deliver
     assert "minimal write" in captured.out                      # rule 32's line
-    written = wiki.read_text()
+    written = wiki.read_text(encoding="utf-8")
     assert "on-disk-marker" in written          # the old body stands (rule 31)
     fm = frontmatter(written)
     assert fm["patrol_count"] == 4              # the clock advanced (rule 31)
@@ -1291,14 +1341,14 @@ def test_minimal_write_on_a_legacy_wiki_writes_nothing(tmp_path, monkeypatch, ca
     legacy = "# Just markdown\n\n## Topology\n- old notes\n"
     wiki = tmp_path / "wiki" / "cluster-wiki.md"
     wiki.parent.mkdir(parents=True)
-    wiki.write_text(legacy)
+    wiki.write_text(legacy, encoding="utf-8", newline="\n")
     endpoint = ScriptedEndpoint(turns=NATURAL_TURNS[:1],
                                 reports=[EMPTY_WIKI_REPORT] * 4)
     run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
 
     captured = capsys.readouterr()
     assert "control-plane operators degraded" in captured.out
-    assert wiki.read_text() == legacy           # untouched (rule 31)
+    assert wiki.read_text(encoding="utf-8") == legacy           # untouched (rule 31)
     assert commit_count(wiki.parent) == 0
 
 
@@ -1317,7 +1367,7 @@ def test_minimal_write_on_a_fresh_deployment_writes_the_stamped_seed(
     captured = capsys.readouterr()
     assert "minimal write" in captured.out
     assert wiki.exists(), "the stamped seed must be written (rule 31)"
-    written = wiki.read_text()
+    written = wiki.read_text(encoding="utf-8")
     assert "No patrols have run yet." in written   # the seed body
     fm = frontmatter(written)
     assert fm["patrol_count"] == 1                  # stamped, honest clock
@@ -1366,7 +1416,7 @@ def test_notification_dedup_suppresses_standing_and_delivers_changes(
     out = capsys.readouterr().out
     assert "🔔 NOTIFY: [W-1] worker-1 NotReady" in out
     today = datetime.now().strftime("%Y-%m-%d")
-    assert f"last_notified: {today}" in wiki.read_text()
+    assert f"last_notified: {today}" in wiki.read_text(encoding="utf-8")
 
     # patrol 2 — standing unchanged: wiki-only
     capsys.readouterr()
@@ -1378,7 +1428,7 @@ def test_notification_dedup_suppresses_standing_and_delivers_changes(
     assert "🔔 NOTIFY: [W-1] worker-1 NotReady" not in captured.out
     assert ("suppressed 1 standing-unchanged notification(s) (wiki-only)"
             in captured.err)
-    assert frontmatter(wiki.read_text())["patrol_count"] == 2
+    assert frontmatter(wiki.read_text(encoding="utf-8"))["patrol_count"] == 2
 
     # patrol 3 — severity escalation: notify again
     capsys.readouterr()
@@ -1399,7 +1449,7 @@ def test_notification_dedup_suppresses_standing_and_delivers_changes(
     ), wiki, "--max-steps", "8")
     captured = capsys.readouterr()
     assert "🔔 NOTIFY: [W-1] worker-1 resolved" in captured.out
-    assert frontmatter(wiki.read_text())["patrol_count"] == 4
+    assert frontmatter(wiki.read_text(encoding="utf-8"))["patrol_count"] == 4
     assert commit_count(wiki.parent) == 4
 
 
@@ -1413,7 +1463,7 @@ def test_periodic_digest_wiring_stamps_the_notify_clock(
                            patrol_count=3)
     wiki = tmp_path / "wiki" / "cluster-wiki.md"
     wiki.parent.mkdir(parents=True)
-    wiki.write_text(old)
+    wiki.write_text(old, encoding="utf-8", newline="\n")
 
     run_patrol_cli(monkeypatch, ScriptedEndpoint(
         turns=NATURAL_TURNS[:1],
@@ -1426,7 +1476,7 @@ def test_periodic_digest_wiring_stamps_the_notify_clock(
     assert "[W-1] worker-1 NotReady" not in captured.out
     assert ("🔔 NOTIFY: [digest] 1 entry unfixed for more than 7 days: W-1"
             in captured.out)
-    written = wiki.read_text()
+    written = wiki.read_text(encoding="utf-8")
     today = datetime.now().strftime("%Y-%m-%d")
     assert f"last_notified: {today}" in written
     assert frontmatter(written)["patrol_count"] == 4
@@ -1440,7 +1490,7 @@ def test_notification_dedup_fails_open_on_the_minimal_write_leg(
     to dedup against, and a failed write must never swallow the news."""
     wiki = tmp_path / "wiki" / "cluster-wiki.md"
     wiki.parent.mkdir(parents=True)
-    wiki.write_text(expiry_wiki_text(dedup_watch_body(), patrol_count=3))
+    wiki.write_text(expiry_wiki_text(dedup_watch_body(), patrol_count=3), encoding="utf-8", newline="\n")
     report = dict(EMPTY_WIKI_REPORT,
                   notifications=["[W-1] worker-1 NotReady"])
     endpoint = ScriptedEndpoint(turns=NATURAL_TURNS[:1], reports=[report] * 4)
