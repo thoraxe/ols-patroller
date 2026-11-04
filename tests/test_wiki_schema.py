@@ -577,12 +577,12 @@ def test_pyyaml_joins_the_runtime_dependency_surface():
     """Rule 15 / container-image.md rules 6-7: PyYAML is a runtime dependency —
     PEP 723 header, pyproject [project] mirror, and the exact image pin."""
     repo = Path(patrol.__file__).parent
-    source = Path(patrol.__file__).read_text()
+    source = Path(patrol.__file__).read_text(encoding="utf-8")
     assert re.search(r'"pyyaml>=', source), "patrol.py PEP 723 header must list pyyaml"
-    pyproject = (repo / "pyproject.toml").read_text()
+    pyproject = (repo / "pyproject.toml").read_text(encoding="utf-8")
     m = re.search(r"^dependencies\s*=\s*\[(.*?)\]", pyproject, re.M | re.S)
     assert m and '"pyyaml>=6"' in m.group(1), \
         "pyproject [project] dependencies must mirror pyyaml>=6"
-    reqs = (repo / "requirements.txt").read_text()
+    reqs = (repo / "requirements.txt").read_text(encoding="utf-8")
     assert re.search(r"^pyyaml==", reqs, re.M), \
         "requirements.txt must carry the exact pyyaml== pin"

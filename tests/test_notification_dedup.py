@@ -422,7 +422,7 @@ def test_stamp_last_notified_missing_id_is_noop():
 
 def test_digest_config_surface_defaults_to_weekly():
     assert patrol.NOTIFY_DIGEST_AFTER == 7
-    source = Path(patrol.__file__).read_text()
+    source = Path(patrol.__file__).read_text(encoding="utf-8")
     assert "PATROL_NOTIFY_DIGEST_AFTER" in source, \
         "the digest cadence must be configurable via PATROL_NOTIFY_DIGEST_AFTER"
 

@@ -10,11 +10,10 @@ verb, output format, or position — names/metadata included, not only value
 reads — and local-file/credential flags are refused so kubectl cannot read a
 Secret manifest or local credentials instead.
 """
-import stat
-
 import pytest
 
 import patrol
+from support import fake_cli
 
 
 def guard(command, *, kubectl="oc", dry=True, verbose=False):
@@ -170,10 +169,8 @@ def test_logs_follow_and_inline_formatters_allowed(command):
 
 def test_local_file_refusal_preempts_execution(tmp_path):
     """Rule 6b: the refusal fires before any subprocess runs."""
-    cli = tmp_path / "fake-cli"
-    cli.write_text("#!/bin/sh\necho SHOULD-NOT-RUN\n")
-    cli.chmod(cli.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    out = guard("get -f /proc/self/environ", kubectl=str(cli), dry=False)
+    cli = fake_cli(tmp_path, "print('SHOULD-NOT-RUN')")
+    out = guard("get -f /proc/self/environ", kubectl=cli, dry=False)
     assert out == LOCAL_FILE_REFUSAL
     assert "SHOULD-NOT-RUN" not in out
 
@@ -196,10 +193,8 @@ def test_file_flag_check_runs_after_the_verb_whitelist():
 def test_secret_refusal_preempts_execution(tmp_path):
     """Rule 5: the ban fires before any subprocess runs — the CLI is never
     invoked for a Secret command."""
-    cli = tmp_path / "fake-cli"
-    cli.write_text("#!/bin/sh\necho SHOULD-NOT-RUN\n")
-    cli.chmod(cli.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    out = guard("get secret demo-secret", kubectl=str(cli), dry=False)
+    cli = fake_cli(tmp_path, "print('SHOULD-NOT-RUN')")
+    out = guard("get secret demo-secret", kubectl=cli, dry=False)
     assert out == REFUSAL
     assert "SHOULD-NOT-RUN" not in out
 

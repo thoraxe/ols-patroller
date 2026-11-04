@@ -181,6 +181,13 @@ redefined here.
   optional remote-push wiring (#39) mounts it read-only and points
   `GIT_SSH_COMMAND` at it. Opt-in and local-first: the push stays best-effort
   either way.
+- **Host-portable text I/O** — the project-wide encoding pin (#77, ADR 0029):
+  every file and stream the process owns is UTF-8 without a BOM with LF
+  newlines, read and written explicitly rather than through the locale. The
+  wiki is the load-bearing case (UTF-8/LF write, explicit UTF-8 read — legacy
+  bytes replaced rather than fatal) and stdout/stderr are reconfigured to
+  UTF-8/LF at startup. Development runs on Linux and Windows; the suite must be
+  green on both.
 - **Severity** — finding vocabulary: `info` (note/baseline/expected), `warn`
   (drift/degradation/suspicious), `crit` (broken, needs a human now).
 - **Milestones** — v0.1 in-cluster (#1–#4, #9, #11, #24, #25, #27, #28), v0.2
@@ -203,4 +210,6 @@ redefined here.
   from the same runs' follow-up soak; #63 was filed from the
   same runs and slotted into v0.3; #67 — model-facing wiki size feedback
   so the model prunes the over-budget wiki — was filed from the same soak
-  and slotted into v0.3.
+  and slotted into v0.3; #77 — dev/test host portability (UTF-8/LF text I/O,
+  a green suite on Windows) — was filed from the Windows dev environment and
+  slotted into v0.3.

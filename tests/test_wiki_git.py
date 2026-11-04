@@ -75,7 +75,7 @@ def test_write_wiki_atomic_replaces_and_cleans_up(tmp_path):
     wiki = tmp_path / "cluster-wiki.md"
     patrol.write_wiki_atomic(wiki, "old content")
     patrol.write_wiki_atomic(wiki, "new content")
-    assert wiki.read_text() == "new content"
+    assert wiki.read_text(encoding="utf-8") == "new content"
     # no temporary files left behind in the wiki directory
     assert sorted(p.name for p in tmp_path.iterdir()) == ["cluster-wiki.md"]
 
@@ -92,7 +92,7 @@ def test_write_wiki_atomic_failure_leaves_old_intact(tmp_path, monkeypatch):
     monkeypatch.setattr(os, "rename", boom)
     with pytest.raises(RuntimeError):
         patrol.write_wiki_atomic(wiki, "new content")
-    assert wiki.read_text() == "old content"
+    assert wiki.read_text(encoding="utf-8") == "old content"
     # the temporary file is cleaned up on failure
     assert sorted(p.name for p in tmp_path.iterdir()) == ["cluster-wiki.md"]
 

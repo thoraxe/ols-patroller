@@ -26,3 +26,14 @@ what/ file.
 6. **Hacky everywhere except safety.** The single-file PoC roughness is accepted and
    intentional; the read-only safety model is the part held to production standards
    (documented, unit-checked, e2e-verified, tests landing in-repo via #4).
+7. **Host-portable text artifacts** [PLANNED: #77]. The two contract-bearing
+   text surfaces the process owns — the **wiki file** and the **console** — are UTF-8
+   without a BOM with LF newlines, read and written **explicitly**, never through the
+   ambient locale or the platform's newline translation: the wiki write
+   (`what/wiki-memory.md` rule 4c), the wiki reads (rule 4g), and stdout/stderr
+   (`what/reporting-notifications.md` rule 9b). External command output and git
+   plumbing are not part of this pin — they are decoded where their contract
+   requires it (the wiki history reader, rule 27). Development-host conventions
+   (the same test command on Linux and Windows, the `.python-version` pin,
+   explicit platform markers for POSIX-only tests) live in `AGENTS.md`.
+   ADR 0029 records the decision.

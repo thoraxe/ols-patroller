@@ -55,11 +55,19 @@ knowledge base of the observed cluster.
     push; the wiki file itself keeps working. A missing or broken git never fails
     or blocks a patrol [DONE: #3].
 4c. Every wiki write is atomic: content is written to a temporary file in the
-    wiki directory and renamed over the wiki file. A crash mid-write must never
+    wiki directory and renamed over the wiki file. The written bytes are
+    **deterministic**: UTF-8 without a BOM, LF line endings — the encoding and
+    the newline translation are pinned explicitly by the process
+    (`encoding="utf-8"`, `newline="\n"`), never taken from the ambient locale
+    or the platform's `\n` → `\r\n` translation. For the same logical content a
+    wiki written on any host is byte-identical. A crash mid-write must never
     truncate or delete the existing wiki; if the rename fails, the temporary file
     is removed, the old wiki stands, and the error propagates to the caller. The
     commit history is the second net — a bad rewrite is always revertible
-    [DONE: #3].
+    [DONE: #3] [PLANNED: #77 — the byte-determinism clause; before it, the
+    temp file was written with locale encoding (cp1252 + CRLF on Windows),
+    so the same wiki differed by host and the UTF-8 history reader (rule 27)
+    silently failed to decode it. ADR 0029 records the decision.]
 4d. One wiki-changing patrol, one commit. When a successful report's
     `updated_wiki` has replaced the wiki file, the patroller stages exactly the
     wiki file (never anything else in the wiki directory) and commits with:
@@ -114,8 +122,35 @@ knowledge base of the observed cluster.
     a total-failure patrol warns, sends the FAILURE notification, and
     minimal-writes (the stamped seed on a fresh deployment; the old wiki
     with the clock advanced on disk) — the wiki-repair pass skipped.]
+    [PLANNED: #77 — the e2e's git-history check (the #40
+    prune-recoverability test) also pins rule 4c's byte determinism: the
+    patroller's own write must be UTF-8, or the UTF-8 history reader (rule
+    27) cannot read it back. The e2e also pins rule 4g's legacy legs: a
+    cp1252 wiki loads at patrol start (rule 4g) and a total-failure patrol
+    over one writes nothing (rule 31's legacy leg).]
 
 ### Format Contract
+
+4g. **The wiki is UTF-8 text** [PLANNED: #77]. The wiki file's encoding is part
+    of the format contract (rules 4c, 10, 29): every document read decodes
+    **UTF-8 explicitly** — the patrol-start read in `run_patrol` and the
+    `--wiki-stats` read (rule 23) — never the ambient locale. The git history
+    reader decodes each blob explicitly too, but **strictly**, degrading an
+    undecodable blob to the empty list rather than to replacement characters
+    (rule 27). **The document read is lenient about legacy bytes**: raw bytes
+    that are not valid UTF-8 (a wiki written by a pre-#77 host in cp1252) are
+    decoded with replacement characters instead of failing the patrol, so the
+    patrol runs and a model-authored, validated wiki can re-encode the file as
+    UTF-8; `--wiki-stats` degrades the same way (rule 23's never-fail stance —
+    stats read defensively rather than dying on a legacy file). A legacy wiki
+    is **runnable memory, not accepted memory**: its ` · ` separators decode to
+    U+FFFD, so its metadata lines no longer parse and it may fail
+    `validate_wiki`. The process therefore never re-writes a legacy wiki
+    through a model-free leg — the minimal-write fallback refuses a wiki whose
+    raw bytes were not valid UTF-8 (rule 31) — and re-encoding a legacy file
+    necessarily changes its bytes, which supersedes the byte-for-byte
+    preservation language of rules 17/22/31 for that file. Rationale and
+    alternatives: ADR 0029.
 
 5. Canonical sections (from seed and report contract): **Topology**, **Baselines**,
    **Watch-list**, **Open questions**, **Anomaly log**. With the skeleton schema the
@@ -662,6 +697,12 @@ shape.
     wiki git (per-command config, `safe.directory`, never a remote call). No
     repo, no commits, or any git failure yields an empty list — never a
     partial window and never an error (degradation, rule 4b's philosophy).
+    Each blob is read as bytes and decoded **in-process** with an explicit
+    UTF-8 `try` [PLANNED: #77]: a blob that is not valid UTF-8 yields the
+    empty list rather than a partial window, an error, a `None` entry, or a
+    swallowed reader-thread exception — the same degradation as any other git
+    failure (a dev-local pre-#77 repo may contain cp1252 blobs; the production
+    archive is UTF-8).
     `wiki_churn` is then fed `wiki_history(wiki_path, WIKI_CHURN_WINDOW)`;
     fewer than two revisions (including the empty case) print churn `n/a`.
     One commit ≈ one accepted write (rules 4d and 17: every accepted write
@@ -751,7 +792,8 @@ load-bearing constraint of #5).
     (`reporting-notifications.md` rule 8b) [DONE: #63], so the budget is
     now set by drift-alarm judgment, not output-ceiling arithmetic — leaving
     room for findings and notifications in the same structured output
-    regardless; the unit is characters, the wiki being UTF-8 text).
+    regardless; the unit is characters, the wiki being UTF-8 text
+    (rule 4g's explicit decoding) [PLANNED: #77].
     **Soft**: `validate_wiki` (rule 15) never judges length, and a
     structurally valid over-budget wiki is accepted, written, committed,
     and pushed exactly like any other — the anomaly-log budget (rule 28)
@@ -902,11 +944,16 @@ write.
     fallback requires a parseable frontmatter block in the old wiki (the
     stamp must have something to rewrite): a legacy wiki without one
     keeps rule 4's keep-old-wiki outcome — nothing written, nothing
-    committed, the rule-7b warning alone. The fallback never re-validates
-    its content: it is prior accepted memory, the seed (gate-clean by
-    rule 14a — the process's own constants, not model output), or a
-    legacy wiki (which the frontmatter requirement above already
-    excludes from writing).
+    committed, the rule-7b warning alone. The fallback refuses exactly one
+    input: a wiki whose raw bytes were not valid UTF-8 and was therefore
+    decoded leniently (rule 4g) — its metadata separators may be U+FFFD and
+    writing it could store structurally invalid memory. Such a wiki is not
+    run through the accepted-write tail **at all**: no expire/compact/stamp,
+    no write, no commit, and no validation-repair round — rule 4's
+    keep-old-wiki outcome stands [PLANNED: #77]. Every other input keeps the
+    rule as written above: the fallback never re-validates its content — it is
+    prior accepted memory, or the seed (gate-clean by rule 14a — the process's
+    own constants, not model output).
 32. **Visibility and bounds.** The rule-7b stderr warning still fires
     first (the reporting failure is visible whatever happens next). The
     wiki-repair pass and fallback together cost at most one model call
@@ -1020,6 +1067,7 @@ write.
 
 | Ticket | Summary |
 |---|---|
+| #77 | Dev/test host portability (rule 4c's byte determinism, rule 4g, rule 27's blob decode, rule 31's legacy leg; the console half is `reporting-notifications.md` rule 9b; ADR 0029): every wiki write is UTF-8/LF/no-BOM with the encoding pinned, every wiki read decodes UTF-8 explicitly (legacy bytes replaced, never fatal; a legacy wiki is runnable but never re-written by a model-free leg; an undecodable history blob yields the empty list), and stdout/stderr are reconfigured to UTF-8/LF so the console surface is host-independent. The suite is green on Linux and Windows with the same command: fake cluster CLIs become host-portable, test subprocess envs start from `os.environ` and delete `PATROL_*`, and test wiki fixtures/readers use explicit UTF-8. The dev-Python pin (`.python-version` 3.12) shipped with #77. Impl commit also syncs `AGENTS.md` (test conventions + test list) and `how/project-structure.md` (the wiki-I/O encoding surface + the new test file) |
 | ~~#35~~ | ~~Notification dedup, state-keyed (rules 12b–12c plus the rule-16 write-path amendment; behavior in `reporting-notifications.md` rules 4a–4e, ADR 0026): entries gain an optional `severity` pair (judged when present) so severity changes are diffable across patrols, and a process-owned `last_notified` date pair that the write path stamps for every entry a notification named this patrol (after compaction, before the frontmatter stamp, accepted writes only). The wiki is the dedup baseline; standing unchanged entries stay wiki-only. Impl commit also syncs `README.md`'s config table and `AGENTS.md`'s test list~~ |
 | ~~#67~~ | ~~Model-facing wiki size feedback (rule 29a; the contract amendment is `reporting-notifications.md` rule 5): every report-pass invocation carries a deterministic `wiki_size_note` line — the wiki-in-play's character count, the budget, the floored percentage, and the excess (over budget, with a named prune target) or headroom (under budget) — appended after `REPORT_CONTRACT`; the report pass reports the on-disk wiki, the validation-repair pass the rejected wiki, and the wiki-repair pass carries none. The contract names the consequence chain (over-budget wiki → slower reporting pass → gateway ceiling → the next patrol re-reading prose) and requires the returned wiki to be smaller when over budget unless new facts require the space. ADR 0025 rejects process-side prose compaction. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#66~~ | ~~Total-failure leg of the minimal-write net (rule 33; ADR 0024): a `report is None` patrol skips the wiki-repair pass (no findings to merge) and runs the rule-31 fallback directly — warning, FAILURE notification, then the accepted-write tail on the old wiki. The reporting-pass input compaction and failure-visibility halves of #66 live in `reporting-notifications.md` rules 7e/7f. Impl commit also syncs

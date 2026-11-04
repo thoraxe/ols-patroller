@@ -454,6 +454,17 @@ entry whose status and severity are unchanged is wiki-only.
     lands in `oc logs` line-by-line with no buffering workaround — a healthy
     patrol is never silent between its start banner and its findings block
     [DONE: #27].
+9b. **Portable console text** [PLANNED: #77]. The process's stdout and stderr
+    are **UTF-8 with LF newlines regardless of the host locale**: at startup
+    both streams are reconfigured to `encoding="utf-8"`, `errors="replace"`,
+    and `newline="\n"` before any line is printed (a stream that cannot be
+    reconfigured is left as-is — never fatal). The console surface carries the
+    ` · ` separator in the stats block (`wiki-memory.md` rule 24) and the `🔔`
+    notification prefix (rule 10), so without the pin the same
+    line is UTF-8 on Linux and cp1252/CRLF on Windows — and an emoji can raise
+    `UnicodeEncodeError` outright on a pipe. Console text is human output, never
+    re-read by the process; the pin makes pod logs, redirected files, and test
+    captures host-independent (ADR 0029).
 10. Each notification prints with a `🔔 NOTIFY:` prefix; if `PATROL_NOTIFY_URLS` is
     set, notifications are also delivered to every configured sink via
     [apprise](https://github.com/caronc/apprise) (rules 10a–10c) [DONE: #9].
@@ -530,6 +541,7 @@ entry whose status and severity are unchanged is wiki-only.
 
 | Ticket | Summary |
 |---|---|
+| #77 | Dev/test host portability (rule 9b here; `wiki-memory.md` rules 4c/4g; ADR 0029): stdout/stderr are reconfigured to UTF-8/LF at startup so the ` · ` separator, severity marks, and `🔔` prefix print as the same bytes on every host, and a non-UTF-8 stream never raises. The wiki half is the byte-determinism pin on rule 4c (`wiki-memory.md`) and the explicit-UTF-8 read rule. Impl commit also syncs `AGENTS.md` (test conventions + test list) and `how/project-structure.md` |
 | ~~#67~~ | ~~Wiki size feedback in the reporting pass (rule 5 amendment here; rule 29a in `wiki-memory.md`): `REPORT_CONTRACT` names the consequence chain (over-budget wiki → slower reporting pass → model gateway's request ceiling → the next patrol re-reading prose) and requires a smaller returned wiki when the size line says over budget (prune at least the excess, unless new facts require the space); every report-pass invocation appends the deterministic `wiki_size_note` line. ADR 0025 rejects process-side prose compaction. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#66~~ | Reporting-pass gateway-ceiling survival (rules 6, 7, 7e, 7f here; `wiki-memory.md` rule 33; ADR 0024): every shape-pass invocation carries the compacted conversation (pure `compact_messages`, `SHAPE_TOOL_KEEP` 1500 chars, tool-result bodies truncated with a marker); every attempt-failure log line carries elapsed seconds and exception reasons pass the pure `classify_exception` (5xx/timeout → `gateway failure (…)`); a total-failure patrol delivers one FAILURE notification (pinned message) and runs the rule-31 minimal-write fallback (wiki-repair pass skipped — no findings to merge). Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#60~~ | ~~Wiki-repair pass + minimal-write fallback (rule 7d here; the tail contract, bounds, and fallback are `wiki-memory.md` rules 30–32, ADR 0022): the shape pass gains a `wiki_repair=(old_wiki, findings, notifications)` mode — old wiki verbatim plus the observed findings, minimal-merge ask, shared binding/bounds/retry; its findings are never delivered. Impl commit also syncs `AGENTS.md`'s test list~~

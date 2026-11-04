@@ -138,7 +138,7 @@ def test_stale_after_config_surface():
     """Rule 21: the threshold defaults to 5 and is configurable via
     PATROL_WIKI_STALE_AFTER (0 disables the flip)."""
     assert patrol.STALE_AFTER == 5
-    source = Path(patrol.__file__).read_text()
+    source = Path(patrol.__file__).read_text(encoding="utf-8")
     assert "PATROL_WIKI_STALE_AFTER" in source, \
         "the threshold must be configurable via PATROL_WIKI_STALE_AFTER"
 

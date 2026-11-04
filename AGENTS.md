@@ -63,10 +63,17 @@ under current policy (clean implementation review + `implementation-complete`):
   `deepagents` → `langsmith`) publishes no cp315 wheel — the resolve falls back
   to a source build that needs MSVC, so a bare `uv run` fails before any test
   runs. With the pin, every command below works as written on Linux and Windows.
-- Host portability is in progress (#77): the suite is green on Linux, but 22
-  tests still fail on Windows for harness reasons (POSIX fake CLIs, a subprocess
-  env without `SystemRoot`, locale-dependent wiki I/O). On Windows, judge a
-  change by its failure *delta* against `main`, not by a bare red count.
+- Host portability (#77): the suite must be green on Linux **and** Windows with the
+  same command and no `-k` exclusions. No test may fail by accident on one host:
+  scaffolding is host-portable (fake cluster CLIs are `.cmd`/Python launchers
+  rather than POSIX shell scripts; test subprocess envs start from `os.environ`
+  and delete `PATROL_*` keys — never a minimal env, because Windows needs
+  `SystemRoot`; test wiki fixtures write UTF-8). A test that genuinely asserts
+  POSIX-only semantics is explicitly skipped with `pytest.mark.skipif` and a
+  reason — the issue permits marking a platform difference, not accidental red.
+  The patroller itself owns UTF-8/LF text I/O (`wiki-memory.md` rules 4c/4g,
+  `reporting-notifications.md` rule 9b), so contract tests run under a hostile
+  locale to prove the pin.
 - Tests: `uv run --group dev pytest tests/ -q` — `tests/test_wiki_git.py` covers
   the wiki git persistence contract (#3); `tests/test_container_image.py` covers
   the image contract (#1); `tests/test_kubectl_guard.py` covers the guard
@@ -176,7 +183,17 @@ under current policy (clean implementation review + `implementation-complete`):
   constants, the `--token-budget` CLI flag + `PATROL_TOKEN_BUDGET` env
   fallback, and the guard's head+tail truncation matrix — both ends keep
   their markers, the elision marker names the true total and the elided
-  middle, the #20 hint follows the tail, and the length bound).
+  middle, the #20 hint follows the tail, and the length bound); and
+  `tests/test_host_portability.py` covers the host-portable text-I/O
+  contract (#77: the `write_wiki_atomic` UTF-8/LF/no-BOM byte pin under a
+  hostile locale, the `--wiki-stats` UTF-8 read + UTF-8/LF stdout under a
+  hostile ASCII locale, the lenient decode of a legacy non-UTF-8 wiki,
+  `wiki_history`'s empty-list degradation on an undecodable blob, the
+  `patrol_free_env` no-`PATROL_*` guarantee, and the `.python-version`
+  3.12 dev-pin guard; `wiki-memory.md` rules 4c/4g/27,
+  `reporting-notifications.md` rule 9b, ADR 0029). The e2e adds the two
+  legacy legs: a cp1252 wiki loads at patrol start and a total-failure patrol
+  over one writes nothing (`wiki-memory.md` rule 31).
 - `wiki/` (the wiki directory: `cluster-wiki.md` + its git repo) is a runtime
   artifact (gitignored) — never commit it.
 - Roadmap: GitHub issues + milestones, not documents. Spec files mark planned
