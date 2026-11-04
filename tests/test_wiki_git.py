@@ -83,7 +83,7 @@ def test_write_wiki_atomic_replaces_and_cleans_up(tmp_path):
 def test_write_wiki_atomic_failure_leaves_old_intact(tmp_path, monkeypatch):
     """Rule 4c: a crash before the rename must not truncate the old wiki."""
     wiki = tmp_path / "cluster-wiki.md"
-    wiki.write_text("old content")
+    wiki.write_text("old content", encoding="utf-8", newline="\n")
 
     def boom(*args, **kwargs):
         raise RuntimeError("simulated crash before rename")

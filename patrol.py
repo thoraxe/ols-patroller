@@ -172,6 +172,35 @@ WIKI_ANOMALY_KEEP = 20     # last resolved/expired Anomaly-log entries kept
 WIKI_CHAR_BUDGET = 20_000  # soft whole-wiki character budget (whole file)
 
 
+def _pin_console_text_io() -> None:
+    """Rule 9b (#77): pin stdout/stderr to UTF-8/LF before the first line.
+
+    The console surface carries the ` · ` separator and the `🔔` prefix, so
+    without the pin the same line is UTF-8 on Linux and cp1252/CRLF on Windows,
+    and an emoji can raise `UnicodeEncodeError` on a pipe. `errors="replace"`
+    keeps a non-UTF-8 stream non-fatal; a stream that cannot be reconfigured is
+    left as-is (never fatal).
+
+    Called at import, before the config-region validators that print a startup
+    error (they must already be pinned), and again from `main()` so an
+    embedding process that replaced the streams also gets the pin.
+    """
+    for name in ("stdout", "stderr"):
+        stream = getattr(sys, name, None)
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace", newline="\n")
+        except (AttributeError, OSError, TypeError, ValueError):
+            pass
+
+
+# Rule 9b (#77): the pin is process startup state — the config-region
+# validators below can print a fatal config error at import time, before main().
+_pin_console_text_io()
+
+
 def _stale_after() -> int:
     """PATROL_WIKI_STALE_AFTER as a non-negative int (rule 21, #7).
 
@@ -1584,9 +1613,17 @@ def expire_stale_entries(content: str, old_wiki: str, patrol_count: int,
 def _stats_entry_pairs(line: str) -> dict[str, str] | None:
     """Rule 25's defensive entry test: the list item's metadata pairs, or
     None when the line is not an entry (some part fails to parse as a
-    'key: value' pair, or no id is carried). First occurrence wins per key."""
+    'key: value' pair, or no id is carried). First occurrence wins per key.
+
+    Rule 4g (#77): a metadata line carrying U+FFFD is a damaged line, not an
+    entry — the only way that character reaches the wiki is a lenient legacy
+    decode, in which the ` · ` separators became replacement characters and
+    the pairs no longer split. A legacy wiki is runnable memory, not accepted
+    memory, so its entries stay invisible to the health stats."""
     if not (line.startswith("- ") or line.startswith("* ")):
         return None
+    if "\ufffd" in line:
+        return None  # leniently-decoded legacy metadata: separators lost
     pairs: dict[str, str] = {}
     for part in line[2:].split(" · "):
         m = _ENTRY_PAIR_RE.match(part)
@@ -2073,7 +2110,7 @@ def _git_err(r) -> str:
 
 
 def _run_git(wiki_dir: Path, *args: str, timeout: float | None = None,
-             encoding: str | None = None):
+             encoding: str | None = None, binary: bool = False):
     """Run git in wiki_dir with patrol-owned config only (never the user's).
 
     Every invocation passes `safe.directory` for the wiki directory so git does
@@ -2081,13 +2118,16 @@ def _run_git(wiki_dir: Path, *args: str, timeout: float | None = None,
     rule 4d). Returns None when git itself is unusable — callers degrade to
     file-only mode instead of failing the patrol (rule 4b). `encoding` opts a
     call into deterministic decoding (the stats history reader decodes UTF-8,
-    the wiki's own encoding, whatever the ambient locale is).
+    the wiki's own encoding, whatever the ambient locale is). `binary` returns
+    raw bytes instead, so the caller can decode in-process where a decode
+    failure is a degradation rather than an exception in a subprocess reader
+    thread (rule 27, #77).
     """
     cmd = ["git", "-C", str(wiki_dir),
            "-c", f"safe.directory={wiki_dir.resolve()}", *args]
     try:
-        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
-                              encoding=encoding)
+        return subprocess.run(cmd, capture_output=True, text=not binary,
+                              timeout=timeout, encoding=encoding)
     except (OSError, subprocess.SubprocessError):
         return None
 
@@ -2120,18 +2160,41 @@ def ensure_wiki_repo(wiki_dir) -> bool:
     return True
 
 
+def read_wiki_text(wiki_path) -> tuple[str, bool]:
+    """Rule 4g: read the wiki as UTF-8 explicitly, leniently for legacy bytes.
+
+    The wiki is a UTF-8 document (rules 4c, 10, 29), so a document read never
+    inherits the ambient locale. Raw bytes that are not valid UTF-8 (a wiki
+    written by a pre-#77 host in cp1252) are decoded with replacement
+    characters instead of failing the patrol: the patrol runs and a
+    model-authored, validated wiki can re-encode the file. Returns
+    `(content, legacy)`; `legacy` is True when the raw bytes were not valid
+    UTF-8 — such a wiki is runnable memory but is never re-written by a
+    model-free leg (rule 31).
+    """
+    raw = Path(wiki_path).read_bytes()
+    try:
+        return raw.decode("utf-8"), False
+    except UnicodeDecodeError:
+        return raw.decode("utf-8", "replace"), True
+
+
 def write_wiki_atomic(wiki_path, content: str) -> None:
     """Rule 4c: temp file + rename — a crash mid-write never truncates the wiki.
 
-    Content is written to a temporary file in the wiki directory and renamed
-    over the wiki file. If the rename fails, the temporary file is removed, the
-    old wiki stands, and the error propagates to the caller. The commit history
-    is the second net: a bad rewrite is always revertible.
+    The written bytes are deterministic — UTF-8 without a BOM, LF line endings
+    — with the encoding and the newline pinned explicitly (`encoding="utf-8"`,
+    `newline="\n"`), never taken from the ambient locale or the platform's
+    `\n` → `\r\n` translation, so the same content is byte-identical on every
+    host. Content is written to a temporary file in the wiki directory and
+    renamed over the wiki file. If the rename fails, the temporary file is
+    removed, the old wiki stands, and the error propagates to the caller. The
+    commit history is the second net: a bad rewrite is always revertible.
     """
     wiki_path = Path(wiki_path)
     tmp = wiki_path.parent / f".{wiki_path.name}.tmp"
     try:
-        tmp.write_text(content)
+        tmp.write_text(content, encoding="utf-8", newline="\n")
         os.replace(tmp, wiki_path)  # atomic on POSIX; overwrites
     except BaseException:
         try:
@@ -2222,10 +2285,13 @@ def wiki_history(wiki_path, window: int) -> list[str]:
 
     Read-only history access under the patrol's own git discipline
     (per-command config, safe.directory, never a remote call; UTF-8 decoding —
-    the wiki is a UTF-8 text document whatever the ambient locale). No repo,
-    no commits, or any git failure yields an empty list — never a partial
-    window and never an error (degradation, rule 4b's philosophy: reading
-    stats must not mutate anything and must not fail the run).
+    the wiki is a UTF-8 text document whatever the ambient locale). Each blob
+    is read as bytes and decoded in-process with an explicit UTF-8 `try`: a
+    blob that is not valid UTF-8 yields the empty list rather than a partial
+    window, an error, a `None` entry, or a swallowed reader-thread exception.
+    No repo, no commits, or any git failure yields an empty list — never a
+    partial window and never an error (degradation, rule 4b's philosophy:
+    reading stats must not mutate anything and must not fail the run).
     """
     try:
         wiki_path = Path(wiki_path).resolve()
@@ -2240,10 +2306,13 @@ def wiki_history(wiki_path, window: int) -> list[str]:
         revisions: list[str] = []
         for sha in reversed(shas):  # git log is newest-first; the series is oldest-first
             b = _run_git(wiki_dir, "show", f"{sha}:./{wiki_path.name}",
-                         encoding="utf-8")
+                         binary=True)
             if b is None or b.returncode != 0:
                 return []  # never a partial window
-            revisions.append(b.stdout)
+            try:
+                revisions.append(b.stdout.decode("utf-8"))
+            except UnicodeDecodeError:
+                return []  # an undecodable blob degrades to no history at all
         return revisions
     except Exception:  # noqa: BLE001 — any failure degrades to no history
         return []
@@ -2255,7 +2324,11 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
     ts = time.strftime("%Y-%m-%dT%H:%M:%S%z")
     print(f"\n[patrol] === patrol start {ts} (model={MODEL}, dry={dry}, engine=deepagents) ===")
 
-    wiki = wiki_path.read_text() if wiki_path.exists() else WIKI_SEED
+    # Rule 4g (#77): the startup read decodes UTF-8 explicitly and leniently;
+    # `legacy_wiki` marks raw bytes that were not valid UTF-8 (rule 31 refuses
+    # to re-write such a wiki through a model-free leg).
+    wiki, legacy_wiki = (read_wiki_text(wiki_path) if wiki_path.exists()
+                         else (WIKI_SEED, False))
 
     # best-effort dedup context: what's already being handled?
     inflight = kubectl_readonly("get agenticruns -A", kubectl=kubectl, dry=dry, verbose=verbose)
@@ -2417,7 +2490,9 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
                 "failed (see pod logs)"], notify_type="FAILURE")
         findings, notifications, new_wiki = [], [], ""
         still_empty = False
-        if _split_frontmatter(wiki) is not None:
+        # Rule 31 (#77): the fallback refuses a leniently-decoded legacy wiki —
+        # no expire/compact/stamp, no write, no commit (rule 4's keep-old-wiki).
+        if _split_frontmatter(wiki) is not None and not legacy_wiki:
             new_wiki = wiki
             minimal_write = True
     else:
@@ -2495,8 +2570,11 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
             # rule 14a's deliberate exception). The stamp makes the clock
             # honest; the content stays stale. A legacy wiki with no
             # frontmatter block has no clock to advance: nothing written,
-            # nothing committed, the rule-7b warning alone.
-            if _split_frontmatter(wiki) is not None:
+            # nothing committed, the rule-7b warning alone. The same goes for
+            # a leniently-decoded legacy wiki (rule 31's #77 legacy leg: its
+            # metadata separators may be U+FFFD, so it is not stored as
+            # accepted memory).
+            if _split_frontmatter(wiki) is not None and not legacy_wiki:
                 new_wiki = wiki
                 minimal_write = True
 
@@ -2613,7 +2691,9 @@ def run_wiki_stats(wiki_path: Path) -> None:
     if not wiki_path.exists():
         die(f"wiki file not found: {wiki_path} (--wiki-stats reads the wiki at "
             "--wiki; run a patrol first or point --wiki at an existing wiki)")
-    content = wiki_path.read_text()
+    # Rule 4g (#77): decode UTF-8 explicitly and leniently — a legacy wiki's
+    # bytes are replaced rather than fatal (rule 23's never-fail stance).
+    content, _legacy = read_wiki_text(wiki_path)
     errors = validate_wiki(content)
     if errors:
         print(f"[patrol] WARNING: the wiki at {wiki_path} fails skeleton validation "
@@ -2663,6 +2743,9 @@ def run_wiki_stats(wiki_path: Path) -> None:
 
 
 def main() -> None:
+    # Rule 9b (#77): re-pin the console before argparse can print anything (the
+    # import-time call already pinned the process's own streams).
+    _pin_console_text_io()
     ap = argparse.ArgumentParser(description="Cluster Sentinel hacky PoC (deepagents engine)")
     ap.add_argument("--once", action="store_true", help="run a single patrol (default)")
     ap.add_argument("--loop", action="store_true", help="patrol repeatedly")

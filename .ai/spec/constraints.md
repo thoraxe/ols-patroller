@@ -26,7 +26,7 @@ what/ file.
 6. **Hacky everywhere except safety.** The single-file PoC roughness is accepted and
    intentional; the read-only safety model is the part held to production standards
    (documented, unit-checked, e2e-verified, tests landing in-repo via #4).
-7. **Host-portable text artifacts** [PLANNED: #77]. The two contract-bearing
+7. **Host-portable text artifacts** [DONE: #77]. The two contract-bearing
    text surfaces the process owns — the **wiki file** and the **console** — are UTF-8
    without a BOM with LF newlines, read and written **explicitly**, never through the
    ambient locale or the platform's newline translation: the wiki write
