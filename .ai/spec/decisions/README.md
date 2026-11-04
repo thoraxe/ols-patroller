@@ -52,3 +52,4 @@ Date: YYYY-MM-DD · Status: proposed | accepted | superseded by NNNN
 | [0025](0025-wiki-size-feedback-not-prose-compaction.md) | Wiki budget feedback goes to the model, not through prose compaction |
 | [0026](0026-notification-dedup-state-change.md) | Notification dedup is state-change keyed against the wiki |
 | [0027](0027-cost-control-without-scoping.md) | Cost control without scoping: token soft-stop, decoupled soft target, head+tail |
+| [0028](0028-secret-access-banned-in-full.md) | Secret access is banned in full: any command containing `secret` is refused, names/metadata included; local-file/credential flags are refused too |

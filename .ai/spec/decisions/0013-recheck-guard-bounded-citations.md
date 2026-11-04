@@ -12,14 +12,15 @@ lint-only mode would execute it, humans copy-paste it): a hallucinated
 `delete pod …` or a `--raw` dump in a recheck would be a landmine in exactly the
 surface meant to be executed later. Meanwhile the guard already defines,
 unit-checks, and maintains the exact grammar of "a command `kubectl_readonly`
-accepts" (`kubectl-guard.md` rules 2–6a).
+accepts" (`kubectl-guard.md` rules 2–6b).
 
 ## Decision
 
 A valid recheck is a command the guard would accept, not refuse: the wiki
 validator checks the recheck value against the guard's pre-execution refusal
-grammar (parseability, verb whitelist, secret-value protection, raw-path
-refusal) through the same code path the guard itself uses — single source of
+grammar (parseability, verb whitelist, Secret-access ban, raw-path refusal,
+local-file/credential-flag refusal) through the same code path the guard itself
+uses — single source of
 truth, never by executing the command. The value is the exact tool-argument
 form: everything after the CLI name, no leading `kubectl`/`oc` token.
 

@@ -70,7 +70,12 @@ under current policy (clean implementation review + `implementation-complete`):
 - Tests: `uv run --group dev pytest tests/ -q` — `tests/test_wiki_git.py` covers
   the wiki git persistence contract (#3); `tests/test_container_image.py` covers
   the image contract (#1); `tests/test_kubectl_guard.py` covers the guard
-  contract; `tests/test_patrol_deepagents.py` is the fake-model e2e over the
+  contract; `tests/test_secret_access.py` covers the Secret-access and
+  local-file/credential-flag bans of #33 (every Secret form refused with the
+  exact message, the over-broad substring cases, pre-execution/dry-fixture
+  preemption, the `-f`/`--filename`/credential/template-file matrix, and the
+  system-prompt + report-contract teaching); `tests/test_patrol_deepagents.py`
+  is the fake-model e2e over the
   real engine stack (#4, incl. the wiki-skeleton wiring of #5, the recheck
   repair path of #6, the stale-entry expiry wiring of #7, the working-set
   budget wiring of #40 — expire → compact → stamp, prune console lines, the

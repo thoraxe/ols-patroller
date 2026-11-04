@@ -13,7 +13,7 @@ Covers (safety-model.md rules 6b-6c, wiki-memory.md rules 4f and 15-19):
 
 - tool surface exactly [read_file, kubectl_readonly]; execute/task rejected
   as invalid tools listing that surface
-- guard refusals (mutation verb, secret read) reaching the model as REFUSED
+- guard refusals (mutation verb, Secret access) reaching the model as REFUSED
   tool results it can recover from
 - natural termination AND budget cut both flowing through the same shape pass
   (reporting request binds only PatrolReport, forced tool choice, report
@@ -331,9 +331,10 @@ NATURAL_TURNS = [
     # guard: mutating verb must be REFUSED by the tool layer
     _assistant_tool_call("kubectl_readonly",
                          {"command": "delete pod demo-6b5c-xyz -n demo-app"}, "call_2"),
-    # guard: secret value read must be REFUSED
+    # guard: Secret access must be REFUSED — names/metadata form pins the
+    # full ban (#33), not just value reads
     _assistant_tool_call("kubectl_readonly",
-                         {"command": "get secret demo-secret -n demo-app -o yaml"}, "call_3"),
+                         {"command": "get secret demo-secret -n demo-app -o name"}, "call_3"),
     # absent tools: shell and subagent must not exist in the tool surface
     _assistant_tool_call("execute", {"command": "ls /"}, "call_4"),
     _assistant_tool_call("task", {"description": "go wild"}, "call_5"),
@@ -422,8 +423,8 @@ def test_natural_termination_full_patrol(tmp_path, monkeypatch, capsys):
     seen = "\n".join(endpoint.tool_results(r) for r in endpoint.agent_requests)
     assert "REFUSED" in seen and "not a read-only verb" in seen, (
         "the mutation-verb refusal must reach the model")
-    assert "REFUSED" in seen and "Secret values" in seen, (
-        "the secret-value refusal must reach the model")
+    assert "REFUSED" in seen and "Secret access is off-limits" in seen, (
+        "the Secret-access refusal must reach the model")
 
     # execute/task were rejected as invalid tools listing the real surface
     assert "execute is not a valid tool" in seen
