@@ -87,7 +87,24 @@ sees these messages and recovers based on them.
     - **Template-file output formats:** an `-o`/`--output` value naming a local
       file — `go-template-file`, `jsonpath-file`, `templatefile`,
       `custom-columns-file`. Inline `go-template`, `jsonpath`, and
-      `custom-columns` remain allowed.
+      `custom-columns` remain allowed. The output value is judged however the
+      `o` option letter is spelled, including inside a combined boolean
+      shorthand — not only when `o` starts the token [PLANNED: #79]. Spelled
+      exactly: walk the token's leading option letters as in the file-input
+      bullet above (`A`, `h`, `w` boolean and continue; `f` boolean for
+      `logs`; `n`, `o`, `l`, `c`, `p`, `L`, `v` value-taking and end the walk),
+      and when the walk ends on `o` the output value is the remainder of the
+      token after the `o`, with one leading `=` stripped if present; when that
+      remainder is non-empty it is the value, otherwise the value is the next
+      argument. All of these are therefore judged: `-o X`, `-o=X`, `-oX`,
+      `--output X`, `--output=X`, `-Ao X`, `-Aho X`, `-wo X`, `-Awo X`,
+      `-Ao=X`, `-AoX`, and `logs -fo X`. A template-file value in any of them is
+      refused — notably `get pods -Ao go-template-file=/tmp/tmpl`, which a
+      check that only inspects tokens starting with `-o` misses — while the
+      same spellings carrying an inline format stay accepted (`-Ao yaml`,
+      `-Ao jsonpath={…}`, `-Ao=custom-columns=NAME:.metadata.name`). The
+      attached form is the pflag reading (the remainder of the token is the
+      value), so this is the same rule as `-oX`, not new surface.
     The refusal message is exactly: `REFUSED: local-file and credential flags are off-limits — kubectl must use ambient configuration and inline resource names, never read local files or take alternate credentials.` Rationale:
     `get -f <file>` reads a local manifest (or `/proc/self/environ`) and can
     fetch or echo its contents; credential and template-file flags read local
@@ -202,7 +219,8 @@ sees these messages and recovers based on them.
   — see `safety-model.md` rule 6a [DONE: #4]. Rule 6a's tests land with its spec
   PR and pass with its implementation [DONE: #11]. The #33 Secret-access and
   local-file/credential-flag matrices live in `tests/test_secret_access.py`
-  [DONE: #33].
+  [DONE: #33]; the combined-shorthand output-value matrix of #79 lands with its
+  spec PR and passes with its implementation [PLANNED: #79].
 - The refusal grammar (rules 2–6c: parseability, non-empty, verb whitelist,
   Secret-access ban, raw-path refusal, local-file/credential-flag refusal,
   endpoint-override refusal) is the single source of truth for
@@ -219,4 +237,5 @@ sees these messages and recovers based on them.
 | ~~#20~~ | ~~Truncation-marker recovery hint (rule 11): output capped at `OUT_CAP` appends, after the unchanged `[truncated, N chars total]` marker, the narrowing patterns (`--field-selector`, `-o jsonpath`/custom-columns, single-object drilldown) — output shaping only, the refusal grammar untouched (ADR 0016)~~ |
 | ~~#10~~ | ~~Head+tail truncation (rule 11): truncated output keeps `OUT_HEAD` 9,000 head chars + `OUT_TAIL` 5,000 tail chars around a middle-elision marker naming the true total; the #20 hint unchanged after the tail; dry-mode fixture capping unchanged. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#34~~ | ~~Endpoint-override refusal (rule 6c): `--server`/`-s` in every spelling is refused pre-execution and in dry mode, so no guard-accepted command can re-point kubectl at a caller-supplied host (`egress-control.md` rules 1–3, ADR 0030). The matrices live in `tests/test_egress_control.py`; `--server-print` stays accepted. Impl commit also syncs `README.md`'s guard bullets, `AGENTS.md`'s test list, and `how/project-structure.md`~~ |
+| #79 | Guard hardening (rule 6b): when the option-letter walk ends on `o`, the template-file check reads the rest of that token after `=` (or the attached remainder) or the next argument, so `-Ao go-template-file=…` is refused like `-o go-template-file=…`. Strictness increase on an already-banned channel; the matrix lives in `tests/test_secret_access.py` and the impl commit also syncs `AGENTS.md`'s test list and `how/project-structure.md`'s `tests/` row |
 | ~~#33~~ | ~~Secret access is banned in full (rules 5–6): any command containing `secret` is refused regardless of verb/output format/position — names and metadata included, not only values. The local-file/credential channel is closed too (rule 6b): `-f`/`--filename`, `--kubeconfig`/token/cert flags, and template-file output formats are refused, closing the `get -f <secret-manifest>` bypass. The refusal names the ban and steers to workload metadata; over-broad by design (ADR 0028). The prompt teaching is `patrol-engine.md` rule 2a; the report contract teaches the recheck limit (`reporting-notifications.md` rule 5). Impl commit also syncs `README.md`'s guard bullets, `ARCHITECTURE.md`'s guard labels, `AGENTS.md`'s test list, and `REPORT_CONTRACT`'s recheck wording (the model-facing text must say rechecks may not read a Secret — names/metadata included, not only values)~~ |

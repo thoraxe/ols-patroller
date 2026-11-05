@@ -133,6 +133,18 @@ FILE_CREDENTIAL_COMMANDS = [
     "get pods -o jsonpath-file=/tmp/tmpl",
     "get pods -o templatefile=/tmp/tmpl",
     "get pods -o custom-columns-file=/tmp/tmpl",
+    # ... and the same values with `o` spelled inside a combined boolean
+    # shorthand — the #79 bypass: the value token (or attached remainder) must
+    # be judged, not only tokens whose first option letter is `o`
+    "get pods -Ao go-template-file=/tmp/tmpl",
+    "get pods -Ao=go-template-file=/proc/self/environ",
+    "get pods -Aogo-template-file=/tmp/tmpl",
+    "get pods -Aho jsonpath-file=/tmp/tmpl",
+    "get pods -wo templatefile=/tmp/tmpl",
+    "get pods -Awo custom-columns-file=/tmp/tmpl",
+    "get pods -Awo=custom-columns-file=/tmp/tmpl",
+    "get pods -Awo custom-columns-FILE=/tmp/tmpl",
+    "logs -fo go-template-file=/tmp/tmpl",
 ]
 
 
@@ -157,6 +169,14 @@ def test_local_file_and_credential_flags_refused(command):
     "get pods -lapp=frontend",
     "get pods -o=jsonpath={.metadata.labels.foo}",
     "get pods -l app=frontend",
+    # inline formatters in the combined-shorthand spellings of #79
+    "get pods -Ao yaml",
+    "get pods -Ao name",
+    "get pods -Ao jsonpath={.items[*].metadata.name}",
+    "get pods -Ao=custom-columns=NAME:.metadata.name",
+    "get pods -Awo go-template={{range .items}}{{.metadata.name}}{{end}}",
+    "get pods -Aojsonpath={.items[*].metadata.name}",
+    "logs -fo jsonpath={.items[*].metadata.name}",
 ])
 def test_logs_follow_and_inline_formatters_allowed(command):
     """Rule 6b scope: `logs -f` is follow (not a file flag), inline
@@ -165,6 +185,27 @@ def test_logs_follow_and_inline_formatters_allowed(command):
     out = guard(command)
     assert not out.startswith("REFUSED:"), (
         f"{command!r} is a legal read, got {out!r}")
+
+
+def test_combined_shorthand_output_value_refused():
+    """Rule 6b (#79): `o` inside a combined boolean shorthand still names the
+    output value, so a template-file value in the next argument or in the
+    attached remainder is a local-file read exactly like `-o <value>`."""
+    for command in (
+        "get pods -Ao go-template-file=/tmp/tmpl",
+        "get pods -Ao=go-template-file=/tmp/tmpl",
+        "get pods -Aogo-template-file=/tmp/tmpl",
+    ):
+        out = guard(command)
+        assert out == LOCAL_FILE_REFUSAL, f"{command!r} -> {out!r}"
+
+
+def test_combined_shorthand_refusal_preempts_dry_fixtures(monkeypatch):
+    """Rule 6b with rule 13: the #79 forms refuse before fixture lookup."""
+    monkeypatch.setattr(patrol, "FIXTURES", [("-Ao", "SHOULD-NOT-SERVE")])
+    out = guard("get pods -Ao go-template-file=/tmp/tmpl")
+    assert out == LOCAL_FILE_REFUSAL
+    assert "SHOULD-NOT-SERVE" not in out
 
 
 def test_local_file_refusal_preempts_execution(tmp_path):

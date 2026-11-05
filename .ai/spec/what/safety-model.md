@@ -53,7 +53,10 @@ held to production standards: documented, unit-checked, and verified end-to-end.
     fixture lookup (rule 6a) [DONE: #11]. The #33 Secret-access and
     local-file/credential-flag matrices live in `tests/test_secret_access.py` —
     direct guard calls plus the system-prompt and report-contract pins
-    [DONE: #33]. The endpoint-override refusal (rule 6c) joins them in
+    [DONE: #33]; the combined-shorthand output-value cases of #79 (`kubectl-guard.md`
+    rule 6b's template-file bullet: `-Ao`/`-Aho`/`-wo` before a value) land in
+    the same file with its spec PR and pass with its implementation
+    [PLANNED: #79]. The endpoint-override refusal (rule 6c) joins them in
     `tests/test_egress_control.py`: every `--server`/`-s` spelling refused
     ahead of execution and in dry mode, `--server-print` and plain non-secret
     reads still accepted [DONE: #34].
@@ -118,6 +121,7 @@ held to production standards: documented, unit-checked, and verified end-to-end.
 
 | Ticket | Summary |
 |---|---|
+| #79 | Guard hardening: the template-file output-format check reads the value of an `o` option letter spelled inside a combined boolean shorthand (`-Ao go-template-file=…`), closing the combined-shorthand bypass of `kubectl-guard.md` rule 6b's local-file ban |
 | ~~#34~~ | ~~Layer 4 — the network egress allowlist (rule 7): default-deny pod egress allowing only cluster DNS, the kube-apiserver, and the destinations derived from the patrol's own egress configuration, rendered by the offline `--egress-policy` mode and applied by the operator (`egress-control.md`, ADR 0030). Layer 1 gains the endpoint-override refusal (rule 6a's list; `kubectl-guard.md` rule 6c)~~ |
 | ~~#2~~ | In-cluster manifests: SA + `cluster-reader` ClusterRoleBinding + RWO PVC at `/wiki` + single-replica non-root Deployment — makes Layer 3 real (`in-cluster-deployment.md`; ADR 0006) |
 | #12 | Remediation handoff: dispatch governed AgenticRuns for actionable findings; harvest their result CRs back into the wiki |
