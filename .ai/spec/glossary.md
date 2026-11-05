@@ -152,6 +152,20 @@ redefined here.
   alternate credentials (`--kubeconfig`, token/cert flags), closing the
   `get -f <secret-manifest>` and local-file/credential bypasses
   (`kubectl-guard.md` rule 6b) [DONE: #33].
+- **Endpoint-override refusal** — the guard's companion rule for the egress
+  channel: `--server`/`-s` (every spelling) is refused, so a guard-accepted
+  command always talks to the ambient in-cluster API endpoint
+  (`kubectl-guard.md` rule 6c) [DONE: #34].
+- **Egress destination** — one outbound host the patroller's own configuration
+  names: the model endpoint's host, an apprise sink's host, or the wiki
+  remote's host (`egress-control.md` rule 4). Derived by the pure
+  `egress_destinations`, never hand-listed — a hand-kept CIDR list beside it
+  is a contract violation [DONE: #34].
+- **Egress allowlist** — the opt-in default-deny egress `NetworkPolicy`
+  (`ols-patroller-egress`) rendered from the egress destinations plus the
+  cluster-DNS and kube-apiserver allowances (#34, ADR 0030): a **snapshot** of
+  resolved addresses, re-rendered and re-applied after any egress-config
+  change (`egress-control.md` rules 8–8c) [DONE: #34].
 - **`OUT_CAP`** — hard-coded 15,000-char cap envelope on tool output fed back to
   the model; the truncated view itself is head+tail (`OUT_HEAD` 9,000 /
   `OUT_TAIL` 5,000 around a middle-elision marker) [DONE: #10].
@@ -199,7 +213,8 @@ redefined here.
   #62: the seed passes the gate), v0.3 operational
   hardening (#10; #33's full Secret-access ban in the guard + prompt;
   #35's state-change notification dedup + weekly digest; #9 re-scoped to
-  apprise multi-sink; #63 — reporting token bound +
+  apprise multi-sink; #34's data-exfiltration prevention — the derived
+  default-deny egress allowlist and the guard's endpoint-override refusal; #63 — reporting token bound +
   visible empty-result reasons — was filed here but pulled forward and
   closed after the frozen-wiki diagnosis), future (#12–#16, #41). Plans live
   in GitHub issues; #9/#11 were promoted into v0.1 (#9's original dedup scope

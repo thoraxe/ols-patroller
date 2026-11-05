@@ -193,7 +193,22 @@ under current policy (clean implementation review + `implementation-complete`):
   3.12 dev-pin guard; `wiki-memory.md` rules 4c/4g/27,
   `reporting-notifications.md` rule 9b, ADR 0029). The e2e adds the two
   legacy legs: a cp1252 wiki loads at patrol start and a total-failure patrol
-  over one writes nothing (`wiki-memory.md` rule 31).
+  over one writes nothing (`wiki-memory.md` rule 31); and
+  `tests/test_egress_control.py` covers the data-exfiltration-prevention
+  contract (#34, ADR 0030): the `egress_destinations` matrix (per-channel host
+  derivation — the model URL, host-like vs token-in-netloc apprise sinks, the
+  scp-like and `scheme://` wiki remotes — plus dedup/order/notes), the
+  `resolve_hosts` matrix (literals passed through, `ValueError` naming an
+  unresolvable host, `localhost` resolving without a network), the
+  `render_egress_policy` shape (podSelector, `policyTypes`, the DNS rule over
+  `EGRESS_DNS_NAMESPACES`, apiserver peer present/absent, `/32`+`/128`,
+  byte-stability), the `--egress-policy` subprocess contract (stdout is YAML
+  only, `PATROL_BASE_URL` the one required input, the `--loop`/`--wiki-stats`
+  argparse conflicts, empty stdout on failure, no repo init), the guard's
+  endpoint-override refusal (every `--server`/`-s` spelling, dry-mode and
+  pre-execution preemption, `--server-print` still accepted), and the static
+  pins (committed template shape, gitignored operator copy, README procedure,
+  no `egress-networkpolicy` reference in `patrol.py`).
 - `wiki/` (the wiki directory: `cluster-wiki.md` + its git repo) is a runtime
   artifact (gitignored) — never commit it.
 - Roadmap: GitHub issues + milestones, not documents. Spec files mark planned

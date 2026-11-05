@@ -289,8 +289,9 @@ the history #7 expires into) carry per-entry structure; everything else is prose
       non-empty and shlex-parseable.
     - **Guard-bounded.** The value must be a command the guard would accept,
       not refuse: the guard's pre-execution refusal grammar (`kubectl-guard.md`
-      rules 2–6b — parseability, verb whitelist, Secret-access ban, raw-path
-      refusal, local-file/credential-flag refusal) is the single source of truth
+      rules 2–6c — parseability, verb whitelist, Secret-access ban, raw-path
+      refusal, local-file/credential-flag refusal, endpoint-override refusal) is
+      the single source of truth
       for what a recheck may
       cite, checked by the same logic the guard itself uses and never by
       executing the command (the validator stays pure, rule 15). A recheck the

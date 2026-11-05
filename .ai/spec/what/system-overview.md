@@ -37,7 +37,9 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
 6. Startup requires `PATROL_API_KEY`, `PATROL_BASE_URL`, and `PATROL_MODEL`; the
    process exits with an error if any is unset — except in the offline
    `--wiki-stats` mode, which reads only the wiki and needs no model env
-   [DONE: #8].
+   [DONE: #8], and the offline `--egress-policy` mode, whose only input is
+   `PATROL_BASE_URL` (it never reads `PATROL_API_KEY`/`PATROL_MODEL`)
+   [DONE: #34].
 
 ### Component Inventory
 
@@ -46,7 +48,8 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
 8. **Read-only guard** — the single cluster tool `kubectl_readonly`: verb whitelist,
    Secret-access ban (all Secret access — names and metadata included, not just
    values) [DONE: #33], raw-path (`--raw`) refusal, local-file/credential-flag
-   refusal [DONE: #33], timeouts, output cap (`kubectl-guard.md`).
+   refusal [DONE: #33], endpoint-override (`--server`/`-s`) refusal
+   [DONE: #34], timeouts, output cap (`kubectl-guard.md`).
 9. **Wiki memory** — persistent markdown memory, seeded on first run, wholly
    rewritten each patrol, git-backed: one wiki-changing patrol, one commit
    [DONE: #3]; skeleton-validated on write — frontmatter, fixed section set,
@@ -92,6 +95,12 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
      (`container-image.md` rules 13–18) [DONE: #2] [DONE: #25]
      [release retag: DONE: #36]
      (`in-cluster-deployment.md`).
+12c. **Egress control** — the opt-in default-deny egress allowlist for the
+     deployed patrol: an offline renderer (`--egress-policy`) deriving the
+     destination set from the same egress configuration the process uses
+     (`PATROL_BASE_URL`, `PATROL_NOTIFY_URLS`, `PATROL_WIKI_REMOTE`), a
+     committed template plus a gitignored operator artifact applied with
+     `oc apply -f` (`egress-control.md`) [DONE: #34].
 
 ### Lifecycle
 
@@ -163,7 +172,11 @@ CLI flags: `--once` (default), `--loop`, `--interval`, `--dry-cluster`, `--wiki`
 stream, on by default [DONE: #27 — was the opt-in `-v/--verbose`]), and
 `--wiki-stats` (print the wiki's four health numbers and exit — offline, no
 `PATROL_*` env needed, never runs a patrol [DONE: #8]; plus the #40 size
-line: the character count and over-budget warning [DONE: #40]).
+line: the character count and over-budget warning [DONE: #40]), and
+`--egress-policy` (print the default-deny egress `NetworkPolicy` for the
+process's own egress configuration and exit — offline, `PATROL_BASE_URL` its
+only required input, no model call, no cluster, no writes [DONE: #34]
+(`egress-control.md` rules 7–7e).
 In-cluster, the image's default command is `--loop --interval 21600 --wiki
 /wiki/cluster-wiki.md` [DONE: #1] [DONE: #25] (`container-image.md`).
 
@@ -184,7 +197,9 @@ backoff between attempts [DONE: #3]; wiki skeleton schema version `WIKI_VERSION`
 wiki stats — churn window `WIKI_CHURN_WINDOW` = 5 revisions, lopsided
 thresholds 5 graded entries / 2/3 share [DONE: #8]; wiki working-set budgets —
 anomaly-log keep `WIKI_ANOMALY_KEEP` = 20 entries, soft length
-`WIKI_CHAR_BUDGET` = 20,000 chars [DONE: #40].
+`WIKI_CHAR_BUDGET` = 20,000 chars [DONE: #40]; the egress allowlist's fixed
+names — `EGRESS_POLICY_NAME` (`ols-patroller-egress`) and
+`EGRESS_DNS_NAMESPACES` (`openshift-dns`, `kube-system`) [DONE: #34].
 
 In-cluster wiring (Secret keys, the `PATROL_CLUSTER_ID` literal, kustomize image
 override, the CI workflow) is deployment surface, not patrol surface —
@@ -208,5 +223,5 @@ documents). Milestone shape:
 | v0.1 (#1–#4, #9, #11, #24, #25, #27, #28) | In-cluster: Containerfile, manifests (SA + cluster-reader + PVC + Deployment), git-backed wiki, e2e tests in-repo, deployment defaults & observability (6 h cadence, unbuffered + verbose logs, git-safe `/wiki`), guard `--raw` refusal [#9 was later re-scoped to apprise multi-sink (v0.3) with its original dedup scope moved to #35] |
 | v0.2 (#5–#8, #20, #39, #40) | Compounding wiki: skeleton schema + validation-on-write, per-entry recheck commands, `stale_after` expiry, `--wiki-stats`, efficient-sweep guidance, deploy-key remote-push wiring, wiki length budget |
 | v0.2.1 (#49, #50, #51) | Real-cluster validation fixes: per-call-shape request bounds (300 s exploration / 900 s structured reporting, #49), empty-`updated_wiki` classification — the contract requires the wiki every report, one named retry + stderr warning (#51), one event loop per `--loop` process (#50); in-cluster operational acceptance is deferred to the v0.2.1 release validation. Impl commits sync `AGENTS.md`'s test list |
-| v0.3 (#10, #33, #35, #63, #67) | Operational hardening: cost control (token soft-stop, soft turn target decoupled from the hard budget, head+tail truncation; scoping settled whole-cluster by ADR 0027), secret hardening — all Kubernetes Secret access and the local-file/credential-flag bypass banned in the guard + taught in the prompt/report contract (#33, ADR 0028), state-change notification dedup + periodic digest reminder for long-unfixed entries (#35), per-call-shape completion-token bounds + visible empty-result reasons (rules 7c + 8b), model-facing wiki size feedback so the model prunes the over-budget wiki (rule 29a) |
+| v0.3 (#10, #33, #34, #35, #63, #67) | Operational hardening: cost control (token soft-stop, soft turn target decoupled from the hard budget, head+tail truncation; scoping settled whole-cluster by ADR 0027), secret hardening — all Kubernetes Secret access and the local-file/credential-flag bypass banned in the guard + taught in the prompt/report contract (#33, ADR 0028), data-exfiltration prevention — the derived default-deny egress allowlist plus the guard's endpoint-override refusal (#34, ADR 0030), state-change notification dedup + periodic digest reminder for long-unfixed entries (#35), per-call-shape completion-token bounds + visible empty-result reasons (rules 7c + 8b), model-facing wiki size feedback so the model prunes the over-budget wiki (rule 29a) |
 | future (#12–#16, #41) | Remediation handoff to AgenticRuns, fleet/multicluster, CRD dispatcher, pluggable investigation engine, MCP-memory decision record, external runbook referencing |

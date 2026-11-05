@@ -534,13 +534,16 @@ entry whose status and severity are unchanged is wiki-only.
   whether an entry carries its severity pair; the process enforces the diff it
   can see.
 - The configured apprise sinks are the patrol's deliberate outbound notification
-  allowlist — the egress question (network-level exfiltration controls) is #34's,
-  not this contract's [DONE: #9].
+  allowlist — network-level exfiltration control is `egress-control.md`'s (#34:
+  the derived default-deny allowlist, ADR 0030), not this contract's
+  [DONE: #9] [DONE: #34 — supersedes the sentence that left the egress
+  question open].
 
 ## Planned Changes
 
 | Ticket | Summary |
 |---|---|
+| ~~#34~~ | ~~Only the Constraint sentence that left network-level egress control open: it now points at `egress-control.md` (the derived default-deny allowlist, ADR 0030). The notification contract here is unchanged — the configured sinks stay the deliberate outbound notification allowlist, and what they may carry is the guard's business~~ |
 | ~~#77~~ | ~~Dev/test host portability (rule 9b here; `wiki-memory.md` rules 4c/4g; ADR 0029): stdout/stderr are reconfigured to UTF-8/LF at startup so the ` · ` separator, severity marks, and `🔔` prefix print as the same bytes on every host, and a non-UTF-8 stream never raises. The wiki half is the byte-determinism pin on rule 4c (`wiki-memory.md`) and the explicit-UTF-8 read rule. Impl commit also syncs `AGENTS.md` (test conventions + test list) and `how/project-structure.md`~~ |
 | ~~#67~~ | ~~Wiki size feedback in the reporting pass (rule 5 amendment here; rule 29a in `wiki-memory.md`): `REPORT_CONTRACT` names the consequence chain (over-budget wiki → slower reporting pass → model gateway's request ceiling → the next patrol re-reading prose) and requires a smaller returned wiki when the size line says over budget (prune at least the excess, unless new facts require the space); every report-pass invocation appends the deterministic `wiki_size_note` line. ADR 0025 rejects process-side prose compaction. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#66~~ | Reporting-pass gateway-ceiling survival (rules 6, 7, 7e, 7f here; `wiki-memory.md` rule 33; ADR 0024): every shape-pass invocation carries the compacted conversation (pure `compact_messages`, `SHAPE_TOOL_KEEP` 1500 chars, tool-result bodies truncated with a marker); every attempt-failure log line carries elapsed seconds and exception reasons pass the pure `classify_exception` (5xx/timeout → `gateway failure (…)`); a total-failure patrol delivers one FAILURE notification (pinned message) and runs the rule-31 minimal-write fallback (wiki-repair pass skipped — no findings to merge). Impl commit also syncs `AGENTS.md`'s test list~~ |

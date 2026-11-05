@@ -12,7 +12,9 @@ wiki persists across pod restarts) is a documented procedure —
 Contract: .ai/spec/what/in-cluster-deployment.md [PLANNED: #2]
 [deploy-key wiring: rules 16a-16d, PLANNED: #39]
 [pull policy: rule 8a, PLANNED: #61]
-[storage-class override: rule 5a, PLANNED: #68].
+[storage-class override: rule 5a, PLANNED: #68]
+[egress allowlist template: rule 1 + `.ai/spec/what/egress-control.md` rule 8,
+PLANNED: #34 — the policy contract itself lives in `tests/test_egress_control.py`].
 
 Run: uv run --group dev pytest tests/ -q
 """
@@ -54,6 +56,9 @@ EXPECTED_RESOURCES = {
 }
 
 # Only RBAC object allowed anywhere in the manifests (rule 4): the CRB.
+# NetworkPolicy joins the list for #34 only: the operator's rendered egress
+# allowlist (`egress-control.md` rule 8) is a gitignored working-tree file, and
+# it is not an RBAC object — an opted-in operator's suite must stay green.
 ALLOWED_KINDS = {
     "Kustomization",
     "Namespace",
@@ -62,6 +67,7 @@ ALLOWED_KINDS = {
     "PersistentVolumeClaim",
     "Secret",
     "Deployment",
+    "NetworkPolicy",
 }
 
 
@@ -147,12 +153,18 @@ def test_no_extra_files_in_manifests_dir():
         # operator's gitignored copy — templates/copies, not resources.
         "pvc-patch.yaml.example",
         "pvc-patch.yaml",
+        # #34: the egress allowlist template (committed, `egress-control.md`
+        # rule 8) and the operator's gitignored rendered artifact — template /
+        # artifact, not resources (the policy is applied out-of-band).
+        "egress-networkpolicy.yaml.example",
+        "egress-networkpolicy.yaml",
     }
     names = {p.name for p in MANIFESTS.glob("*") if p.is_file()}
     assert names <= allowed, (
         f"manifests/ may contain only kustomization.yaml, the six resources "
         f"and the .example templates, plus the gitignored operator copies "
-        f"(secret.yaml, deploy-key-patch.yaml, pvc-patch.yaml) (rule 1), got extra: "
+        f"(secret.yaml, deploy-key-patch.yaml, pvc-patch.yaml, "
+        f"egress-networkpolicy.yaml) (rule 1), got extra: "
         f"{sorted(names - allowed)}"
     )
 
@@ -218,10 +230,16 @@ def test_no_bespoke_rbac_objects():
     )
     for path in MANIFESTS.glob("*.yaml"):
         doc = yaml.safe_load(path.read_text(encoding="utf-8"))
-        assert doc.get("kind") in ALLOWED_KINDS, (
-            f"{path.name}: unexpected kind {doc.get('kind')!r} — the only "
+        kind = doc.get("kind")
+        assert kind in ALLOWED_KINDS, (
+            f"{path.name}: unexpected kind {kind!r} — the only "
             f"RBAC object is the single ClusterRoleBinding (rule 4)"
         )
+        if kind == "NetworkPolicy":
+            assert path.name == "egress-networkpolicy.yaml", (
+                f"{path.name}: the only NetworkPolicy is the operator's "
+                f"rendered egress artifact (egress-control.md rule 8)"
+            )
 
 
 # ------------------------------------------------------------------ persistence (rules 5-6)

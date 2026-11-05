@@ -96,6 +96,37 @@ sees these messages and recovers based on them.
     5–6) or `--raw` (rule 6a) is conformant with either refusal message. This is
     a strictness increase, not a weakening; a future carve-out needs an ADR.
 
+### Endpoint-Override Flags
+
+6c. A command is refused if it supplies the API endpoint itself — the flag
+    `--server` in its space and `=` spellings, plus a single-dash
+    token in which `s` is parsed as a shorthand *option letter* (`-s`, `-s=…`,
+    `-s…`, `-As`) — same pre-execution slot as rules 5–6b, in both dry and real
+    mode, and after the verb whitelist (whose refusal still runs first)
+    [DONE: #34]. Grammar, spelled exactly:
+    - **Long form:** the token's flag name — the part before any `=` — is
+      exactly `--server`, judged case-insensitively. Precision is deliberate
+      here where rules 5 and 6b are over-broad: kubectl requires `=` for long
+      flags, so nothing is lost, and the near-miss `--server-print` (a
+      printing hint, not an endpoint) stays accepted.
+    - **Shorthand:** rule 6b's option-letter walk, with `s` as the server flag
+      — `A`, `h`, `w` are boolean and continue the walk; `n`, `o`, `l`, `c`,
+      `p`, `L`, `v` take a value and end it. Unlike `f` for `logs` (rule 6b),
+      `s` has no boolean meaning for any verb — kubectl inherits the root
+      `--server` shorthand everywhere, `logs` included — so it is refused
+      unconditionally. `-nfoo`, `-lapp=frontend`, `-o=jsonpath={…}`,
+      `-o=custom-columns=NAME:.metadata.name` and `-A` stay accepted.
+    The refusal message is exactly: `REFUSED: endpoint-override flags are
+    off-limits — kubectl must use the ambient in-cluster API endpoint, never a
+    caller-supplied one.` Rationale: `--server` re-points the CLI at an
+    arbitrary host — an outbound destination the egress allowlist does not
+    cover and that the model must never choose (`egress-control.md` rules 1–3)
+    — so the ambient kubeconfig/service-account endpoint is the only endpoint a
+    guard-accepted command may use. A command matching both this rule and rules
+    5–6b or 6a is conformant with either refusal message. A strictness
+    increase, not a weakening: a false refusal costs a recoverable retry, and a
+    future carve-out needs an ADR.
+
 ### Execution
 
 7. Real commands run via a subprocess argument list (`[kubectl, *args]`) — never
@@ -134,7 +165,7 @@ sees these messages and recovers based on them.
     13, the fixture-set rationale is `patrol-engine.md` rules 13–13a).
     Before #10, truncation was head-only with the marker
     `...[truncated, N chars total]` plus the #20 hint [DONE: #20]. This is output shaping only — the refusal
-    grammar (rules 2–6b) is untouched, so `guard_refusal` and the recheck
+    grammar (rules 2–6c) is untouched, so `guard_refusal` and the recheck
     validity it backs (ADR 0013) are unaffected; the guard never refuses a
     legal read for cost reasons (ADR 0016). The hint complements #10's
     smarter-truncation work and echoes the prompt's sweep teaching
@@ -167,17 +198,17 @@ sees these messages and recovers based on them.
   in-cluster, the pod ServiceAccount's RBAC is the server-side enforcement boundary
   [DONE: #2] (see `safety-model.md`).
 - Guard behavior is unit-checked in-repo (`tests/test_kubectl_guard.py`): refusal
-  rules 3–6b, execution rules 8–11, CLI resolution rule 12, dry-mode rule 13
+  rules 3–6c, execution rules 8–11, CLI resolution rule 12, dry-mode rule 13
   — see `safety-model.md` rule 6a [DONE: #4]. Rule 6a's tests land with its spec
   PR and pass with its implementation [DONE: #11]. The #33 Secret-access and
   local-file/credential-flag matrices live in `tests/test_secret_access.py`
   [DONE: #33].
-- The refusal grammar (rules 2–6b: parseability, non-empty, verb whitelist,
-  Secret-access ban, raw-path refusal, local-file/credential-flag refusal) is
-  the single source of truth for
+- The refusal grammar (rules 2–6c: parseability, non-empty, verb whitelist,
+  Secret-access ban, raw-path refusal, local-file/credential-flag refusal,
+  endpoint-override refusal) is the single source of truth for
   "a command `kubectl_readonly` accepts". The wiki validator reuses it to
   judge `recheck` citations (`wiki-memory.md` rule 12a) through shared code,
-  never by executing the command [DONE: #6].
+  never by executing the command [DONE: #6] [rule 6c: DONE: #34].
 
 ## Planned Changes
 
@@ -187,4 +218,5 @@ sees these messages and recovers based on them.
 | ~~#11~~ | ~~Refuse any command containing `--raw` (rule 6a) — proxy/stats endpoints dump multi-hundred-KB JSON that truncates and gets retried, burning patrol turns~~ |
 | ~~#20~~ | ~~Truncation-marker recovery hint (rule 11): output capped at `OUT_CAP` appends, after the unchanged `[truncated, N chars total]` marker, the narrowing patterns (`--field-selector`, `-o jsonpath`/custom-columns, single-object drilldown) — output shaping only, the refusal grammar untouched (ADR 0016)~~ |
 | ~~#10~~ | ~~Head+tail truncation (rule 11): truncated output keeps `OUT_HEAD` 9,000 head chars + `OUT_TAIL` 5,000 tail chars around a middle-elision marker naming the true total; the #20 hint unchanged after the tail; dry-mode fixture capping unchanged. Impl commit also syncs `AGENTS.md`'s test list~~ |
+| ~~#34~~ | ~~Endpoint-override refusal (rule 6c): `--server`/`-s` in every spelling is refused pre-execution and in dry mode, so no guard-accepted command can re-point kubectl at a caller-supplied host (`egress-control.md` rules 1–3, ADR 0030). The matrices live in `tests/test_egress_control.py`; `--server-print` stays accepted. Impl commit also syncs `README.md`'s guard bullets, `AGENTS.md`'s test list, and `how/project-structure.md`~~ |
 | ~~#33~~ | ~~Secret access is banned in full (rules 5–6): any command containing `secret` is refused regardless of verb/output format/position — names and metadata included, not only values. The local-file/credential channel is closed too (rule 6b): `-f`/`--filename`, `--kubeconfig`/token/cert flags, and template-file output formats are refused, closing the `get -f <secret-manifest>` bypass. The refusal names the ban and steers to workload metadata; over-broad by design (ADR 0028). The prompt teaching is `patrol-engine.md` rule 2a; the report contract teaches the recheck limit (`reporting-notifications.md` rule 5). Impl commit also syncs `README.md`'s guard bullets, `ARCHITECTURE.md`'s guard labels, `AGENTS.md`'s test list, and `REPORT_CONTRACT`'s recheck wording (the model-facing text must say rechecks may not read a Secret — names/metadata included, not only values)~~ |

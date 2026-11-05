@@ -51,6 +51,7 @@ AI agents. Content is optimized for precision and machine consumption.
 | The in-cluster container image | `what/container-image.md` |
 | Run it in-cluster (manifests + CI-published image) | `what/in-cluster-deployment.md` |
 | Report & notification formats | `what/reporting-notifications.md` |
+| Prevent data exfiltration (egress allowlist) | `what/egress-control.md` |
 | Where code lives | `how/project-structure.md` |
 | How the deepagents engine is wired | `how/agent-engine.md` |
 | How the typed report is produced | `how/reporting-pipeline.md` |
@@ -65,6 +66,7 @@ AI agents. Content is optimized for precision and machine consumption.
 | `what/kubectl-guard.md`, `what/wiki-memory.md` | `how/project-structure.md` (all symbols live in `patrol.py`) |
 | `what/container-image.md` | `how/project-structure.md` (Containerfile + `requirements.txt` path entries) |
 | `what/in-cluster-deployment.md` | `how/project-structure.md` (`manifests/` + `.github/workflows/` path entries) |
+| `what/egress-control.md` | `how/project-structure.md` (the egress derivation/render symbols + the `--egress-policy` mode) |
 
 ## Conventions
 
