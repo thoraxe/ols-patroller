@@ -78,7 +78,7 @@ sees these messages and recovers based on them.
       letter that is **boolean** for the verb continues the walk, any other
       letter ends it. The boolean set is `A`, `h`, `w` for every verb, plus `f`
       (`--follow`) and `p` (`--previous`) when the verb is `logs`
-      [PLANNED: #83]; the value-taking letters are `n`, `o`, `l`, `c`, `L`, `v`
+      [DONE: #83]; the value-taking letters are `n`, `o`, `l`, `c`, `L`, `v`
       everywhere and `p` (`--patch`-style) on every verb other than `logs`.
       `f` is the file flag. So `-f`, `-f=…`, `-fpath`, `-Af`, `-wf`, and
       `-Afi` are refused on every verb but `logs` (where `f` is boolean), while
@@ -101,7 +101,7 @@ sees these messages and recovers based on them.
       shorthand — not only when `o` starts the token [DONE: #79]. Spelled
       exactly: walk the token's leading option letters as in the file-input
       bullet above — its per-verb boolean set continues the walk (so on
-      `logs` the walk runs past both `f` and `p` [PLANNED: #83]), any other
+      `logs` the walk runs past both `f` and `p` [DONE: #83]), any other
       letter ends it —
       and when the walk ends on `o` the output value is the remainder of the
       token after the `o`, with one leading `=` stripped if present; when that
@@ -142,7 +142,7 @@ sees these messages and recovers based on them.
       printing hint, not an endpoint) stays accepted.
     - **Shorthand:** rule 6b's option-letter walk, with `s` as the server flag
       — the walk's per-verb boolean set continues it (`A`, `h`, `w` for every
-      verb, plus `f` and `p` for `logs` [PLANNED: #83]); any other letter ends
+      verb, plus `f` and `p` for `logs` [DONE: #83]); any other letter ends
       it. Unlike `f`/`p` for `logs` (rule 6b),
       `s` has no boolean meaning for any verb — kubectl inherits the root
       `--server` shorthand everywhere, `logs` included — so it is refused
@@ -241,7 +241,7 @@ sees these messages and recovers based on them.
   walk of #83 (`p` is `--previous` on `logs`, so the walk runs past it) lands
   with its spec PR and passes with its implementation — the `o` leg in
   `tests/test_secret_access.py`, the `s` leg in `tests/test_egress_control.py`
-  [PLANNED: #83].
+  [DONE: #83].
 - The refusal grammar (rules 2–6c: parseability, non-empty, verb whitelist,
   Secret-access ban, raw-path refusal, local-file/credential-flag refusal,
   endpoint-override refusal) is the single source of truth for
@@ -259,5 +259,5 @@ sees these messages and recovers based on them.
 | ~~#10~~ | ~~Head+tail truncation (rule 11): truncated output keeps `OUT_HEAD` 9,000 head chars + `OUT_TAIL` 5,000 tail chars around a middle-elision marker naming the true total; the #20 hint unchanged after the tail; dry-mode fixture capping unchanged. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#34~~ | ~~Endpoint-override refusal (rule 6c): `--server`/`-s` in every spelling is refused pre-execution and in dry mode, so no guard-accepted command can re-point kubectl at a caller-supplied host (`egress-control.md` rules 1–3, ADR 0030). The matrices live in `tests/test_egress_control.py`; `--server-print` stays accepted. Impl commit also syncs `README.md`'s guard bullets, `AGENTS.md`'s test list, and `how/project-structure.md`~~ |
 | ~~#79~~ | ~~Guard hardening (rule 6b): when the option-letter walk ends on `o`, the template-file check reads the rest of that token after `=` (or the attached remainder) or the next argument, so `-Ao go-template-file=…` is refused like `-o go-template-file=…`. Strictness increase on an already-banned channel; the matrix lives in `tests/test_secret_access.py` and the impl commit also syncs `AGENTS.md`'s test list and `how/project-structure.md`'s `tests/` row~~ |
-| #83 | Guard hardening (rules 6b/6c): the option-letter walk takes a **per-verb boolean set**, so on `logs` `p` is the boolean `--previous` (like `f`'s `--follow`) and the walk continues past it. `logs -po go-template-file=…`, `logs -ps <host>`, and `logs -fps=<host>` are therefore refused like their `-o`/`-s` spellings, while `logs -p <pod>`, `logs -pf <arg>`, and the inline-format spellings stay accepted — the fix costs no new refusals on legal reads. Strictness increase on an already-banned channel, no ADR; the `o` leg lives in `tests/test_secret_access.py`, the `s` leg in `tests/test_egress_control.py`, and the impl commit also syncs `AGENTS.md`'s test list |
+| ~~#83~~ | ~~Guard hardening (rules 6b/6c): the option-letter walk takes a **per-verb boolean set**, so on `logs` `p` is the boolean `--previous` (like `f`'s `--follow`) and the walk continues past it. `logs -po go-template-file=…`, `logs -ps <host>`, and `logs -fps=<host>` are therefore refused like their `-o`/`-s` spellings, while `logs -p <pod>`, `logs -pf <arg>`, and the inline-format spellings stay accepted — the fix costs no new refusals on legal reads. Strictness increase on an already-banned channel, no ADR; the `o` leg lives in `tests/test_secret_access.py`, the `s` leg in `tests/test_egress_control.py`, and the impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#33~~ | ~~Secret access is banned in full (rules 5–6): any command containing `secret` is refused regardless of verb/output format/position — names and metadata included, not only values. The local-file/credential channel is closed too (rule 6b): `-f`/`--filename`, `--kubeconfig`/token/cert flags, and template-file output formats are refused, closing the `get -f <secret-manifest>` bypass. The refusal names the ban and steers to workload metadata; over-broad by design (ADR 0028). The prompt teaching is `patrol-engine.md` rule 2a; the report contract teaches the recheck limit (`reporting-notifications.md` rule 5). Impl commit also syncs `README.md`'s guard bullets, `ARCHITECTURE.md`'s guard labels, `AGENTS.md`'s test list, and `REPORT_CONTRACT`'s recheck wording (the model-facing text must say rechecks may not read a Secret — names/metadata included, not only values)~~ |

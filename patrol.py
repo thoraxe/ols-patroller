@@ -670,46 +670,51 @@ LOCAL_FILE_OUTPUT_FORMATS = (
 )
 
 
+def _shorthand_boolean_letters(verb: str) -> frozenset[str]:
+    """Rule 6b/6c (#83): the per-verb boolean shorthand option letters.
+    `A`, `h`, `w` are boolean for every verb; on `logs`, `f` (`--follow`) and
+    `p` (`--previous`) are boolean too, so the option-letter walk continues
+    past them. Every other letter is value-taking (or unknown) and ends it."""
+    if verb == "logs":
+        return frozenset("ahwfp")
+    return frozenset("ahw")
+
+
+def _shorthand_letter_walk(token: str, verb: str) -> tuple[str, int]:
+    """Rule 6b/6c: walk this single-dash token's leading option letters (after
+    the single `-`, up to `=`). Returns `(body, index)`: the lowercased body and
+    the index of the first non-boolean letter, which ends the walk — `index ==
+    len(body)` when the token ran out of letters and `-1` when the walk hit
+    `=`. The boolean set is per-verb (#83): `A`, `h`, `w` everywhere, plus `f`
+    and `p` on `logs`; any other letter is value-taking and ends the walk."""
+    body = token[1:].lower()
+    boolean = _shorthand_boolean_letters(verb)
+    for i, ch in enumerate(body):
+        if ch == "=":
+            return body, -1
+        if ch not in boolean:
+            return body, i
+    return body, len(body)
+
+
 def _shorthand_file_flag(token: str, verb: str) -> bool:
     """Rule 6b: does this single-dash token use `f` as a shorthand option
-    letter? Walk the leading option letters (after the single `-`, up to `=`):
-    `A`, `h`, `w` are boolean and continue; `n`, `o`, `l`, `c`, `p`, `L`, `v`
-    take a value and end the walk; anything else ends it too. So `-nfoo` is not
-    a file flag but `-Af` and `-f=...` are. For `logs`, `f` is boolean follow
-    and continues the walk."""
-    body = token[1:].lower()
-    for ch in body:
-        if ch == "=":
-            return False
-        if ch == "f":
-            if verb == "logs":
-                continue
-            return True
-        if ch in "ahw":
-            continue
-        return False
-    return False
+    letter? So `-nfoo` is not a file flag but `-Af` and `-f=...` are. On
+    `logs`, `f` is boolean `--follow` (and `p` boolean `--previous`), so the
+    walk continues past them — the shorthand walk never produces a file-flag
+    hit on `logs` (#83)."""
+    body, index = _shorthand_letter_walk(token, verb)
+    return 0 <= index < len(body) and body[index] == "f"
 
 
 def _shorthand_server_flag(token: str, verb: str) -> bool:
     """Rule 6c: does this single-dash token use `s` as a shorthand option
-    letter? Rule 6b's walk — `A`, `h`, `w` are boolean and continue; `n`, `o`,
-    `l`, `c`, `p`, `L`, `v` take a value and end it; anything else ends it.
-    For `logs`, `f` is boolean follow and continues the walk (rule 6b), so
-    `-fs`/`-fAs` still reach the `s`. `s` is the root `--server` shorthand for
-    every verb, so it is refused unconditionally."""
-    body = token[1:].lower()
-    for ch in body:
-        if ch == "=":
-            return False
-        if ch == "s":
-            return True
-        if ch in "ahw":
-            continue
-        if ch == "f" and verb == "logs":
-            continue
-        return False
-    return False
+    letter? Rule 6b's per-verb walk continues past the boolean letters (on
+    `logs`, `f` and `p`), so `-fs`/`-fAs`/`-ps` still reach the `s`. `s` is the
+    root `--server` shorthand for every verb, so it is refused
+    unconditionally."""
+    body, index = _shorthand_letter_walk(token, verb)
+    return 0 <= index < len(body) and body[index] == "s"
 
 
 def _uses_endpoint_override_flag(args: list[str], verb: str) -> bool:
@@ -731,27 +736,19 @@ def _shorthand_output_value(token: str, verb: str, args: list[str],
                             index: int) -> str | None:
     """Rule 6b (#79): when the option-letter walk ends on `o`, the output value
     is the remainder of the token after the `o` (one leading `=` stripped) when
-    non-empty, else the next argument. Rule 6b's walk: `A`, `h`, `w` are boolean
-    and continue; `f` is boolean follow for `logs` and continues; `n`, `o`, `l`,
-    `c`, `p`, `L`, `v` take a value and end it. Returns None when `o` is not a
-    shorthand option letter of this token."""
-    body = token[1:].lower()
-    for i, ch in enumerate(body):
-        if ch == "=":
-            return None
-        if ch in "ahw":
-            continue
-        if ch == "f" and verb == "logs":
-            continue
-        if ch == "o":
-            remainder = body[i + 1:]
-            if remainder.startswith("="):
-                remainder = remainder[1:]
-            if remainder:
-                return remainder
-            return args[index + 1].lower() if index + 1 < len(args) else ""
+    non-empty, else the next argument. The walk is rule 6b's per-verb one
+    (#83): on `logs` the boolean `f` and `p` continue it, so `-po`/`-pfo` reach
+    the `o`. Returns None when `o` is not a shorthand option letter of this
+    token."""
+    body, idx = _shorthand_letter_walk(token, verb)
+    if not (0 <= idx < len(body)) or body[idx] != "o":
         return None
-    return None
+    remainder = body[idx + 1:]
+    if remainder.startswith("="):
+        remainder = remainder[1:]
+    if remainder:
+        return remainder
+    return args[index + 1].lower() if index + 1 < len(args) else ""
 
 
 def _local_file_output_format(args: list[str], verb: str) -> bool:
