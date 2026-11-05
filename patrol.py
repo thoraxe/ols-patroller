@@ -727,8 +727,37 @@ def _uses_endpoint_override_flag(args: list[str], verb: str) -> bool:
     return False
 
 
-def _local_file_output_format(args: list[str]) -> bool:
-    """Rule 6b: is an `-o`/`--output` value one of the local-file formats?"""
+def _shorthand_output_value(token: str, verb: str, args: list[str],
+                            index: int) -> str | None:
+    """Rule 6b (#79): when the option-letter walk ends on `o`, the output value
+    is the remainder of the token after the `o` (one leading `=` stripped) when
+    non-empty, else the next argument. Rule 6b's walk: `A`, `h`, `w` are boolean
+    and continue; `f` is boolean follow for `logs` and continues; `n`, `o`, `l`,
+    `c`, `p`, `L`, `v` take a value and end it. Returns None when `o` is not a
+    shorthand option letter of this token."""
+    body = token[1:].lower()
+    for i, ch in enumerate(body):
+        if ch == "=":
+            return None
+        if ch in "ahw":
+            continue
+        if ch == "f" and verb == "logs":
+            continue
+        if ch == "o":
+            remainder = body[i + 1:]
+            if remainder.startswith("="):
+                remainder = remainder[1:]
+            if remainder:
+                return remainder
+            return args[index + 1].lower() if index + 1 < len(args) else ""
+        return None
+    return None
+
+
+def _local_file_output_format(args: list[str], verb: str) -> bool:
+    """Rule 6b: is an `-o`/`--output` value one of the local-file formats?
+    The value is judged however the `o` option letter is spelled, including
+    inside a combined boolean shorthand (#79)."""
     for i, token in enumerate(args):
         lower = token.lower()
         value = None
@@ -736,12 +765,10 @@ def _local_file_output_format(args: list[str]) -> bool:
             value = args[i + 1].lower() if i + 1 < len(args) else ""
         elif lower.startswith("--output="):
             value = lower.split("=", 1)[1]
-        elif lower.startswith("-o="):
-            value = lower.split("=", 1)[1]
-        elif lower.startswith("-o"):
-            value = lower[2:]
+        elif lower.startswith("-") and not lower.startswith("--") and len(lower) > 1:
+            value = _shorthand_output_value(token, verb, args, i)
         if value is not None and any(
-                value.lstrip("=").startswith(f) for f in LOCAL_FILE_OUTPUT_FORMATS):
+                value.startswith(f) for f in LOCAL_FILE_OUTPUT_FORMATS):
             return True
     return False
 
@@ -756,7 +783,7 @@ def _uses_local_file_or_credential_flag(args: list[str], verb: str) -> bool:
         elif lower.startswith("-") and len(lower) > 1:
             if _shorthand_file_flag(token, verb):
                 return True
-    return _local_file_output_format(args)
+    return _local_file_output_format(args, verb)
 
 
 def guard_refusal(command: str) -> str | None:

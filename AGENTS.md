@@ -80,8 +80,11 @@ under current policy (clean implementation review + `implementation-complete`):
   contract; `tests/test_secret_access.py` covers the Secret-access and
   local-file/credential-flag bans of #33 (every Secret form refused with the
   exact message, the over-broad substring cases, pre-execution/dry-fixture
-  preemption, the `-f`/`--filename`/credential/template-file matrix, and the
-  system-prompt + report-contract teaching); `tests/test_patrol_deepagents.py`
+  preemption, the `-f`/`--filename`/credential/template-file matrix — including
+  the combined-shorthand output-value matrix of #79, where the option-letter
+  walk ends on `o` and the next-argument or attached value names a
+  template-file format — and the system-prompt + report-contract teaching);
+  `tests/test_patrol_deepagents.py`
   is the fake-model e2e over the
   real engine stack (#4, incl. the wiki-skeleton wiring of #5, the recheck
   repair path of #6, the stale-entry expiry wiring of #7, the working-set
