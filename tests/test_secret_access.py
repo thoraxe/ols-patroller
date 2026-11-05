@@ -145,6 +145,14 @@ FILE_CREDENTIAL_COMMANDS = [
     "get pods -Awo=custom-columns-file=/tmp/tmpl",
     "get pods -Awo custom-columns-FILE=/tmp/tmpl",
     "logs -fo go-template-file=/tmp/tmpl",
+    # #83: `p` is boolean `--previous` on `logs`, so the walk runs past it and
+    # the `o` after it is still an output option letter
+    "logs -po go-template-file=/tmp/tmpl",
+    "logs -po=go-template-file=/tmp/tmpl",
+    "logs -pogo-template-file=/tmp/tmpl",
+    "logs -po jsonpath-file=/tmp/tmpl",
+    "logs -pfo go-template-file=/tmp/tmpl",
+    "logs -pfo=templatefile=/tmp/tmpl",
 ]
 
 
@@ -177,6 +185,15 @@ def test_local_file_and_credential_flags_refused(command):
     "get pods -Awo go-template={{range .items}}{{.metadata.name}}{{end}}",
     "get pods -Aojsonpath={.items[*].metadata.name}",
     "logs -fo jsonpath={.items[*].metadata.name}",
+    # #83: `p` is `--previous` on `logs`, so these are boolean-letter
+    # spellings, not file-input or template-file reads
+    "logs -p pod/demo-app-abc",
+    "logs -pf pod/demo-app-abc",
+    "logs -fp pod/demo-app-abc",
+    "logs -po jsonpath={.metadata.name}",
+    "logs -pfo=jsonpath={.metadata.name}",
+    # ... and `p` stays value-taking (`--patch`-style) outside `logs`
+    "describe pod/demo-app-abc -p old",
 ])
 def test_logs_follow_and_inline_formatters_allowed(command):
     """Rule 6b scope: `logs -f` is follow (not a file flag), inline
@@ -204,6 +221,14 @@ def test_combined_shorthand_refusal_preempts_dry_fixtures(monkeypatch):
     """Rule 6b with rule 13: the #79 forms refuse before fixture lookup."""
     monkeypatch.setattr(patrol, "FIXTURES", [("-Ao", "SHOULD-NOT-SERVE")])
     out = guard("get pods -Ao go-template-file=/tmp/tmpl")
+    assert out == LOCAL_FILE_REFUSAL
+    assert "SHOULD-NOT-SERVE" not in out
+
+
+def test_previous_shorthand_refusal_preempts_dry_fixtures(monkeypatch):
+    """Rule 6b with rule 13 (#83): `logs -po` refuses before fixture lookup."""
+    monkeypatch.setattr(patrol, "FIXTURES", [("-po", "SHOULD-NOT-SERVE")])
+    out = guard("logs -po go-template-file=/tmp/tmpl")
     assert out == LOCAL_FILE_REFUSAL
     assert "SHOULD-NOT-SERVE" not in out
 

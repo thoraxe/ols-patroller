@@ -83,7 +83,9 @@ under current policy (clean implementation review + `implementation-complete`):
   preemption, the `-f`/`--filename`/credential/template-file matrix — including
   the combined-shorthand output-value matrix of #79, where the option-letter
   walk ends on `o` and the next-argument or attached value names a
-  template-file format — and the system-prompt + report-contract teaching);
+  template-file format — and the per-verb boolean walk of #83, where `p` is
+  `--previous` on `logs` so `-po`/`-pfo` reach the `o` while `logs -p`/
+  `logs -pf` stay accepted — and the system-prompt + report-contract teaching);
   `tests/test_patrol_deepagents.py`
   is the fake-model e2e over the
   real engine stack (#4, incl. the wiki-skeleton wiring of #5, the recheck
@@ -209,7 +211,9 @@ under current policy (clean implementation review + `implementation-complete`):
   only, `PATROL_BASE_URL` the one required input, the `--loop`/`--wiki-stats`
   argparse conflicts, empty stdout on failure, no repo init), the guard's
   endpoint-override refusal (every `--server`/`-s` spelling, dry-mode and
-  pre-execution preemption, `--server-print` still accepted), and the static
+  pre-execution preemption, `--server-print` still accepted — including the
+  #83 per-verb boolean walk, where `logs -ps`/`-fps`/`-pfs=` are refused like
+  `logs -s`), and the static
   pins (committed template shape, gitignored operator copy, README procedure,
   no `egress-networkpolicy` reference in `patrol.py`).
 - `wiki/` (the wiki directory: `cluster-wiki.md` + its git repo) is a runtime
