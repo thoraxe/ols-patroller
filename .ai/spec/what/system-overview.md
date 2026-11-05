@@ -39,7 +39,7 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
    `--wiki-stats` mode, which reads only the wiki and needs no model env
    [DONE: #8], and the offline `--egress-policy` mode, whose only input is
    `PATROL_BASE_URL` (it never reads `PATROL_API_KEY`/`PATROL_MODEL`)
-   [PLANNED: #34].
+   [DONE: #34].
 
 ### Component Inventory
 
@@ -49,7 +49,7 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
    Secret-access ban (all Secret access — names and metadata included, not just
    values) [DONE: #33], raw-path (`--raw`) refusal, local-file/credential-flag
    refusal [DONE: #33], endpoint-override (`--server`/`-s`) refusal
-   [PLANNED: #34], timeouts, output cap (`kubectl-guard.md`).
+   [DONE: #34], timeouts, output cap (`kubectl-guard.md`).
 9. **Wiki memory** — persistent markdown memory, seeded on first run, wholly
    rewritten each patrol, git-backed: one wiki-changing patrol, one commit
    [DONE: #3]; skeleton-validated on write — frontmatter, fixed section set,
@@ -100,7 +100,7 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
      destination set from the same egress configuration the process uses
      (`PATROL_BASE_URL`, `PATROL_NOTIFY_URLS`, `PATROL_WIKI_REMOTE`), a
      committed template plus a gitignored operator artifact applied with
-     `oc apply -f` (`egress-control.md`) [PLANNED: #34].
+     `oc apply -f` (`egress-control.md`) [DONE: #34].
 
 ### Lifecycle
 
@@ -175,7 +175,7 @@ stream, on by default [DONE: #27 — was the opt-in `-v/--verbose`]), and
 line: the character count and over-budget warning [DONE: #40]), and
 `--egress-policy` (print the default-deny egress `NetworkPolicy` for the
 process's own egress configuration and exit — offline, `PATROL_BASE_URL` its
-only required input, no model call, no cluster, no writes [PLANNED: #34]
+only required input, no model call, no cluster, no writes [DONE: #34]
 (`egress-control.md` rules 7–7e).
 In-cluster, the image's default command is `--loop --interval 21600 --wiki
 /wiki/cluster-wiki.md` [DONE: #1] [DONE: #25] (`container-image.md`).
@@ -199,7 +199,7 @@ thresholds 5 graded entries / 2/3 share [DONE: #8]; wiki working-set budgets —
 anomaly-log keep `WIKI_ANOMALY_KEEP` = 20 entries, soft length
 `WIKI_CHAR_BUDGET` = 20,000 chars [DONE: #40]; the egress allowlist's fixed
 names — `EGRESS_POLICY_NAME` (`ols-patroller-egress`) and
-`EGRESS_DNS_NAMESPACES` (`openshift-dns`, `kube-system`) [PLANNED: #34].
+`EGRESS_DNS_NAMESPACES` (`openshift-dns`, `kube-system`) [DONE: #34].
 
 In-cluster wiring (Secret keys, the `PATROL_CLUSTER_ID` literal, kustomize image
 override, the CI workflow) is deployment surface, not patrol surface —

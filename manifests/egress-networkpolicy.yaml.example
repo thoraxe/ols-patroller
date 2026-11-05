@@ -1,0 +1,71 @@
+# Egress allowlist TEMPLATE (egress-control.md rule 8, #34; ADR 0030).
+#
+# The patrol pod's egress is default-deny: this opt-in NetworkPolicy allows
+# only cluster DNS, the kube-apiserver, and the destinations derived from the
+# patroller's own egress configuration — PATROL_BASE_URL (the model endpoint),
+# PATROL_NOTIFY_URLS (the apprise sinks), and PATROL_WIKI_REMOTE (the optional
+# wiki git remote). It is NOT a kustomization resource and never ships enabled
+# from the committed base; apply it out-of-band.
+#
+# Procedure (render → apply → regenerate):
+#
+#   1. Render the policy from the live configuration. In the pod, where
+#      KUBERNETES_SERVICE_HOST carries the apiserver address:
+#        oc -n ols-patroller exec deploy/ols-patroller -- \
+#          python3.12 patrol.py --egress-policy > manifests/egress-networkpolicy.yaml
+#      On a workstation the same command renders without the kube-apiserver
+#      peer (stderr says so) — add that ipBlock stanza by hand.
+#      Instead of rendering, you may copy this template and edit the
+#      placeholder addresses below.
+#
+#   2. Apply it (the operator copy is gitignored):
+#        oc apply -f manifests/egress-networkpolicy.yaml
+#
+#   3. Regenerate after ANY change to PATROL_BASE_URL, PATROL_NOTIFY_URLS, or
+#      PATROL_WIKI_REMOTE, and after a provider rotates its addresses (the
+#      symptom is model-call or delivery failures in the pod logs). Re-run
+#      step 1, diff the artifact, re-apply.
+#
+# Limitation: apprise sinks whose URL carries no derivable host (token-in-netloc
+# webhook schemes such as discord://<id>/<token>, or mailto:// user@domain) sit
+# outside the allowlist — the renderer names them on stderr, and their delivery
+# fails once this policy is applied. Choose a host-form sink URL, add the peer
+# by hand (a re-render drops it), or leave the allowlist off.
+#
+# The addresses below are RFC 5737 documentation placeholders — never a real
+# endpoint.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ols-patroller-egress
+  namespace: ols-patroller
+spec:
+  podSelector:
+    matchLabels:
+      app: ols-patroller
+  policyTypes:
+    - Egress
+  egress:
+    # Cluster DNS (OpenShift and upstream Kubernetes namespaces), port 53 only.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-dns
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # The kube-apiserver (from KUBERNETES_SERVICE_HOST in the pod).
+    - to:
+        - ipBlock:
+            cidr: 192.0.2.10/32
+    # The derived destinations — one ipBlock per resolved address.
+    - to:
+        - ipBlock:
+            cidr: 198.51.100.20/32
+        - ipBlock:
+            cidr: 203.0.113.30/32

@@ -118,7 +118,9 @@ without ever rejecting a write.
   (no shell), refuses all Secret access (any command containing `secret` — names
   and metadata included, not just `-o yaml/json/jsonpath` values), refuses
   local-file/credential flags (`-f`/`--filename`, `--kubeconfig`/token/cert,
-  `*-file` output formats), and refuses `--raw` proxy/stats paths
+  `*-file` output formats), refuses endpoint-override flags (`--server`/`-s` in
+  every spelling — kubectl must use the ambient in-cluster API endpoint), and
+  refuses `--raw` proxy/stats paths
   (multi-hundred-KB dumps that would truncate).
   The deepagents engine adds **no shell/filesystem/execute tools** on top (see
   Engine above), and when deployed in-cluster the pod SA's RBAC (e.g.
@@ -127,7 +129,7 @@ without ever rejecting a write.
 - The patrol **never mutates the cluster**. Remediation would be delegated to a
   governed AgenticRun (not implemented in the PoC).
 - Guard is unit-checked (mutation verbs + Secret access + local-file/credential
-  flags + `--raw` paths → all refused).
+  flags + endpoint-override flags + `--raw` paths → all refused).
 
 ## Config (env)
 
@@ -255,6 +257,58 @@ sets `GIT_SSH_COMMAND` to use it with `StrictHostKeyChecking=accept-new`
 `known_hosts` variant in `deploy-key-patch.yaml.example`. Verify replication by
 watching the remote's copy advance one commit per patrol — `git ls-remote
 <remote-url>` from anywhere shows the remote head.
+
+### Restrict egress (optional)
+
+The patrol pod makes outbound connections to only four kinds of destination:
+the model endpoint (`PATROL_BASE_URL`), the apprise notification sinks
+(`PATROL_NOTIFY_URLS`), the optional wiki git remote (`PATROL_WIKI_REMOTE`), and
+the cluster's kube-apiserver (with cluster DNS resolving the first three). You
+can turn that into a default-deny network allowlist with a rendered
+egress `NetworkPolicy` — opt-in, never part of the committed base.
+
+The committed [`manifests/egress-networkpolicy.yaml.example`](manifests/egress-networkpolicy.yaml.example)
+is a template; the operator's working copy
+`manifests/egress-networkpolicy.yaml` is gitignored and applied out-of-band.
+
+1. Render the policy from the live configuration. In the pod, where
+   `KUBERNETES_SERVICE_HOST` carries the apiserver address:
+
+   ```bash
+   oc -n ols-patroller exec deploy/ols-patroller -- \
+     python3.12 patrol.py --egress-policy > manifests/egress-networkpolicy.yaml
+   ```
+
+   On a workstation the same command needs `PATROL_BASE_URL` set (plus any
+   optional `PATROL_NOTIFY_URLS`/`PATROL_WIKI_REMOTE` actually used); it
+   renders without the kube-apiserver peer (stderr names the omission) and you
+   add that `ipBlock` stanza by hand. You can also copy the template and edit
+   its documentation placeholder addresses.
+
+2. Apply it:
+
+   ```bash
+   oc apply -f manifests/egress-networkpolicy.yaml
+   ```
+
+3. Prevent drift: re-render and re-apply after **any** change to
+   `PATROL_BASE_URL`, `PATROL_NOTIFY_URLS`, or `PATROL_WIKI_REMOTE`, and after a
+   provider rotates its addresses (regeneration, not hand maintenance). The
+   symptom of a stale snapshot is model-call or delivery failures in the pod
+   logs — never silent loss; re-run step 1, diff, and re-apply.
+
+Limitation: an apprise sink whose URL carries no derivable host — the
+`discord://<id>/<token>` token-in-netloc webhook schemes, or a
+`mailto://user@domain` sink whose SMTP host is not the URL domain — sits
+outside the allowlist. The renderer names such values on stderr, and their
+delivery fails once the policy is applied. Choose a host-form sink URL, add the
+peer by hand knowing a re-render drops it, or leave the allowlist off.
+
+To prove the allowlist bites, apply it and point `PATROL_NOTIFY_URLS` at a sink
+whose host is not in the policy: the console `🔔 NOTIFY:` line still prints,
+that sink's delivery fails with a stderr warning, and the patrol still exits
+zero. Restore the Secret afterwards. Enabling the allowlist can only break
+traffic, never heal it — that is the point of default-deny.
 
 ## Smoke-test results (2026-10-13, dry-cluster)
 

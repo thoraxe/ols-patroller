@@ -155,17 +155,17 @@ redefined here.
 - **Endpoint-override refusal** — the guard's companion rule for the egress
   channel: `--server`/`-s` (every spelling) is refused, so a guard-accepted
   command always talks to the ambient in-cluster API endpoint
-  (`kubectl-guard.md` rule 6c) [PLANNED: #34].
+  (`kubectl-guard.md` rule 6c) [DONE: #34].
 - **Egress destination** — one outbound host the patroller's own configuration
   names: the model endpoint's host, an apprise sink's host, or the wiki
   remote's host (`egress-control.md` rule 4). Derived by the pure
   `egress_destinations`, never hand-listed — a hand-kept CIDR list beside it
-  is a contract violation [PLANNED: #34].
+  is a contract violation [DONE: #34].
 - **Egress allowlist** — the opt-in default-deny egress `NetworkPolicy`
   (`ols-patroller-egress`) rendered from the egress destinations plus the
   cluster-DNS and kube-apiserver allowances (#34, ADR 0030): a **snapshot** of
   resolved addresses, re-rendered and re-applied after any egress-config
-  change (`egress-control.md` rules 8–8c) [PLANNED: #34].
+  change (`egress-control.md` rules 8–8c) [DONE: #34].
 - **`OUT_CAP`** — hard-coded 15,000-char cap envelope on tool output fed back to
   the model; the truncated view itself is head+tail (`OUT_HEAD` 9,000 /
   `OUT_TAIL` 5,000 around a middle-elision marker) [DONE: #10].

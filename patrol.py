@@ -40,15 +40,18 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import ipaddress
 import os
 import re
 import shlex
+import socket
 import subprocess
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 import apprise
 import yaml
@@ -170,6 +173,165 @@ WIKI_STATS_LOPSIDED_SHARE = 2 / 3   # dominant-level share that fires the warnin
 # so tests can bound them.
 WIKI_ANOMALY_KEEP = 20     # last resolved/expired Anomaly-log entries kept
 WIKI_CHAR_BUDGET = 20_000  # soft whole-wiki character budget (whole file)
+
+# Egress allowlist (egress-control.md rule 6, #34; ADR 0030). Hard-coded, not
+# env-configurable (the ADR 0015 convention): the policy object's fixed name
+# and the ordered cluster-DNS namespaces it allows through (rule 6).
+EGRESS_POLICY_NAME = "ols-patroller-egress"
+EGRESS_DNS_NAMESPACES = ("openshift-dns", "kube-system")
+
+
+# --------------------------------------------------------------- egress allowlist
+
+def _url_host(value: str) -> str:
+    """The `urlsplit` hostname of a URL — no port, path, or credentials.
+    Empty when the value names no host (rule 4a) or cannot be parsed."""
+    try:
+        return (urlsplit(value).hostname or "").lower()
+    except ValueError:
+        return ""
+
+
+def _url_scheme(value: str) -> str:
+    """A URL's scheme for a diagnostic note, or `?` when unparseable (rule 4d:
+    a note never aborts the render)."""
+    try:
+        return urlsplit(value).scheme or "?"
+    except ValueError:
+        return "?"
+
+
+def _host_like(host: str) -> bool:
+    """Rule 4b: is an apprise URL's host position actually a host? An IP
+    literal, a name containing a dot, or a single label that is not all digits
+    (token-in-netloc webhook schemes put a numeric id there instead)."""
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        pass
+    return "." in host or not host.isdigit()
+
+
+def egress_destinations(base_url: str, notify_urls: list[str],
+                        wiki_remote: str) -> tuple[list[str], list[str]]:
+    """Rule 4 (#34): the ONLY definition of the egress destination set — pure,
+    deterministic, no I/O, no DNS, no filesystem. Returns `(hosts, notes)`:
+    sorted + case-insensitively deduplicated lowercased hostnames/address
+    literals the configuration names, and one-line `egress: ` diagnostics for
+    configured values that derive no host. A hand-maintained destination list
+    beside this function is a contract violation."""
+    hosts: set[str] = set()
+    notes: list[str] = []
+
+    # Rule 4a: the model endpoint contributes its host (no port/path/creds).
+    base_host = _url_host(base_url) if base_url else ""
+    if base_host:
+        hosts.add(base_host)
+    else:
+        notes.append(
+            "egress: PATROL_BASE_URL names no host — the model endpoint cannot "
+            "be derived from it (the renderer refuses without one)")
+
+    # Rule 4b: each apprise sink contributes a host only when host-like; a
+    # token-in-netloc webhook value contributes nothing and is named instead.
+    for url in notify_urls:
+        host = _url_host(url)
+        if host and _host_like(host):
+            hosts.add(host)
+        else:
+            scheme = _url_scheme(url)
+            notes.append(
+                f"egress: PATROL_NOTIFY_URLS value ({scheme}://…) names no "
+                "derivable host — it sits outside the egress allowlist")
+
+    # Rule 4c: the wiki remote — `scheme://` forms use urlsplit, the scp-like
+    # `[user@]host:path` form (no `://`) takes the text before the first colon.
+    if wiki_remote:
+        if "://" in wiki_remote:
+            wiki_host = _url_host(wiki_remote)
+        else:
+            text = wiki_remote.split("@", 1)[-1]
+            wiki_host = text.split(":", 1)[0].lower()
+        if wiki_host:
+            hosts.add(wiki_host)
+        else:
+            notes.append(
+                "egress: PATROL_WIKI_REMOTE names no host — the wiki remote "
+                "sits outside the egress allowlist")
+
+    # Rule 4e: fixed order — sorted, deduplicated.
+    return sorted(hosts), notes
+
+
+def resolve_hosts(hosts: list[str]) -> list[str]:
+    """Rule 5 (#34): resolve each host to its IPv4/IPv6 addresses, deduped and
+    sorted as text. An address literal passes through unchanged. A host that
+    yields no address, or whose lookup raises, is a `ValueError` naming it —
+    never a partial result (a silently incomplete allowlist is the silent
+    patrol break this control exists to avoid)."""
+    addresses: set[str] = set()
+    for host in hosts:
+        try:
+            ipaddress.ip_address(host)
+        except ValueError:
+            pass
+        else:
+            addresses.add(host)
+            continue
+        try:
+            infos = socket.getaddrinfo(host, None)
+        except OSError as e:
+            raise ValueError(f"cannot resolve {host!r}: {e}") from e
+        resolved = {info[4][0] for info in infos}
+        if not resolved:
+            raise ValueError(f"cannot resolve {host!r}: no addresses returned")
+        addresses.update(resolved)
+    return sorted(addresses)
+
+
+def _peer_cidr(address: str) -> str:
+    """Rule 6: `<address>/32` for IPv4, `<address>/128` for IPv6."""
+    parsed = ipaddress.ip_address(address)
+    return f"{parsed}/{32 if parsed.version == 4 else 128}"
+
+
+def render_egress_policy(addresses: list[str], *,
+                         api_server: str | None = None) -> str:
+    """Rules 6-6a (#34): the default-deny egress `NetworkPolicy` text — pure,
+    LF-terminated, exactly one trailing newline. Cluster DNS is always allowed
+    (the `EGRESS_DNS_NAMESPACES` order); the kube-apiserver peer only when
+    `api_server` is given; one `ipBlock` per destination, no ports (the policy
+    is destination-keyed). No addresses means no destination rule — an empty
+    peer list is ambiguous, never implicitly permissive."""
+    egress: list[dict] = [{
+        "to": [
+            {"namespaceSelector": {"matchLabels": {
+                "kubernetes.io/metadata.name": ns}}}
+            for ns in EGRESS_DNS_NAMESPACES
+        ],
+        "ports": [
+            {"protocol": "UDP", "port": 53},
+            {"protocol": "TCP", "port": 53},
+        ],
+    }]
+    if api_server:
+        egress.append({"to": [{"ipBlock": {"cidr": _peer_cidr(api_server)}}]})
+    cidrs = sorted({_peer_cidr(a) for a in addresses})
+    if cidrs:
+        egress.append({"to": [{"ipBlock": {"cidr": c}} for c in cidrs]})
+
+    policy = {
+        "apiVersion": "networking.k8s.io/v1",
+        "kind": "NetworkPolicy",
+        "metadata": {"name": EGRESS_POLICY_NAME, "namespace": "ols-patroller"},
+        "spec": {
+            "podSelector": {"matchLabels": {"app": "ols-patroller"}},
+            "policyTypes": ["Egress"],
+            "egress": egress,
+        },
+    }
+    return yaml.safe_dump(policy, sort_keys=True, default_flow_style=False)
 
 
 def _pin_console_text_io() -> None:
@@ -487,6 +649,13 @@ LOCAL_FILE_REFUSAL = (
     "ambient configuration and inline resource names, never read local files or "
     "take alternate credentials.")
 
+# Rule 6c (#34): a caller-supplied API endpoint is an outbound destination the
+# egress allowlist does not cover and the model must never choose, so
+# `--server`/`-s` (every spelling) is refused exactly like the other channels.
+SERVER_REFUSAL = (
+    "REFUSED: endpoint-override flags are off-limits — kubectl must use the "
+    "ambient in-cluster API endpoint, never a caller-supplied one.")
+
 # Rule 6b (#33): flags that make kubectl read a local file or take alternate
 # credentials. Judged case-insensitively over the parsed arguments, so the
 # space, `=`, and attached spellings all match.
@@ -519,6 +688,42 @@ def _shorthand_file_flag(token: str, verb: str) -> bool:
         if ch in "ahw":
             continue
         return False
+    return False
+
+
+def _shorthand_server_flag(token: str, verb: str) -> bool:
+    """Rule 6c: does this single-dash token use `s` as a shorthand option
+    letter? Rule 6b's walk — `A`, `h`, `w` are boolean and continue; `n`, `o`,
+    `l`, `c`, `p`, `L`, `v` take a value and end it; anything else ends it.
+    For `logs`, `f` is boolean follow and continues the walk (rule 6b), so
+    `-fs`/`-fAs` still reach the `s`. `s` is the root `--server` shorthand for
+    every verb, so it is refused unconditionally."""
+    body = token[1:].lower()
+    for ch in body:
+        if ch == "=":
+            return False
+        if ch == "s":
+            return True
+        if ch in "ahw":
+            continue
+        if ch == "f" and verb == "logs":
+            continue
+        return False
+    return False
+
+
+def _uses_endpoint_override_flag(args: list[str], verb: str) -> bool:
+    """Rule 6c: the complete endpoint-override check — the long flag is judged
+    by exact name (so `--server-print` stays accepted), the shorthand by the
+    option-letter walk."""
+    for token in args:
+        lower = token.lower()
+        if lower.startswith("--"):
+            if lower.split("=", 1)[0] == "--server":
+                return True
+        elif lower.startswith("-") and len(lower) > 1:
+            if _shorthand_server_flag(token, verb):
+                return True
     return False
 
 
@@ -555,9 +760,9 @@ def _uses_local_file_or_credential_flag(args: list[str], verb: str) -> bool:
 
 
 def guard_refusal(command: str) -> str | None:
-    """The guard's pre-execution refusal grammar (kubectl-guard.md rules 2-6b):
+    """The guard's pre-execution refusal grammar (kubectl-guard.md rules 2-6c):
     parseability, non-empty, verb whitelist, Secret-access ban, local-file/
-    credential flags, raw-path refusal. Returns the REFUSED message for a
+    credential flags, endpoint-override flags, raw-path refusal. Returns the REFUSED message for a
     command the guard would refuse, None for one it accepts. Pure — no I/O,
     nothing executed.
 
@@ -577,6 +782,13 @@ def guard_refusal(command: str) -> str | None:
     if verb not in READONLY_VERBS:
         return (f"REFUSED: '{verb}' is not a read-only verb. "
                 f"Allowed: {sorted(READONLY_VERBS)}")
+
+    # Never let the caller choose the API endpoint (rule 6c, #34): `--server`
+    # re-points kubectl at an arbitrary host — an outbound destination the
+    # egress allowlist does not cover. The ambient endpoint is the only one a
+    # guard-accepted command may use.
+    if _uses_endpoint_override_flag(args, verb):
+        return SERVER_REFUSAL
 
     # Never access Secrets at all (rules 5-6, #33): names and metadata are
     # off-limits exactly like values, so this is a substring ban on the whole
@@ -2742,6 +2954,42 @@ def run_wiki_stats(wiki_path: Path) -> None:
             print(f"WARNING: {warning}")
 
 
+def run_egress_policy() -> None:
+    """Rules 7-7d (#34): the offline renderer — derive the destination set from
+    the process's own egress configuration, resolve it, and print the policy
+    YAML on stdout with every diagnostic on stderr.
+
+    `PATROL_BASE_URL` is the one required input (the model endpoint is the
+    largest payload channel; an allowlist without it is a broken policy);
+    `PATROL_NOTIFY_URLS` and `PATROL_WIKI_REMOTE` are optional. The model keys
+    are never read. Off-cluster (`KUBERNETES_SERVICE_HOST` unset) the policy
+    renders without the kube-apiserver peer and stderr names the omission."""
+    base_url = os.environ.get("PATROL_BASE_URL", "")
+    notify_urls = parse_notify_urls(os.environ.get("PATROL_NOTIFY_URLS", ""))
+    wiki_remote = os.environ.get("PATROL_WIKI_REMOTE", "")
+    api_server = os.environ.get("KUBERNETES_SERVICE_HOST", "").strip() or None
+
+    hosts, notes = egress_destinations(base_url, notify_urls, wiki_remote)
+    for note in notes:
+        print(note, file=sys.stderr)
+    if not _url_host(base_url):
+        die("PATROL_BASE_URL is required to render the egress policy: set it to "
+            "the model endpoint URL (the largest payload channel).")
+
+    try:
+        addresses = resolve_hosts(hosts)
+        api_address = resolve_hosts([api_server])[0] if api_server else None
+    except ValueError as e:
+        die(str(e))
+
+    if api_address is None:
+        print("egress: KUBERNETES_SERVICE_HOST is unset — the policy has no "
+              "kube-apiserver peer; add one by hand with an ipBlock stanza, "
+              "e.g. `to: [{ipBlock: {cidr: <apiserver-address>/32}}]`",
+              file=sys.stderr)
+    print(render_egress_policy(addresses, api_server=api_address), end="")
+
+
 def main() -> None:
     # Rule 9b (#77): re-pin the console before argparse can print anything (the
     # import-time call already pinned the process's own streams).
@@ -2769,14 +3017,29 @@ def main() -> None:
                     help="print the wiki's health numbers (verification rate, "
                          "resolution ratio, confidence spread, churn, size) and exit — "
                          "offline: no PATROL_* env, no cluster, no repo initialization")
+    ap.add_argument("--egress-policy", action="store_true",
+                    help="print the default-deny egress NetworkPolicy for the "
+                         "process's own egress configuration and exit — offline: "
+                         "PATROL_BASE_URL its only required input, no model call, "
+                         "no cluster, no writes")
     args = ap.parse_args()
 
     # Rule 23 (#8): the offline stats mode branches right here — before the env
     # check, kubectl resolution, and repo initialization — and takes precedence
     # over --once (the default mode). Stats print and exit; they cannot schedule.
+    # Rule 7e (#34): the egress renderer lives in the same slot and, like the
+    # stats mode, cannot be combined with the scheduling modes.
+    if args.egress_policy and (args.loop or args.wiki_stats):
+        conflicts = [flag for flag, on in (("--loop", args.loop),
+                                           ("--wiki-stats", args.wiki_stats)) if on]
+        ap.error(f"--egress-policy and {' and '.join(conflicts)} cannot be "
+                 "combined: --egress-policy renders the egress policy and exits")
     if args.wiki_stats and args.loop:
         ap.error("--wiki-stats and --loop cannot be combined: --wiki-stats prints "
                  "the wiki health numbers and exits, it cannot schedule patrols")
+    if args.egress_policy:
+        run_egress_policy()
+        return
     if args.wiki_stats:
         run_wiki_stats(Path(args.wiki))
         return

@@ -23,16 +23,16 @@ the one in-agent egress channel the guard closes.
    `[read_file, kubectl_readonly]` (`safety-model.md` rule 3), so no tool call
    can open a destination of its own: what leaves the process leaves through
    this set, or through a destination the process's *configuration* names.
-   [PLANNED: #34]
+   [DONE: #34]
 2. **Default deny.** When the egress allowlist is applied, the patrol pod may
    reach only the cluster DNS service, the kube-apiserver, and the derived
    destination addresses (rules 4–5); every other destination is dropped by the
    cluster's network implementation, not by the process. The policy is
    namespace-scoped and pod-selected on the deployment's label, so no other
-   workload's traffic is affected. [PLANNED: #34]
+   workload's traffic is affected. [DONE: #34]
 3. The in-agent endpoint-override channel is closed in the guard:
    `kubectl --server`/`-s` re-points the CLI at a caller-supplied API endpoint,
-   so it is refused (`kubectl-guard.md` rule 6c). [PLANNED: #34]
+   so it is refused (`kubectl-guard.md` rule 6c). [DONE: #34]
 
 ### Derivation (one source of truth)
 
@@ -42,7 +42,7 @@ the one in-agent egress channel the guard closes.
    deduplicated list of lowercased hostnames/address literals the configuration
    names; `notes` is the list of single-line diagnostics the CLI prints to
    stderr (rule 7b). A destination set maintained by hand next to this
-   function is a contract violation. [PLANNED: #34]
+   function is a contract violation. [DONE: #34]
    4a. **The model endpoint** contributes its `urlsplit` hostname (no port, no
        path, no credentials). An empty or host-less value contributes no host
        and one note naming `PATROL_BASE_URL`; for this key that note is followed
@@ -78,7 +78,7 @@ the one in-agent egress channel the guard closes.
    `ipaddress.ip_address`) passes through unchanged. A host that yields no
    address, or whose lookup raises, is an error: `ValueError` naming the host —
    never a partial result, because an allowlist silently missing a destination
-   is the silent patrol break this control exists to avoid. [PLANNED: #34]
+   is the silent patrol break this control exists to avoid. [DONE: #34]
 
 ### Rendering
 
@@ -86,7 +86,7 @@ the one in-agent egress channel the guard closes.
    returns the policy text: exactly one trailing newline, no blank line, never
    `\r`, an LF-terminated `networking.k8s.io/v1`
    `NetworkPolicy` named `ols-patroller-egress` in namespace `ols-patroller`,
-   parsing with `yaml.safe_load` into this shape and nothing more: [PLANNED: #34]
+   parsing with `yaml.safe_load` into this shape and nothing more: [DONE: #34]
    - `spec.podSelector.matchLabels` = `{app: ols-patroller}` — the deployment's
      label (`in-cluster-deployment.md` rule 13);
    - `spec.policyTypes` = `[Egress]` — ingress is untouched, and there is no
@@ -115,7 +115,7 @@ the one in-agent egress channel the guard closes.
    render (rule 6). It is an **offline** mode in the `--wiki-stats` slot
    (`wiki-memory.md` rule 23) — it branches right after argparse, before the
    model-key env check, before CLI resolution, and before wiki-repo init; it
-   makes no model call, touches no cluster, and writes nothing. [PLANNED: #34]
+   makes no model call, touches no cluster, and writes nothing. [DONE: #34]
    7a. Its inputs are the egress keys only: `PATROL_BASE_URL` is **required** —
        unset, empty, or a value no host can be derived from (rule 4a) exits
        non-zero with an error naming it (the model endpoint is the largest
@@ -156,7 +156,7 @@ the one in-agent egress channel the guard closes.
    (`PATROL_BASE_URL`, `PATROL_NOTIFY_URLS`, `PATROL_WIKI_REMOTE`). The
    operator's working copy `manifests/egress-networkpolicy.yaml`
    is **gitignored** and applied out-of-band: `oc apply -f
-   manifests/egress-networkpolicy.yaml`. [PLANNED: #34]
+   manifests/egress-networkpolicy.yaml`. [DONE: #34]
    8a. The allowlist is opt-in: the base apply stays self-contained. The
        committed `kustomization.yaml` still lists exactly six resources
        (`in-cluster-deployment.md` rule 1) and names neither the policy nor its
@@ -183,7 +183,7 @@ the one in-agent egress channel the guard closes.
 9. The patroller holds no egress-controlling behavior: it never applies,
    patches, queries, or reads the generated policy — the operator owns it, like
    every other in-cluster object (`constraints.md` rule 2, read-only forever).
-   [PLANNED: #34]
+   [DONE: #34]
    9a. The artifact path is operator surface only: the string
        `egress-networkpolicy` never appears in `patrol.py`.
    9b. The process never routes around the allowlist: a blocked destination
@@ -197,7 +197,7 @@ the one in-agent egress channel the guard closes.
 
 10. Operator acceptance, performed on a dev cluster with `oc` (documented here,
     not in the pytest suite — the `in-cluster-deployment.md` rule 17 pattern):
-    [PLANNED: #34]
+    [DONE: #34]
     1. render and capture —
        `oc -n ols-patroller exec deploy/ols-patroller -- python3.12 patrol.py
        --egress-policy > /tmp/egress.yaml` (or render on a workstation with the
@@ -265,4 +265,4 @@ the one in-agent egress channel the guard closes.
 
 | Ticket | Summary |
 |---|---|
-| #34 | This file's contract: the four-channel egress surface (rule 1), the default-deny policy (rule 2), the pure derivation `egress_destinations` (rules 4–4e) and resolution `resolve_hosts` (rule 5), the pure `render_egress_policy` shape (rules 6–6a), the offline `--egress-policy` mode (rules 7–7e), the committed template + gitignored artifact + README procedure + regeneration discipline (rules 8–8c), the process-has-no-egress-behavior pins (rules 9–9b), and the operator acceptance procedure (rule 10). The in-agent endpoint-override refusal lands in `kubectl-guard.md` rule 6c; `in-cluster-deployment.md`'s "no NetworkPolicy" constraint is superseded; ADR 0030. Impl commit also syncs `AGENTS.md`'s test list, `README.md`'s guard bullets, and `how/project-structure.md`'s symbol map out of its `[PLANNED: #34]` markers |
+| ~~#34~~ | ~~This file's contract: the four-channel egress surface (rule 1), the default-deny policy (rule 2), the pure derivation `egress_destinations` (rules 4–4e) and resolution `resolve_hosts` (rule 5), the pure `render_egress_policy` shape (rules 6–6a), the offline `--egress-policy` mode (rules 7–7e), the committed template + gitignored artifact + README procedure + regeneration discipline (rules 8–8c), the process-has-no-egress-behavior pins (rules 9–9b), and the operator acceptance procedure (rule 10). The in-agent endpoint-override refusal lands in `kubectl-guard.md` rule 6c; `in-cluster-deployment.md`'s "no NetworkPolicy" constraint is superseded; ADR 0030. Impl commit also syncs `AGENTS.md`'s test list, `README.md`'s guard bullets, and `how/project-structure.md`'s symbol map out of its `[DONE: #34]` markers~~ |

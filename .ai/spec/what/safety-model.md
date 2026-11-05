@@ -11,7 +11,7 @@ held to production standards: documented, unit-checked, and verified end-to-end.
    verb whitelist, Secret-access ban (all Secret access — names and metadata
    included, not just values) [DONE: #33], raw-path (`--raw`) refusal,
    local-file/credential-flag refusal [DONE: #33], and endpoint-override
-   (`--server`/`-s`) refusal [PLANNED: #34] (`kubectl-guard.md`).
+   (`--server`/`-s`) refusal [DONE: #34] (`kubectl-guard.md`).
 3. **Layer 2 — engine tool surface:** the agent is built with `create_deep_agent`
    and **no backend**, so it has no shell and no filesystem tools; deepagents'
    default `FilesystemMiddleware` (ls/write_file/edit_file/delete/glob/grep/execute)
@@ -56,7 +56,7 @@ held to production standards: documented, unit-checked, and verified end-to-end.
     [DONE: #33]. The endpoint-override refusal (rule 6c) joins them in
     `tests/test_egress_control.py`: every `--server`/`-s` spelling refused
     ahead of execution and in dry mode, `--server-print` and plain non-secret
-    reads still accepted [PLANNED: #34].
+    reads still accepted [DONE: #34].
 6b. **Fake-model e2e** drives complete patrols through the real engine — real
     `ChatOpenAI` + openai SDK + `create_deep_agent` + guard + shape pass + wiki
     git tail — with only the HTTP endpoint scripted and the cluster answered by
@@ -88,7 +88,7 @@ held to production standards: documented, unit-checked, and verified end-to-end.
     an in-process OpenAI-compatible fake behind the `make_model` seam, and the
     wiki, its repo, and any remote are test-local temporaries. It runs as part
     of the default test invocation and finishes in seconds.
-7. **Layer 4 — network egress allowlist** [PLANNED: #34]: in-cluster, the pod's
+7. **Layer 4 — network egress allowlist** [DONE: #34]: in-cluster, the pod's
    egress is default-deny, allowing only cluster DNS, the kube-apiserver, and
    the destinations derived from the patrol's own egress configuration
    (`PATROL_BASE_URL`, `PATROL_NOTIFY_URLS`, `PATROL_WIKI_REMOTE`) — a policy
@@ -118,7 +118,7 @@ held to production standards: documented, unit-checked, and verified end-to-end.
 
 | Ticket | Summary |
 |---|---|
-| #34 | Layer 4 — the network egress allowlist (rule 7): default-deny pod egress allowing only cluster DNS, the kube-apiserver, and the destinations derived from the patrol's own egress configuration, rendered by the offline `--egress-policy` mode and applied by the operator (`egress-control.md`, ADR 0030). Layer 1 gains the endpoint-override refusal (rule 6a's list; `kubectl-guard.md` rule 6c) |
+| ~~#34~~ | ~~Layer 4 — the network egress allowlist (rule 7): default-deny pod egress allowing only cluster DNS, the kube-apiserver, and the destinations derived from the patrol's own egress configuration, rendered by the offline `--egress-policy` mode and applied by the operator (`egress-control.md`, ADR 0030). Layer 1 gains the endpoint-override refusal (rule 6a's list; `kubectl-guard.md` rule 6c)~~ |
 | ~~#2~~ | In-cluster manifests: SA + `cluster-reader` ClusterRoleBinding + RWO PVC at `/wiki` + single-replica non-root Deployment — makes Layer 3 real (`in-cluster-deployment.md`; ADR 0006) |
 | #12 | Remediation handoff: dispatch governed AgenticRuns for actionable findings; harvest their result CRs back into the wiki |
 | ~~#11~~ | Guard hardening: refuse `--raw` proxy/stats endpoints (`kubectl-guard.md` rule 6a) |

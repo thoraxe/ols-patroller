@@ -21,3 +21,7 @@ manifests/deploy-key-patch.yaml
 # operator's copy of the storage-class patch template (in-cluster-deployment
 # rule 5a's override-by-patch) — opt-in wiring, never committed
 manifests/pvc-patch.yaml
+
+# operator's rendered egress allowlist artifact (#34) — opt-in wiring, applied
+# out-of-band with `oc apply -f`, never committed (egress-control.md rule 8)
+manifests/egress-networkpolicy.yaml
