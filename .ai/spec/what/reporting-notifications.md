@@ -455,7 +455,7 @@ entry whose status and severity are unchanged is wiki-only.
     not importable guarantees); the rule-7c raw-response classification
     and the rule-7b `empty wiki` reason are untouched — only the
     exception leg and the elapsed suffix are new.
-    [PLANNED: #88 — the line also carries the attempt's token counts. The
+    [DONE: #88 — the line also carries the attempt's token counts. The
     full format becomes `[patrol] reporting pass attempt N failed
     (<reason>, took E s, in I out O tokens)`: `I` and `O` are the failed
     attempt's `usage_metadata` `input_tokens` and `output_tokens` from
@@ -470,7 +470,7 @@ entry whose status and severity are unchanged is wiki-only.
     size). Everything else in this rule — elapsed seconds,
     `classify_exception`, and the rule-7c/rule-7b reasons — is
     unchanged.]
-7g. **Ceiling-aware retry** [PLANNED: #88]. The failed attempt's **cause**
+7g. **Ceiling-aware retry** [DONE: #88]. The failed attempt's **cause**
     decides what the retry sends. When attempt 1 fails with a **gateway
     failure** — the rule-7f `classify_exception` reason beginning
     `gateway failure (` (an OpenAI-style 5xx or a timeout) — attempt 2
@@ -533,7 +533,7 @@ entry whose status and severity are unchanged is wiki-only.
     `REPORT_TIMEOUT` (900 s) — the single tool-free structured call
     carries the entire patrol conversation (real-run evidence: ~100k
     tokens in, up to 16k out at the time; the bound is 32k once #88
-    lands — 64k from #63 until then — rule 8b [PLANNED: #88]) and
+    lands — 64k from #63 until then — rule 8b [DONE: #88]) and
     legitimately runs minutes on
     reasoning-capable models. A reporting pass that cannot finish under
     the bound never writes the wiki, so the next patrol re-explores just
@@ -559,7 +559,7 @@ entry whose status and severity are unchanged is wiki-only.
     pass passes the reporting bound) — the reporting model carries both
     reporting bounds (ADR
     `decisions/0021-reporting-pass-own-token-bound.md`).
-    [PLANNED: #88 — the reporting bound drops 64000 → 32000, keeping
+    [DONE: #88 — the reporting bound drops 64000 → 32000, keeping
     every word of the reasoning-exhaustion rationale above. The gateway
     caps wall-clock time, not tokens, and the #63 value spends it: the
     #88 soak's 64k-bounded generations hit the ~900 s cutoff at ~902 s
@@ -677,7 +677,7 @@ entry whose status and severity are unchanged is wiki-only.
 
 | Ticket | Summary |
 |---|---|
-| #88 | The shape pass inside the model gateway's ~900 s ceiling (rules 7f, 7g, 8a parenthetical, 8b value here; rule 8b's `REPORT_MAX_TOKENS` 64000 → 32000 also lands in `wiki-memory.md`, `patrol-engine.md`, `system-overview.md`, `how/agent-engine.md`, and `how/reporting-pipeline.md`; ADR 0031): the bound halves because a 64k-bounded generation hit the gateway's ~900 s wall clock at ~902 s twice (≈71 output tok/s) while #63's successful run needed only ~20k completion tokens — ~450 s at 32000, still ~12k above the observed completion. A gateway-failure retry becomes ceiling-aware (rule 7g): attempt 2 rebuilds its base from the raw conversation compacted at the new hard-coded `SHAPE_TOOL_KEEP_RETRY` (500 characters) and asks for the most concise valid report — with the contract re-stated after the corrective and the size note last — instead of repeating the identical request; non-gateway failures keep their correctives and the 1500-char cap, and the rule-7b empty-wiki corrective stays distinct. The attempt-failure log line gains the attempt's token counts (`in I out O tokens`, `?` when unknown). Total-failure behavior is unchanged (`wiki-memory.md` rule 33). Splitting the report into two calls was rejected (ADR 0031). Exploration overshoot (547,804 vs 500,000 input tokens, checked per turn) is out of scope here — the token soft-stop owns it (`patrol-engine.md` rule 8b, #10). Impl commit also syncs `AGENTS.md`'s test list |
+| ~~#88~~ | ~~The shape pass inside the model gateway's ~900 s ceiling (rules 7f, 7g, 8a parenthetical, 8b value here; rule 8b's `REPORT_MAX_TOKENS` 64000 → 32000 also lands in `wiki-memory.md`, `patrol-engine.md`, `system-overview.md`, `how/agent-engine.md`, and `how/reporting-pipeline.md`; ADR 0031): the bound halves because a 64k-bounded generation hit the gateway's ~900 s wall clock at ~902 s twice (≈71 output tok/s) while #63's successful run needed only ~20k completion tokens — ~450 s at 32000, still ~12k above the observed completion. A gateway-failure retry becomes ceiling-aware (rule 7g): attempt 2 rebuilds its base from the raw conversation compacted at the new hard-coded `SHAPE_TOOL_KEEP_RETRY` (500 characters) and asks for the most concise valid report — with the contract re-stated after the corrective and the size note last — instead of repeating the identical request; non-gateway failures keep their correctives and the 1500-char cap, and the rule-7b empty-wiki corrective stays distinct. The attempt-failure log line gains the attempt's token counts (`in I out O tokens`, `?` when unknown). Total-failure behavior is unchanged (`wiki-memory.md` rule 33). Splitting the report into two calls was rejected (ADR 0031). Exploration overshoot (547,804 vs 500,000 input tokens, checked per turn) is out of scope here — the token soft-stop owns it (`patrol-engine.md` rule 8b, #10). Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#85~~ | ~~Patrol-history prose is banned in the report contract (rule 5's #85 clauses; behavior in `wiki-memory.md` rule 29b, ADR 0032): the wiki records current state only — no per-patrol headline log, no `History:` list, no "as of patrol #N" chronology, because git history is the record of what changed when; the opening prose stays a few lines; a `###` status block after the Anomaly log is legal while a sixth `##` section is not. #51's copy-verbatim sentence is narrowed by the same exception (`except that patrol-history prose is never carried forward`) and the empty-wiki corrective repeats the narrowed wording, so no model-facing surface carries both asks. The wiki-repair mode's minimal merge drops history prose instead of preserving it (rule 7d). Teaching only — the working-set/size-note machinery is unchanged and length still never gates validation. Impl commit also syncs `AGENTS.md`'s test list and `how/reporting-pipeline.md`'s `REPORT_CONTRACT` row~~ |
 | ~~#34~~ | ~~Only the Constraint sentence that left network-level egress control open: it now points at `egress-control.md` (the derived default-deny allowlist, ADR 0030). The notification contract here is unchanged — the configured sinks stay the deliberate outbound notification allowlist, and what they may carry is the guard's business~~ |
 | ~~#77~~ | ~~Dev/test host portability (rule 9b here; `wiki-memory.md` rules 4c/4g; ADR 0029): stdout/stderr are reconfigured to UTF-8/LF at startup so the ` · ` separator, severity marks, and `🔔` prefix print as the same bytes on every host, and a non-UTF-8 stream never raises. The wiki half is the byte-determinism pin on rule 4c (`wiki-memory.md`) and the explicit-UTF-8 read rule. Impl commit also syncs `AGENTS.md` (test conventions + test list) and `how/project-structure.md`~~ |

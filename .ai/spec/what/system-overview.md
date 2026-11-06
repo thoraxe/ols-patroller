@@ -188,7 +188,7 @@ the prompt's soft turn target `SOFT_TARGET_TURNS` = 20, decoupled from the hard
 `REQUEST_MAX_TOKENS` 16000 per exploration turn, `REPORT_MAX_TOKENS` 32000
 per structured reporting/repair call
 (`reporting-notifications.md` rule 8b) [DONE: #63 — was a flat
-`max_tokens` 16000; PLANNED: #88 lowers the reporting bound
+`max_tokens` 16000; DONE: #88 lowers the reporting bound
 64000 → 32000], request
 timeout — `REQUEST_TIMEOUT` 300 s per exploration turn, `REPORT_TIMEOUT`
 900 s per structured reporting/repair call

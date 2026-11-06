@@ -110,8 +110,14 @@ TOOL_TIMEOUT = int(os.environ.get("PATROL_TOOL_TIMEOUT", "60"))
 # cluster never bootstraps its memory.
 REQUEST_TIMEOUT = 300  # seconds per exploration turn
 REPORT_TIMEOUT  = 900  # seconds per structured reporting/repair call
+# The reporting bound is also a *wall-clock* bound in disguise (#88, rule 8b;
+# ADR 0031): the gateway caps a request at ~900 s, and at the observed ~71
+# output tok/s a 64000-token bound needs the whole window — both attempts of
+# the #88 soak 504ed at ~902 s. 32000 is ~450 s of generation and still ~12k
+# above #63's observed ~20k completion, so the reasoning-exhaustion fix stays
+# in force (the bound must never come back down to the starvation point).
 REQUEST_MAX_TOKENS = 16_000  # completion tokens per exploration turn
-REPORT_MAX_TOKENS  = 64_000  # completion tokens per structured reporting/repair call
+REPORT_MAX_TOKENS  = 32_000  # completion tokens per structured reporting/repair call
 OUT_CAP    = 15_000  # max chars of tool output fed back to the model
 # Head+tail split of rule 11's truncated output (kubectl-guard.md rule 11, #10;
 # ADR 0027): kubectl tables carry headers/oldest rows at the head, logs and
@@ -131,6 +137,14 @@ OUT_TAIL   = 5_000  # tail chars kept after the truncation marker
 # tool result is more citation than the report contract asks for; the full
 # text stays in the patrol's own transcript (pod logs) and the wiki's prose.
 SHAPE_TOOL_KEEP = 1500  # chars of each tool result the shape pass carries
+# Ceiling-aware retry cap (reporting-notifications.md rule 7g, #88; ADR 0031):
+# when attempt 1 failed at the gateway's wall clock, repeating the identical
+# request spends a second full window and fails the same way — so attempt 2
+# rebuilds its base from the raw conversation compacted at this smaller cap
+# (a third of the first attempt's tool-result payload, which is what the
+# gateway's clock actually bills) and asks for the most concise valid report.
+# Hard-coded, not env-configurable — the same convention as the bounds above.
+SHAPE_TOOL_KEEP_RETRY = 500  # chars of each tool result the retry carries
 CLUSTER_ID = os.environ.get("PATROL_CLUSTER_ID", "local")  # wiki commit identity
 WIKI_REMOTE = os.environ.get("PATROL_WIKI_REMOTE", "")     # optional wiki replication
 # Wiki push bounds (wiki-memory.md rule 4e). Read at call time, not import time,
@@ -1213,7 +1227,25 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
     (its ask is a minimal merge that preserves the old wiki minus the
     patrol-history prose rule 29b drops). No `current_wiki` (or an empty one)
     renders no note.
+
+    The retry is ceiling-aware (reporting-notifications.md rule 7g, #88): when
+    attempt 1 failed at the model gateway (a rule-7f `gateway failure (...)`
+    reason), attempt 2 discards the attempt-1 message list, rebuilds its base
+    from the raw conversation compacted at `SHAPE_TOOL_KEEP_RETRY`, and appends
+    one user message — the mode's prefix, the pinned brevity corrective,
+    REPORT_CONTRACT (the rebuilt base no longer carries it), then the size note
+    last. Every other failure keeps the append-only retry and the
+    `SHAPE_TOOL_KEEP` base, so an empty wiki is still answered by re-demanding
+    the wiki, never by asking for brevity.
     """
+    # Rule 7g (#88): the pinned brevity corrective — the ceiling is wall-clock
+    # time, so the retry must ask for a smaller answer, not just a smaller
+    # prompt.
+    ceiling_corrective = (
+        "Your previous attempt failed at the model gateway's request ceiling — "
+        "the request took too long. Return the PatrolReport as concisely as "
+        "possible: the shortest valid updated_wiki, findings reduced to one "
+        "line each, no optional prose.")
     if repair is None and wiki_repair is None:
         prefix = ("You are the REPORTING PASS for the cluster patrol recorded above. "
                   "The patrol completed and wrote its final summary. "
@@ -1265,6 +1297,11 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
     base = compact_messages(messages)
     msgs: list = [*base, {"role": "user",
                           "content": prefix + REPORT_CONTRACT + note_suffix}]
+    # Rule 7g (#88): attempt 2's prompt when attempt 1 died at the gateway —
+    # the shrunk base plus one message that keeps the mode's framing, asks for
+    # brevity, re-states the contract, and leaves the size note last.
+    ceiling_prompt = (f"{prefix}\n\n{ceiling_corrective}\n\n"
+                      f"{REPORT_CONTRACT}{note_suffix}")
     # Rule 7b (#51): the empty-wiki classification keys on the wiki field alone
     # (zero findings is legal and never triggers it). A wiki-less parse is a
     # failed attempt — retried with its own named corrective — and the last
@@ -1277,6 +1314,7 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
         structured = model.with_structured_output(
             PatrolReport, method="function_calling", include_raw=True)
         started = time.monotonic()  # rule 7f (#66): the ceiling is measurable
+        usage = None
         try:
             result = await structured.ainvoke(msgs)
             # include_raw envelope (rule 7c, #63): a dict carrying a 'parsed'
@@ -1287,6 +1325,7 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
             if isinstance(result, dict) and "parsed" in result:
                 parsing_error = result.get("parsing_error")
                 raw = result.get("raw")
+                usage = getattr(raw, "usage_metadata", None)
                 result = result.get("parsed")
                 if parsing_error is not None:
                     reason = str(parsing_error)
@@ -1309,9 +1348,24 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
         except Exception as e:  # noqa: BLE001
             reason = classify_exception(e)  # rule 7f (#66)
         elapsed = int(time.monotonic() - started)
+        # Rule 7f (#88): the attempt's token counts make the ceiling and its
+        # throughput readable from pod logs in every failure mode — `?` when
+        # there is no raw response (an exception) or no metadata, so the line
+        # is always the same shape.
+        usage = usage if isinstance(usage, dict) else {}
+        in_tokens = usage.get("input_tokens")
+        out_tokens = usage.get("output_tokens")
+        in_text = in_tokens if isinstance(in_tokens, int) else "?"
+        out_text = out_tokens if isinstance(out_tokens, int) else "?"
         print(f"[patrol] reporting pass attempt {attempt} failed ({reason}, "
-              f"took {elapsed} s)", file=sys.stderr)
-        msgs = [*msgs, {"role": "user", "content": corrective + note_suffix}]
+              f"took {elapsed} s, in {in_text} out {out_text} tokens)",
+              file=sys.stderr)
+        if reason.startswith("gateway failure ("):  # rule 7g (#88)
+            msgs = [*compact_messages(messages,
+                                      keep_chars=SHAPE_TOOL_KEEP_RETRY),
+                    {"role": "user", "content": ceiling_prompt}]
+        else:
+            msgs = [*msgs, {"role": "user", "content": corrective + note_suffix}]
     return last_parsed
 
 
