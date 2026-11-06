@@ -52,6 +52,16 @@ redefined here.
   (`WIKI_CHAR_BUDGET`, 20,000) warns on overshoot (write path, repair
   pass, `--wiki-stats`) without ever failing validation. The wiki is what
   the next patrol reads; the repo is what the auditor reads.
+- **Patrol-history prose** — document-level prose replaying what each
+  patrol did and when (#85, `wiki-memory.md` rule 29b): a per-patrol
+  HEADLINE log, a hand-maintained `History:` list, an "as of patrol #N"
+  chronology. Banned — git history is the record of what changed when, so
+  the document carries current state only. Deliberately **not** a
+  synonym for per-entry hypothesis state: an entry's `first_seen`,
+  `last_verified`, `status`, and its persistence notes ("unfixed through
+  5th patrol") are current-entry state and stay (rules 7, 12). Taught by
+  the report contract (`reporting-notifications.md` rule 5) and the
+  patrol prompt (`patrol-engine.md` rule 3f), never validated (ADR 0032).
 - **Size note** — the model-facing feedback line (#67): a deterministic
   one-liner appended to the shape pass's user message by
   `wiki_size_note(content, *, budget=None)` (`wiki-memory.md` rule 29a) naming the

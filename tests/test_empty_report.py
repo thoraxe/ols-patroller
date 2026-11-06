@@ -36,12 +36,26 @@ from langchain_core.messages import AIMessage
 
 # ------------------------------------------------------ contract pins
 
+# Rule 5's #85 narrowing of the #51 copy-verbatim ask, verbatim
+# (reporting-notifications.md rule 5; wiki-memory.md rule 29b).
+NO_HISTORY_COPY_CLAUSE = (
+    "copy unchanged sections verbatim except that patrol-history prose is "
+    "never carried forward."
+)
+
+
 def test_report_contract_requires_the_wiki():
     """Rule 5 (#51): the report contract demands the full wiki on every
-    report and states an empty updated_wiki is never a valid answer."""
+    report and states an empty updated_wiki is never a valid answer.
+    Rule 5's #85 narrowing: the copy-verbatim ask carries the
+    patrol-history exception, so a no-change patrol cannot be read as a
+    licence to reproduce a History: list (wiki-memory.md rule 29b)."""
     contract = patrol.REPORT_CONTRACT
     assert "updated_wiki is required on every report" in contract
-    assert "copy unchanged sections verbatim" in contract
+    assert NO_HISTORY_COPY_CLAUSE in " ".join(contract.split())
+    assert "copy unchanged sections verbatim." not in contract, (
+        "the unqualified copy-verbatim ask is superseded by the #85"
+        " exception — it contradicted \"never write patrol-history prose\"")
     assert "An empty updated_wiki is never a valid answer" in contract
 
 
@@ -87,7 +101,8 @@ def _shape(stub):
 def test_empty_wiki_result_is_retried_with_named_corrective():
     """Rule 7b: an empty-updated_wiki result is a failed attempt — one
     retry whose corrective message names the empty wiki; a good retry
-    recovers."""
+    recovers. Rule 7b's #85 amendment: the corrective repeats rule 5's
+    *narrowed* copy-verbatim ask, never the unqualified one."""
     stub = _StubShapeModel([_report(""), _report("full wiki")])
     result = _shape(stub)
     assert result.updated_wiki == "full wiki"
@@ -96,6 +111,10 @@ def test_empty_wiki_result_is_retried_with_named_corrective():
     assert "updated_wiki" in corrective
     assert "empty" in corrective.lower()
     assert "not a valid PatrolReport" not in corrective  # distinct from rule 7's
+    flat = " ".join(corrective.split())
+    assert NO_HISTORY_COPY_CLAUSE in flat, (
+        "the empty-wiki corrective must repeat the narrowed copy-verbatim ask")
+    assert "copy unchanged sections verbatim." not in flat
 
 
 def test_double_empty_wiki_returns_the_report():
@@ -233,10 +252,22 @@ def test_shape_pass_parsing_error_keeps_its_message(capsys):
 
 # ------------------------------------------- wiki-repair mode (rule 7d, #60)
 
+# Rule 7d's #85 amendment (wiki-memory.md rule 29b), verbatim: the minimal
+# merge drops patrol-history prose instead of preserving it.
+NO_PATROL_HISTORY_MERGE_CLAUSE = (
+    "Drop patrol-history prose while merging: no per-patrol headline log, no "
+    'History: list, no "as of patrol #N" chronology — git history is the '
+    "record."
+)
+
+
 def test_wiki_repair_mode_carries_old_wiki_and_findings():
     """Rule 7d (#60): the wiki-repair prompt states the reporting pass
     could not emit the wiki, carries the old wiki verbatim and the
-    observed findings/notifications, and asks for a minimal merge."""
+    observed findings/notifications, and asks for a minimal merge.
+    Rule 7d's #85 amendment: the minimal merge drops patrol-history prose
+    rather than preserving it — wiki-memory.md rule 29b wins over
+    "everything else preserved"."""
     stub = _StubShapeModel([_report("merged wiki")])
     result = asyncio.run(patrol.shape_report(
         stub, [{"role": "user", "content": "patrol transcript"}], budget_cut=False,
@@ -248,6 +279,19 @@ def test_wiki_repair_mode_carries_old_wiki_and_findings():
     assert "finding one" in prompt, "the observed findings must ride (rule 7d)"
     assert "notify one" in prompt, "the observed notifications must ride (rule 7d)"
     assert "minimal" in prompt.lower(), "the ask must be a minimal rewrite (rule 7d)"
+    flat = " ".join(prompt.split())
+    assert NO_PATROL_HISTORY_MERGE_CLAUSE in flat, (
+        "the minimal merge must drop patrol-history prose instead of"
+        " preserving it (rule 7d's #85 amendment, wiki-memory.md rule 29b)")
+    assert "preserve everything else verbatim" not in flat, (
+        "the unqualified preservation ask is superseded: it would carry a"
+        " patrol-history HEADLINE log straight back into the wiki")
+    # the #51 copy-verbatim ask reaches this prompt through REPORT_CONTRACT,
+    # already narrowed by #85 — unchanged content is copied, history prose is not
+    assert NO_HISTORY_COPY_CLAUSE in flat, (
+        "the wiki-repair prompt must carry the narrowed copy-verbatim ask:"
+        " everything else is preserved, patrol-history prose is dropped")
+    assert "copy unchanged sections verbatim." not in flat
 
 
 def test_wiki_repair_mode_empty_wiki_is_retried():

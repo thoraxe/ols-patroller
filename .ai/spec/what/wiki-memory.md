@@ -861,8 +861,9 @@ load-bearing constraint of #5).
       instructions, the size note is the measurement;
     - the **rule-7d wiki-repair pass carries no size note** on any of its
       invocations, including its internal retry: its ask is a minimal
-      merge that preserves the old wiki, and a prune instruction would
-      contradict it.
+      merge that preserves the old wiki (dropping only the patrol-history
+      prose rule 29b forbids), and a prune instruction would contradict
+      it.
     `REPORT_CONTRACT`'s working-set item is mode-agnostic and shared by
     every invocation, so its wording is hedged ("a size line **may** be
     appended below") — the wiki-repair mode and direct
@@ -874,6 +875,80 @@ load-bearing constraint of #5).
     the teach-harder half of #67). See
     `decisions/0025-wiki-size-feedback-not-prose-compaction.md` for the
     rejected process-side alternative.
+29b. **No patrol-history prose** [PLANNED: #85]. The wiki records **current
+    state only**. It must never carry **patrol-history prose**: a
+    document-level per-patrol HEADLINE log, a hand-maintained `History:`
+    list, a repeating "as of patrol #N" / "Last: #31 …" chronology, or
+    any other document-level replay of what each patrol did and when. The
+    git history is the record of what changed when (rules 4a/4d/9/28);
+    the wiki is the working set (rules 28–29). A prose history is a
+    second, lossy archive — and on a live cluster it is already stale and
+    self-contradicting (the #85 evidence: the intro read "Last: #31"
+    while the frontmatter read `patrol_count: 36`,
+    `last_patrol: 2026-11-06T15:12`).
+    - **Scope: document-level only.** This bans a patrol *log*, not
+      per-entry hypothesis state. The refinement loop needs per-entry
+      persistence tracking ("unfixed through 5th patrol", "unchanged
+      18:44") and the entry metadata line carries `first_seen`,
+      `last_verified`, and `status` (rules 7, 12) — that is
+      current-entry state, which stays. A document-level replay is what
+      is forbidden.
+    - **The opening prose stays short.** The frontmatter plus the intro
+      are a few lines: what the wiki is and the dominant standing
+      severity / anything a human must see first — never a chronology.
+      The report contract states the model-facing minimum of this
+      (`reporting-notifications.md` rule 5's "a few lines" clause); "what
+      a human must see first" is the rule's scope, not a second
+      requirement on the contract text.
+    - **Structural room for a status block.** Section order is free and
+      level-3+ headings are unconstrained prose (rule 11), so a
+      `### Sentinel memory` status block after the Anomaly log is legal;
+      a **sixth `##` section is not** (rule 11's closed section set).
+      Keep the block prose: a `###` heading does not end the enclosing
+      level-2 section, so a top-level `- `/`* ` bullet inside a block
+      placed after the Anomaly log is scanned as an Anomaly-log entry and
+      must carry a full metadata line (rule 12) — a bulleted status block
+      fails validation. Indent any list under the block, or write the
+      status as text.
+    - **Prose sections are summarized, not accumulated.** Baselines,
+      Open questions, and Topology are prose with no mechanical cap
+      (rules 5, 11, 13) — rule 29's soft budget and its model-facing
+      size note (rule 29a) are the only pressure, so summarize them
+      aggressively instead of appending this patrol's observations on
+      top of the last patrol's.
+    - **Taught, never validated.** This is not a validation rule:
+      `validate_wiki` (rule 15) never judges prose and the wiki stays a
+      document (Constraints below), so `wiki_version` stays 1 and no
+      write-path behavior changes. The rule is taught by the report
+      contract (`reporting-notifications.md` rule 5) and the patrol
+      prompt (`patrol-engine.md` rule 3f), and measured by rule 29's
+      budget and size note. A process-side prose strip stays rejected
+      (ADR 0025) and is not the answer here: the ban forbids the class
+      of prose the model must not write in the first place
+      (`decisions/0032-no-patrol-history-prose.md`).
+    - **Scope lives here, not in the prompt.** The contract's three
+      sentences (`reporting-notifications.md` rule 5) are the
+      model-facing surface list: they name the document-level forms that
+      are banned, the bounded intro, and the structural answer, and they
+      are deliberately terse. The qualifiers in this rule are the spec of
+      record — per-entry persistence tracking is current-entry state and
+      stays (rule 7), and a status block stays prose (above). Refining
+      the model-facing wording further is a follow-up spec change, not a
+      free-text edit.
+    - **Not a licence to copy history forward.** Rule 5's #51 requirement
+      (`reporting-notifications.md`: `updated_wiki` on every report, the
+      unchanged wiki returned as-is) is about *content completeness*: a
+      no-change patrol still returns the whole wiki. It never authorized
+      carrying patrol-history prose forward — the contract's copy-verbatim
+      sentence is narrowed by the same exception in the same clause, so a
+      no-change patrol over a history-bearing wiki rewrites that prose out
+      while returning everything else.
+    - **Why it costs.** Every over-budget character is paid twice per
+      patrol — once as the reporting pass's prompt input, once in its
+      `updated_wiki` output — and rule 29a's size note alone did not
+      stop the growth (#85 evidence: 27,773 characters, 39% over the
+      20,000 budget, 16,402 of them in the Anomaly log). The Anomaly
+      log's own byte bound is #86's concern, not this rule's.
 
 ### Still-Empty Safety Net
 
@@ -903,8 +978,16 @@ write.
     emit the wiki and carries the old on-disk wiki verbatim (the seed,
     rule 14, when the file is absent) plus the observed report's findings
     and notifications, asking for the old wiki rewritten **minimally** —
-    the findings merged in, everything else preserved. The wiki-repair
-    call never saw the cluster: its findings and notifications are
+    the findings merged in, everything else preserved. [PLANNED: #85 —
+    rule 29b wins over "preserved": the minimal merge **drops
+    patrol-history prose** rather than carrying it forward, and the pass's
+    user message says so verbatim (`reporting-notifications.md`
+    rule 7d):
+    `Drop patrol-history prose while merging: no per-patrol headline log, no History: list, no "as of patrol #N" chronology — git history is the record.`
+    Everything else about the merge is unchanged — the ask is still
+    minimal, and a merge that preserved a per-patrol HEADLINE log would
+    re-teach the model exactly the prose rule 29b forbids.]
+    The wiki-repair call never saw the cluster: its findings and notifications are
     **never delivered** — the patrol delivers the observed report's
     findings and notifications, exactly as rule 16's keep-old-wiki leg
     does; only the wiki is taken from the repair. The repaired wiki is
@@ -1068,6 +1151,7 @@ write.
 
 | Ticket | Summary |
 |---|---|
+| #85 | The wiki records current state, not patrol history (rule 29b; the wiki-repair half is rule 30, ADR `decisions/0032-no-patrol-history-prose.md`): document-level patrol-history prose is banned — a per-patrol HEADLINE log, a hand-maintained `History:` list, an "as of patrol #N" chronology — while per-entry hypothesis state (rule 7's persistence tracking, the metadata line's `first_seen`/`last_verified`/`status`) stays, being current-entry state, not a patrol log. The opening prose stays a few lines; a `###` status block after the Anomaly log is legal, a sixth `##` section is not; the prose sections are summarized rather than accumulated. Taught, never validated: `validate_wiki` judges no prose (rule 15), `wiki_version` stays 1, the write path is unchanged, and the pressure stays rule 29's budget plus rule 29a's size note. The wiki-repair minimal merge drops history prose instead of preserving it (rule 30). The contract text is `reporting-notifications.md` rule 5, the prompt teaching is `patrol-engine.md` rule 3f; the Anomaly log's own byte bound is #86. Impl commit also syncs `AGENTS.md`'s test list |
 | ~~#77~~ | ~~Dev/test host portability (rule 4c's byte determinism, rule 4g, rule 27's blob decode, rule 31's legacy leg; the console half is `reporting-notifications.md` rule 9b; ADR 0029): every wiki write is UTF-8/LF/no-BOM with the encoding pinned, every wiki read decodes UTF-8 explicitly (legacy bytes replaced, never fatal; a legacy wiki is runnable but never re-written by a model-free leg; an undecodable history blob yields the empty list), and stdout/stderr are reconfigured to UTF-8/LF so the console surface is host-independent. The suite is green on Linux and Windows with the same command: fake cluster CLIs become host-portable, test subprocess envs start from `os.environ` and delete `PATROL_*`, and test wiki fixtures/readers use explicit UTF-8. The dev-Python pin (`.python-version` 3.12) shipped with #77. Impl commit also syncs `AGENTS.md` (test conventions + test list) and `how/project-structure.md` (the wiki-I/O encoding surface + the new test file)~~ |
 | ~~#35~~ | ~~Notification dedup, state-keyed (rules 12b–12c plus the rule-16 write-path amendment; behavior in `reporting-notifications.md` rules 4a–4e, ADR 0026): entries gain an optional `severity` pair (judged when present) so severity changes are diffable across patrols, and a process-owned `last_notified` date pair that the write path stamps for every entry a notification named this patrol (after compaction, before the frontmatter stamp, accepted writes only). The wiki is the dedup baseline; standing unchanged entries stay wiki-only. Impl commit also syncs `README.md`'s config table and `AGENTS.md`'s test list~~ |
 | ~~#67~~ | ~~Model-facing wiki size feedback (rule 29a; the contract amendment is `reporting-notifications.md` rule 5): every report-pass invocation carries a deterministic `wiki_size_note` line — the wiki-in-play's character count, the budget, the floored percentage, and the excess (over budget, with a named prune target) or headroom (under budget) — appended after `REPORT_CONTRACT`; the report pass reports the on-disk wiki, the validation-repair pass the rejected wiki, and the wiki-repair pass carries none. The contract names the consequence chain (over-budget wiki → slower reporting pass → gateway ceiling → the next patrol re-reading prose) and requires the returned wiki to be smaller when over budget unless new facts require the space. ADR 0025 rejects process-side prose compaction. Impl commit also syncs `AGENTS.md`'s test list~~ |
