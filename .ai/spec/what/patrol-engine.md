@@ -225,9 +225,10 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
   [DONE: #10]
 - Engine constants (not configurable): temperature 0.3, completion-token
   bounds — `REQUEST_MAX_TOKENS` 16000 per exploration turn,
-  `REPORT_MAX_TOKENS` 64000 per structured reporting/repair call
+  `REPORT_MAX_TOKENS` 32000 per structured reporting/repair call
   (`reporting-notifications.md` rule 8b) [DONE: #63 — was a flat
-  `max_tokens` 16000 on the whole client], request
+  `max_tokens` 16000 on the whole client; DONE: #88 lowers the
+  reporting bound 64000 → 32000], request
   bounds — `REQUEST_TIMEOUT` 300 s per exploration turn, `REPORT_TIMEOUT` 900 s
   per structured reporting/repair call (`reporting-notifications.md` rule 8a)
   [DONE: #49 — was a flat 300 s on the whole client]
@@ -246,6 +247,7 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
 
 | Ticket | Summary |
 |---|---|
+| ~~#88~~ | ~~The reporting/repair completion bound drops to `REPORT_MAX_TOKENS` 32000 in the engine-constants line above (`reporting-notifications.md` rule 8b, ADR 0031): a 64k-bounded shape-pass generation hits the model gateway's ~900 s wall clock at ~902 s (≈71 output tok/s), while #63's successful run needed only ~20k completion tokens — 32000 is ~450 s of generation and still ~12k of reasoning headroom. Exploration's `REQUEST_MAX_TOKENS` 16000 and both timeouts are unchanged; no new config surface~~ |
 | ~~#85~~ | ~~Prompt teaching that the wiki records current state, not patrol history (rule 3f; the behavior is `wiki-memory.md` rule 29b, the contract text `reporting-notifications.md` rule 5, ADR 0032): the system prompt carries one clause naming git history as the record of what changed when and asking for current state only — no per-patrol headline, no `History:` list, no "as of patrol #N" chronology — plus the short-intro instruction. Teaching only: no new config surface, no guard change, rule 3's patrol-order wording unchanged. Impl commit also syncs `AGENTS.md`'s test list and `how/project-structure.md`'s `SYSTEM_PROMPT` row (its teaching list gains rule 3f)~~ |
 | ~~#6~~ | ~~Prompt consumes recheck commands: run an entry's `recheck` first when re-verifying it, keep it current when the verification path changes (`wiki-memory.md` rule 12a)~~ |
 | ~~#10~~ | ~~Cost control: token soft-stop (rule 8b), soft turn target decoupled from the hard budget (rule 8a), head+tail truncation replacing head-only `OUT_CAP` capping (`kubectl-guard.md` rule 11) — scoping settled whole-cluster by ADR 0027 (the wiki economy of rule 3e already is the scoping mechanism; per-namespace rounds rejected). Impl commit also syncs `AGENTS.md`'s test list~~ |

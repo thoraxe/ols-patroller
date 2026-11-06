@@ -185,10 +185,11 @@ fed back to the model (the cap envelope; the truncated view itself is head+tail 
 `OUT_HEAD` 9,000 / `OUT_TAIL` 5,000, `kubectl-guard.md` rule 11 [DONE: #10]);
 the prompt's soft turn target `SOFT_TARGET_TURNS` = 20, decoupled from the hard
 `max_steps` budget (`patrol-engine.md` rule 8a) [DONE: #10]; model temperature 0.3, completion-token bounds —
-`REQUEST_MAX_TOKENS` 16000 per exploration turn, `REPORT_MAX_TOKENS` 64000
+`REQUEST_MAX_TOKENS` 16000 per exploration turn, `REPORT_MAX_TOKENS` 32000
 per structured reporting/repair call
 (`reporting-notifications.md` rule 8b) [DONE: #63 — was a flat
-`max_tokens` 16000], request
+`max_tokens` 16000; DONE: #88 lowers the reporting bound
+64000 → 32000], request
 timeout — `REQUEST_TIMEOUT` 300 s per exploration turn, `REPORT_TIMEOUT`
 900 s per structured reporting/repair call
 (`reporting-notifications.md` rule 8a) [DONE: #49 — was a flat 300 s on

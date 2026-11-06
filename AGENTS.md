@@ -148,8 +148,9 @@ under current policy (clean implementation review + `implementation-complete`):
   `REPORT_CONTRACT`'s three pinned clauses and the `SYSTEM_PROMPT` clause
   with its placement before the closing summary guidance); and
   `tests/test_request_bounds.py` covers the per-call-shape request-bound
-  contract (#49 and #63: the two timeout constants, the two completion-token
-  bound constants, and the `make_model` timeout + `max_tokens` passthrough);
+  contract (#49 and #63, plus #88's lowered reporting bound: the two timeout
+  constants, the two completion-token bound constants,
+  and the `make_model` timeout + `max_tokens` passthrough);
   `tests/test_notifications.py` covers the apprise multi-sink notification
   contract (#9: the `parse_notify_urls` and `report_notify_type` matrices,
   and the `notify` delivery semantics over a fake apprise — the
@@ -180,7 +181,8 @@ under current policy (clean implementation review + `implementation-complete`):
   unqualified preservation ask gone — and the
   empty-result reason classification of #63: the pure
   `classify_empty_result` matrix over fake raw responses and the shape
-  pass's attempt-failure log lines carrying the classified reasons via the
+  pass's attempt-failure log lines carrying the classified reasons and
+  (#88) the attempt's token counts via the
   include_raw envelope, with the envelope parsing-error path); and
   `tests/test_shape_input.py` covers the shape-pass input-compaction and
   failure-visibility contract (#66: the `compact_messages` matrix — tool-result
@@ -192,7 +194,13 @@ under current policy (clean implementation review + `implementation-complete`):
   the total-failure tail wiring — one FAILURE notification with the pinned
   message plus the rule-33 minimal write, fresh-deployment and on-disk legs —
   and the flipped attempt-failure log-line pins land in
-  `test_patrol_deepagents.py` and `test_empty_report.py`); and
+  `test_patrol_deepagents.py` and `test_empty_report.py`), plus the
+  ceiling-aware-retry contract of #88 (the `SHAPE_TOOL_KEEP_RETRY` constant
+  pin, the gateway-failure retry shrinking its base and appending the pinned
+  brevity corrective before the contract with the size note last — across the
+  report, validation-repair, and wiki-repair modes — the non-gateway retry
+  staying append-only at the 1500-char base, and the `?` token-count field of
+  the exception leg); and
   `tests/test_cost_control.py` covers the cost-control contract (#10:
   the `SOFT_TARGET_TURNS`, `TOKEN_BUDGET`, and `OUT_HEAD`/`OUT_TAIL`
   constants, the `--token-budget` CLI flag + `PATROL_TOKEN_BUDGET` env

@@ -23,7 +23,8 @@ model; the wiring-level e2e (warning, no write, findings preserved)
 lives in test_patrol_deepagents.py. The empty-result reason
 classification (#63, rule 7c) is also driven here: the pure classifier
 matrix over fake raw responses, and the shape pass's attempt-failure
-log lines carrying the classified reason.
+log lines carrying the classified reason plus (#88, rule 7f) the
+attempt's token counts.
 
 Run: uv run --group dev pytest tests/ -q
 """
@@ -198,7 +199,8 @@ def _envelope(raw, parsed=None, parsing_error=None):
 def test_classify_empty_result_matrix():
     """Rule 7c: the pure classifier over the raw response — truncated at
     max_tokens (finish_reason 'length', or the completion-token count
-    reached the bound) vs no tool call (everything else)."""
+    reached the bound) vs no tool call (everything else). The default bound
+    is the reporting one, 32000 since #88."""
     classify = patrol.classify_empty_result
     # The #63 root cause, verbatim shape: all tokens spent reasoning.
     assert classify(_raw("length", 16_000)) == \
@@ -209,10 +211,11 @@ def test_classify_empty_result_matrix():
         "empty result (truncated at max_tokens)"
     # Under the bound, finished, no tool call emitted.
     assert classify(_raw("stop", 200)) == "empty result (no tool call)"
-    # The bound is a parameter — the reporting bound is the default.
-    assert classify(_raw("stop", 64_000)) == \
+    # The bound is a parameter — the reporting bound (32000, #88) is the
+    # default.
+    assert classify(_raw("stop", 32_000)) == \
         "empty result (truncated at max_tokens)"
-    assert classify(_raw("stop", 64_000), max_tokens=128_000) == \
+    assert classify(_raw("stop", 32_000), max_tokens=128_000) == \
         "empty result (no tool call)"
     # Missing/garbled metadata defaults to no-tool-call, never crashes.
     assert classify(AIMessage(content="")) == "empty result (no tool call)"
@@ -221,25 +224,28 @@ def test_classify_empty_result_matrix():
 def test_shape_pass_classifies_the_empty_result_reason(capsys):
     """Rule 7c: a None parse invoked with include_raw=True — the
     attempt-failure log line names the cause, on every attempt, and the
-    pass still returns None only when nothing parsed."""
-    stub = _StubShapeModel([_envelope(_raw("length", 64_000)),
+    pass still returns None only when nothing parsed. Rule 7f's #88
+    amendment: the line also carries the raw response's token counts."""
+    stub = _StubShapeModel([_envelope(_raw("length", 32_000)),
                             _envelope(_raw("stop", 100))])
     result = _shape(stub)
     assert result is None                      # nothing parsed, twice
     assert len(stub.prompts) == 2              # the one-retry bound holds
     assert stub.include_raw == [True, True]    # invoked with the raw envelope
     err = capsys.readouterr().err
-    # #66 (rule 7f) flipped the pin: the line now carries the elapsed suffix
+    # #66 (rule 7f) flipped the pin to the elapsed suffix; #88 adds the
+    # attempt's input/output token counts from the raw response
     assert re.search(r"attempt 1 failed \(empty result \(truncated at max_tokens\)"
-                     r", took \d+ s\)", err)
+                     r", took \d+ s, in 43500 out 32000 tokens\)", err)
     assert re.search(r"attempt 2 failed \(empty result \(no tool call\)"
-                     r", took \d+ s\)", err)
+                     r", took \d+ s, in 43500 out 100 tokens\)", err)
 
 
 def test_shape_pass_parsing_error_keeps_its_message(capsys):
     """Rule 7c: a parsing error reported in the envelope (rather than
     raised) is treated as the exception it replaces — its message is the
-    reason, not a classified guess."""
+    reason, not a classified guess. The envelope still carries the raw
+    response, so rule 7f's token counts are real, not `?`."""
     stub = _StubShapeModel([
         _envelope(_raw("stop", 100), parsing_error=ValueError("bad tool args"),
                   ),
@@ -247,7 +253,8 @@ def test_shape_pass_parsing_error_keeps_its_message(capsys):
     result = _shape(stub)
     assert result.updated_wiki == "full wiki"
     err = capsys.readouterr().err
-    assert re.search(r"attempt 1 failed \(bad tool args, took \d+ s\)", err)
+    assert re.search(r"attempt 1 failed \(bad tool args, took \d+ s, "
+                     r"in 43500 out 100 tokens\)", err)
 
 
 # ------------------------------------------- wiki-repair mode (rule 7d, #60)
