@@ -67,6 +67,11 @@ Covers (safety-model.md rules 6b-6c, wiki-memory.md rules 4f and 15-19):
   repaired wiki writes through the standard tail; a wiki-repair failure
   minimal-writes the old wiki with the clock advanced; a legacy
   no-frontmatter wiki writes nothing at all
+- current-state prompt teaching of #85 (wiki-memory.md rule 29b,
+  patrol-engine.md rule 3f): the patrol the model actually receives
+  carries the clause telling it to record current state only — no
+  per-patrol headline log, no History: list, no "as of patrol #N"
+  chronology — because git history is the record of what changed when
 
 The `--raw` guard refusal is not e2e-covered: it is unit-checked in
 test_kubectl_guard.py (kubectl-guard.md rule 6a, #11).
@@ -1004,6 +1009,30 @@ def test_shape_pass_prompt_carries_the_wiki_size_feedback(tmp_path, monkeypatch,
     assert note and prompt.endswith("\n\n" + note)
     assert f"{len(on_disk)} characters" in prompt
     assert "OVER budget" in prompt and "Prune at least" in prompt
+    capsys.readouterr()
+
+
+# -------------------------------- current state, not patrol history (#85, rule 3f)
+
+def test_patrol_prompt_names_git_history_as_the_record(tmp_path, monkeypatch, capsys):
+    """#85 (wiki-memory.md rule 29b, patrol-engine.md rule 3f) wired into
+    `run_patrol`: the system prompt the model actually receives tells it to
+    record current state only — the wiki is not a patrol log, and git
+    history is the record of what changed when."""
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    endpoint = ScriptedEndpoint(turns=NATURAL_TURNS[:1], report=REPORT)
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
+
+    assert endpoint.agent_requests, "no agent requests recorded"
+    system = "\n".join(str(m.get("content"))
+                       for m in endpoint.agent_requests[0]["messages"]
+                       if m.get("role") == "system")
+    flat = " ".join(system.split())
+    assert "Record current state only" in flat
+    assert "The wiki is not a patrol log" in flat
+    assert "git history already records what changed when" in flat
+    assert "per-patrol headline" in flat and "History: list" in flat
+    assert 'as of patrol #N' in flat
     capsys.readouterr()
 
 

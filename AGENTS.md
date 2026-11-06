@@ -112,7 +112,11 @@ under current policy (clean implementation review + `implementation-complete`):
   wiring of #10: the user prompt's decoupled soft turn target alongside the
   hard budget, the token soft-stop ending exploration through the budget-cut
   path (report still lands, early stop, dangling-tool-call salvage), and
-  `--token-budget 0` disabling the stop);
+  `--token-budget 0` disabling the stop — and the current-state prompt
+  teaching of #85: the system prompt the model actually receives carrying
+  the record-current-state-only clause — no per-patrol headline, no
+  `History:` list, no "as of patrol #N" chronology, git history already
+  recording what changed when);
   `tests/test_wiki_schema.py` covers the
   wiki skeleton schema + validation-on-write contract (#5) plus the
   per-entry recheck-command contract (#6) plus the process-owned-value
@@ -140,7 +144,9 @@ under current policy (clean implementation review + `implementation-complete`):
   matrix (within/over budget, empty content, exactly-at-budget boundary,
   call-time `WIKI_CHAR_BUDGET`), the contract's consequence-chain/shrink
   pins, and the shape-pass prompt wiring across modes with retry
-  persistence); and
+  persistence; plus the no-patrol-history contract of #85 — the
+  `REPORT_CONTRACT`'s three pinned clauses and the `SYSTEM_PROMPT` clause
+  with its placement before the closing summary guidance); and
   `tests/test_request_bounds.py` covers the per-call-shape request-bound
   contract (#49 and #63: the two timeout constants, the two completion-token
   bound constants, and the `make_model` timeout + `max_tokens` passthrough);
@@ -168,6 +174,10 @@ under current policy (clean implementation review + `implementation-complete`):
   sharing, and the generic-retry and zero-findings guards, and the wiki-repair
   mode of #60 (the prompt carrying the old wiki verbatim plus the observed
   findings, the minimal-merge ask, the shared empty-wiki retry) — and the
+  #85 narrowing: the contract's narrowed copy-verbatim ask with the
+  unqualified ask absent, the empty-wiki corrective repeating the narrowed
+  wording, and the wiki-repair prompt's patrol-history drop clause with the
+  unqualified preservation ask gone — and the
   empty-result reason classification of #63: the pure
   `classify_empty_result` matrix over fake raw responses and the shape
   pass's attempt-failure log lines carrying the classified reasons via the
