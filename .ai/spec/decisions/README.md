@@ -55,3 +55,4 @@ Date: YYYY-MM-DD · Status: proposed | accepted | superseded by NNNN
 | [0028](0028-secret-access-banned-in-full.md) | Secret access is banned in full: any command containing `secret` is refused, names/metadata included; local-file/credential flags are refused too |
 | [0029](0029-host-portable-text-io.md) | Host-portable text I/O: UTF-8 and LF are pinned, not inherited from the locale |
 | [0030](0030-derived-network-egress-allowlist.md) | Derived network egress allowlist: default-deny rendered from the process's own egress config, not a hand-kept CIDR list |
+| [0031](0031-bound-the-shape-pass-with-a-ceiling-aware-retry.md) | Bound the shape pass with a ceiling-aware retry: reporting `max_tokens` 32k, gateway-failure retry compacts smaller and asks for brevity |

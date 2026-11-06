@@ -208,9 +208,10 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
   [DONE: #10]
 - Engine constants (not configurable): temperature 0.3, completion-token
   bounds — `REQUEST_MAX_TOKENS` 16000 per exploration turn,
-  `REPORT_MAX_TOKENS` 64000 per structured reporting/repair call
+  `REPORT_MAX_TOKENS` 32000 per structured reporting/repair call
   (`reporting-notifications.md` rule 8b) [DONE: #63 — was a flat
-  `max_tokens` 16000 on the whole client], request
+  `max_tokens` 16000 on the whole client; PLANNED: #88 lowers the
+  reporting bound 64000 → 32000], request
   bounds — `REQUEST_TIMEOUT` 300 s per exploration turn, `REPORT_TIMEOUT` 900 s
   per structured reporting/repair call (`reporting-notifications.md` rule 8a)
   [DONE: #49 — was a flat 300 s on the whole client]
@@ -229,6 +230,7 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
 
 | Ticket | Summary |
 |---|---|
+| #88 | The reporting/repair completion bound drops to `REPORT_MAX_TOKENS` 32000 in the engine-constants line above (`reporting-notifications.md` rule 8b, ADR 0031): a 64k-bounded shape-pass generation hits the model gateway's ~900 s wall clock at ~902 s (≈71 output tok/s), while #63's successful run needed only ~20k completion tokens — 32000 is ~450 s of generation and still ~12k of reasoning headroom. Exploration's `REQUEST_MAX_TOKENS` 16000 and both timeouts are unchanged; no new config surface |
 | ~~#6~~ | ~~Prompt consumes recheck commands: run an entry's `recheck` first when re-verifying it, keep it current when the verification path changes (`wiki-memory.md` rule 12a)~~ |
 | ~~#10~~ | ~~Cost control: token soft-stop (rule 8b), soft turn target decoupled from the hard budget (rule 8a), head+tail truncation replacing head-only `OUT_CAP` capping (`kubectl-guard.md` rule 11) — scoping settled whole-cluster by ADR 0027 (the wiki economy of rule 3e already is the scoping mechanism; per-namespace rounds rejected). Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#49~~ | ~~Per-call-shape request bounds: `REQUEST_TIMEOUT` 300 s exploration / `REPORT_TIMEOUT` 900 s structured reporting — the engine-constants line above; the behavioral rule is `reporting-notifications.md` rule 8a~~ |

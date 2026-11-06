@@ -12,12 +12,16 @@ one structured response, and on a reasoning model the reasoning tokens come
 out of the same allowance — a live 43.5k-token report prompt spent all
 16000 completion tokens reasoning (`finish_reason=length`, zero content,
 twice per patrol), freezing the wiki for ~14 patrols; the same run at a
-64k reporting budget completed at ~20k tokens and committed.
+64k reporting budget completed at ~20k tokens and committed. Then #88 —
+the 64k bound itself outran the model gateway's ~900 s wall clock (both
+attempts 504ing at ~902 s, ≈71 output tok/s), so the reporting bound
+halves to 32k: ~450 s of generation, still ~12k above the observed 20k
+completion, so #63's reasoning-exhaustion fix stays intact.
 
 The contracts (reporting-notifications.md rules 8a + 8b): exploration turns
 keep `REQUEST_TIMEOUT` (300 s) / `REQUEST_MAX_TOKENS` (16000), the
 structured reporting/repair calls get `REPORT_TIMEOUT` (900 s) /
-`REPORT_MAX_TOKENS` (64000). Unit pins here: the constants and the
+`REPORT_MAX_TOKENS` (32000). Unit pins here: the constants and the
 `make_model` passthrough for both bounds; the two-model wiring is pinned by
 the e2e in test_patrol_deepagents.py, and the empty-result reason
 classification (rule 7c) in test_empty_report.py.
@@ -34,10 +38,11 @@ def test_request_bound_constants():
 
 
 def test_token_bound_constants():
-    """Rule 8b (#63): the two call-shape completion-token bounds, as
-    specced constants."""
+    """Rule 8b (#63, flipped by #88): the two call-shape completion-token
+    bounds, as specced constants — the reporting bound is 32k so one
+    generation finishes inside the gateway's ~900 s window."""
     assert patrol.REQUEST_MAX_TOKENS == 16000
-    assert patrol.REPORT_MAX_TOKENS == 64000
+    assert patrol.REPORT_MAX_TOKENS == 32000
 
 
 def test_make_model_passes_the_request_bound(monkeypatch):

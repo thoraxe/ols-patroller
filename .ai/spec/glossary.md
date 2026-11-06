@@ -124,6 +124,14 @@ redefined here.
 - **Shape pass** — the tool-free structured-output pass (`shape_report`) that
   converts a finished patrol conversation into the typed `PatrolReport`. Same
   pattern as the OLS agentic sandbox.
+- **Ceiling-aware retry** — the shape pass's attempt 2 when attempt 1 failed at
+  the model gateway's ~900 s request ceiling (#88, `reporting-notifications.md`
+  rule 7g): instead of re-sending the identical request, it rebuilds its base
+  from the raw conversation compacted at `SHAPE_TOOL_KEEP_RETRY` (500
+  characters) and appends a corrective asking for the shortest valid
+  `PatrolReport` — `REPORT_CONTRACT` re-stated after it, the rule-29a size note
+  last. Non-gateway failures keep the append-only retry and the 1500-character
+  cap.
 - **Budget cut** — a patrol ended by exhausting `max_steps` LLM turns instead of
   self-terminating; the report then covers only what was observed.
 - **Token cut** — the cumulative input-token soft-stop (#10,

@@ -721,8 +721,9 @@ shape.
 The wiki is a **working set**, not a log [DONE: #40]: growth taxes every
 patrol — the wiki is injected whole into the prompt (rule 3) and re-emitted
 whole by the shape pass under its completion-token bound
-(`REPORT_MAX_TOKENS` 64000, `reporting-notifications.md` rule 8b
-[DONE: #63]; before it, the flat 16000 was the de-facto ceiling) — an
+(`REPORT_MAX_TOKENS` 32000, `reporting-notifications.md` rule 8b
+[DONE: #63; lowered 64000 → 32000 by #88 — PLANNED: #88]; before it, the
+flat 16000 was the de-facto ceiling) — an
 over-long wiki fails the reporting pass rather than being trimmed — while
 the wiki repo already retains every accepted write (rule 4d). The stance:
 **git history is the archive; the wiki is the working set** (ADR
@@ -788,9 +789,11 @@ load-bearing constraint of #5).
       honest.
 29. **Soft length budget.** A whole-wiki character budget `WIKI_CHAR_BUDGET`
     (20,000 — roughly a third of the shape pass's completion-token output
-    ceiling as it stood at #40's writing; the ceiling has since been raised
-    to `REPORT_MAX_TOKENS` 64,000 for the shape pass
-    (`reporting-notifications.md` rule 8b) [DONE: #63], so the budget is
+    ceiling as it stood at #40's writing; the ceiling has since been
+    re-based to `REPORT_MAX_TOKENS` 32,000 for the shape pass
+    (`reporting-notifications.md` rule 8b) [DONE: #63 raised it to 64,000;
+    PLANNED: #88 lowers it to 32,000 — the gateway ceiling, not the output
+    ceiling, binds now], so the budget is
     now set by drift-alarm judgment, not output-ceiling arithmetic — leaving
     room for findings and notifications in the same structured output
     regardless; the unit is characters, the wiki being UTF-8 text
@@ -848,7 +851,9 @@ load-bearing constraint of #5).
     prompt**, a blank line between: after `REPORT_CONTRACT` on the first
     attempt, and after the corrective message on a retry — so the note is
     the last text the model reads on every attempt, and it appears exactly
-    once per prompt. It is carried in every report-pass invocation — the
+    once per prompt. (On a rule-7g gateway-failure retry the contract is
+    re-stated after the corrective, so the note follows the contract
+    there — still the last text of the prompt, still exactly once.) It is carried in every report-pass invocation — the
     report pass and the rule-18 validation-repair pass:
     - the **report pass** reports the old on-disk wiki's size — the seed
       on a file-absent deployment (rule 14), i.e. the content rule 3
@@ -1068,6 +1073,7 @@ write.
 
 | Ticket | Summary |
 |---|---|
+| #88 | The shape pass inside the model gateway's ~900 s ceiling, wiki half (`REPORT_MAX_TOKENS` 64000 → 32000 in the Working-Set Budget intro and rule 29; behavior is `reporting-notifications.md` rules 7f/7g + 8b, ADR 0031): a 64k-bounded shape-pass generation hits the gateway's ~900 s wall clock at ~902 s, so the bound halves to ~450 s of generation while staying ~12k above #63's observed 20k completion — the wiki is still re-emitted whole under this bound, so both the soft budget's arithmetic note and the ceiling argument are re-based, not restructured. Rule 33's total-failure leg is unchanged (the net stays the last resort). Impl commit also syncs `AGENTS.md`'s test list |
 | ~~#77~~ | ~~Dev/test host portability (rule 4c's byte determinism, rule 4g, rule 27's blob decode, rule 31's legacy leg; the console half is `reporting-notifications.md` rule 9b; ADR 0029): every wiki write is UTF-8/LF/no-BOM with the encoding pinned, every wiki read decodes UTF-8 explicitly (legacy bytes replaced, never fatal; a legacy wiki is runnable but never re-written by a model-free leg; an undecodable history blob yields the empty list), and stdout/stderr are reconfigured to UTF-8/LF so the console surface is host-independent. The suite is green on Linux and Windows with the same command: fake cluster CLIs become host-portable, test subprocess envs start from `os.environ` and delete `PATROL_*`, and test wiki fixtures/readers use explicit UTF-8. The dev-Python pin (`.python-version` 3.12) shipped with #77. Impl commit also syncs `AGENTS.md` (test conventions + test list) and `how/project-structure.md` (the wiki-I/O encoding surface + the new test file)~~ |
 | ~~#35~~ | ~~Notification dedup, state-keyed (rules 12b–12c plus the rule-16 write-path amendment; behavior in `reporting-notifications.md` rules 4a–4e, ADR 0026): entries gain an optional `severity` pair (judged when present) so severity changes are diffable across patrols, and a process-owned `last_notified` date pair that the write path stamps for every entry a notification named this patrol (after compaction, before the frontmatter stamp, accepted writes only). The wiki is the dedup baseline; standing unchanged entries stay wiki-only. Impl commit also syncs `README.md`'s config table and `AGENTS.md`'s test list~~ |
 | ~~#67~~ | ~~Model-facing wiki size feedback (rule 29a; the contract amendment is `reporting-notifications.md` rule 5): every report-pass invocation carries a deterministic `wiki_size_note` line — the wiki-in-play's character count, the budget, the floored percentage, and the excess (over budget, with a named prune target) or headroom (under budget) — appended after `REPORT_CONTRACT`; the report pass reports the on-disk wiki, the validation-repair pass the rejected wiki, and the wiki-repair pass carries none. The contract names the consequence chain (over-budget wiki → slower reporting pass → gateway ceiling → the next patrol re-reading prose) and requires the returned wiki to be smaller when over budget unless new facts require the space. ADR 0025 rejects process-side prose compaction. Impl commit also syncs `AGENTS.md`'s test list~~ |
