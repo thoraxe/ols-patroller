@@ -7,9 +7,9 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
 
 | Symbol | Responsibility |
 |---|---|
-| `REPORT_CONTRACT` | Instructions appended for the reporting pass (field semantics, wiki skeleton format: frontmatter keys, section set, entry metadata line [DONE: #5]; the Watch-list recheck requirement + its tool-argument form [DONE: #6]; the staleness clock's model-facing half — `verified_patrol` is process-stamped, `last_verified` advances only on actual re-verification, unverified watching entries auto-expire [DONE: #7]; the working-set expectations — the wiki is a working set (git history is the archive), summarize and prune within the soft character budget, the Anomaly log keeps the last `WIKI_ANOMALY_KEEP` closed entries [DONE: #40], plus #67's consequence chain and over-budget-must-shrink instruction [DONE: #67]; the wiki-required instruction — `updated_wiki` is required on every report, full content even when nothing needs changing, an empty one is never a valid answer [DONE: #51]) |
+| `REPORT_CONTRACT` | Instructions appended for the reporting pass (field semantics, wiki skeleton format: frontmatter keys, section set, entry metadata line [DONE: #5]; the Watch-list recheck requirement + its tool-argument form [DONE: #6]; the staleness clock's model-facing half — `verified_patrol` is process-stamped, `last_verified` advances only on actual re-verification, unverified watching entries auto-expire [DONE: #7]; the working-set expectations — the wiki is a working set (git history is the archive), summarize and prune within the soft character budget, the Anomaly log keeps the last `WIKI_ANOMALY_KEEP` closed entries [DONE: #40], plus #67's consequence chain and over-budget-must-shrink instruction [DONE: #67]; the wiki-required instruction — `updated_wiki` is required on every report, full content even when nothing needs changing, an empty one is never a valid answer [DONE: #51] — its copy-verbatim ask narrowed by the no-patrol-history exception (unchanged sections copied, patrol-history prose never carried forward), plus the ban itself: current state only, no per-patrol headline log / `History:` list / "as of patrol #N" chronology, a few-line intro, and the `###` status block legal / sixth `##` section illegal rule [DONE: #85]) |
 | `wiki_size_note` | Pure model-facing size line (#67, `wiki-memory.md` rule 29a): `wiki_size_note(content, *, budget=None) -> str` — empty for empty content, else one line naming the character count, budget, floored percentage, and the excess (`N characters OVER budget. Prune at least N characters…`) or headroom; `budget` defaults to `WIKI_CHAR_BUDGET` read at call time [DONE: #67] |
-| `shape_report` | Tool-free structured-output pass with one schema retry; `repair=(rejected_wiki, errors)` re-invokes it as the wiki-validation repair pass [DONE: #5]; a parsed result with an empty `updated_wiki` is a failed attempt — retried with a corrective message naming it, a still-empty retry returns the report [DONE: #51]; a `None`/unparsed result's failure reason is classified from the raw response (`classify_empty_result`: truncated-at-max_tokens vs no-tool-call) [DONE: #63]; `wiki_repair=(old_wiki, findings, notifications)` re-invokes it as the wiki-repair pass — the old wiki verbatim plus the observed findings, minimal-merge ask (rule 7d) [DONE: #60]; every report-pass invocation appends the `wiki_size_note` of its wiki-in-play (on-disk wiki for the report pass, rejected wiki for the validation repair; none for the wiki-repair pass) [DONE: #67] |
+| `shape_report` | Tool-free structured-output pass with one schema retry; `repair=(rejected_wiki, errors)` re-invokes it as the wiki-validation repair pass [DONE: #5]; a parsed result with an empty `updated_wiki` is a failed attempt — retried with a corrective message naming it, a still-empty retry returns the report [DONE: #51]; a `None`/unparsed result's failure reason is classified from the raw response (`classify_empty_result`: truncated-at-max_tokens vs no-tool-call) [DONE: #63]; `wiki_repair=(old_wiki, findings, notifications)` re-invokes it as the wiki-repair pass — the old wiki verbatim plus the observed findings, minimal-merge ask that drops patrol-history prose rather than carrying it forward (rule 7d's #85 amendment) [DONE: #60]; every report-pass invocation appends the `wiki_size_note` of its wiki-in-play (on-disk wiki for the report pass, rejected wiki for the validation repair; none for the wiki-repair pass) [DONE: #67] |
 | `report_fields` | Normalizes the result (pydantic model or dict) into plain data |
 | `notify` | Console `🔔 NOTIFY` + apprise multi-sink delivery (`PATROL_NOTIFY_URLS`, rules 10a–10c) [DONE: #9] |
 | `notification_entry_id` | Pure parser for a proposed notification's leading `[<entry id>]` tag (rule 4a); `None` for an untagged message [DONE: #35] |
@@ -48,7 +48,9 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
    parsed result whose
    `updated_wiki` is empty is equally a failed attempt
    (`reporting-notifications.md` rule 7b): its corrective message names the
-   empty wiki and demands the full content; a still-empty retry returns the
+   empty wiki and demands the full content, repeating rule 5's *narrowed*
+   copy-verbatim ask (unchanged sections copied, patrol-history prose never
+   carried forward) [DONE: #85]; a still-empty retry returns the
    report — the caller delivers its findings and warns. Across failure
    compositions the pass returns the last result that parsed — a wiki-less
    report included — and `None` only when no attempt parsed (rule 7b)
@@ -213,5 +215,6 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
   `wiki` `run_patrol` loaded at start (the seed when the file is absent),
   passed to `shape_report` as `current_wiki`; the validation-repair mode
   uses its `rejected_wiki` argument; the wiki-repair mode appends none
-  (its ask is a minimal merge). Rejected process-side prose compaction is
-  ADR 0025 [DONE: #67].
+  (its ask is a minimal merge — which drops patrol-history prose rather
+  than preserving it, rule 7d's #85 amendment). Rejected process-side prose
+  compaction is ADR 0025 [DONE: #67].

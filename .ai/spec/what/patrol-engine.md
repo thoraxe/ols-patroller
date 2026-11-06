@@ -81,7 +81,7 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
     re-derive a map the wiki already holds. Real-run evidence: patrol #7's
     "restart sweep matches the 18:02 baseline exactly" — the compounding-wiki
     economy #5–#8 built.
-3f. **The wiki records current state, not patrol history** [PLANNED: #85].
+3f. **The wiki records current state, not patrol history** [DONE: #85].
     Rule 3's step (4) asks for an updated wiki; this rule states what may
     not go into it. The system prompt — the model's hard-rules / patrol-order
     block — carries exactly (executable pin: `test_wiki_budget.py`, on
@@ -246,7 +246,7 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
 
 | Ticket | Summary |
 |---|---|
-| #85 | Prompt teaching that the wiki records current state, not patrol history (rule 3f; the behavior is `wiki-memory.md` rule 29b, the contract text `reporting-notifications.md` rule 5, ADR 0032): the system prompt carries one clause naming git history as the record of what changed when and asking for current state only — no per-patrol headline, no `History:` list, no "as of patrol #N" chronology — plus the short-intro instruction. Teaching only: no new config surface, no guard change, rule 3's patrol-order wording unchanged. Impl commit also syncs `AGENTS.md`'s test list and `how/project-structure.md`'s `SYSTEM_PROMPT` row (its teaching list gains rule 3f) |
+| ~~#85~~ | ~~Prompt teaching that the wiki records current state, not patrol history (rule 3f; the behavior is `wiki-memory.md` rule 29b, the contract text `reporting-notifications.md` rule 5, ADR 0032): the system prompt carries one clause naming git history as the record of what changed when and asking for current state only — no per-patrol headline, no `History:` list, no "as of patrol #N" chronology — plus the short-intro instruction. Teaching only: no new config surface, no guard change, rule 3's patrol-order wording unchanged. Impl commit also syncs `AGENTS.md`'s test list and `how/project-structure.md`'s `SYSTEM_PROMPT` row (its teaching list gains rule 3f)~~ |
 | ~~#6~~ | ~~Prompt consumes recheck commands: run an entry's `recheck` first when re-verifying it, keep it current when the verification path changes (`wiki-memory.md` rule 12a)~~ |
 | ~~#10~~ | ~~Cost control: token soft-stop (rule 8b), soft turn target decoupled from the hard budget (rule 8a), head+tail truncation replacing head-only `OUT_CAP` capping (`kubectl-guard.md` rule 11) — scoping settled whole-cluster by ADR 0027 (the wiki economy of rule 3e already is the scoping mechanism; per-namespace rounds rejected). Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#49~~ | ~~Per-call-shape request bounds: `REQUEST_TIMEOUT` 300 s exploration / `REPORT_TIMEOUT` 900 s structured reporting — the engine-constants line above; the behavioral rule is `reporting-notifications.md` rule 8a~~ |

@@ -57,7 +57,7 @@ in `how/reporting-pipeline.md`.
    verbatim except that patrol-history prose is never carried forward.
    An empty updated_wiki is never a valid answer: a patrol with nothing
    to change returns the wiki unchanged."
-   [PLANNED: #85 — the sentence is narrowed by eight words:
+   [DONE: #85 — the sentence is narrowed by eight words:
    `except that patrol-history prose is never carried forward`
    (`wiki-memory.md` rule 29b). Without it the contract contradicts
    itself on a no-change patrol over a history-bearing wiki — #51's
@@ -87,7 +87,7 @@ in `how/reporting-pipeline.md`.
    patrol observed new facts that genuinely require the space; then prune
    elsewhere to pay for them. Use the line: retain what is load-bearing,
    drop what is not."]
-   [PLANNED: #85 — the working-set item also forbids
+   [DONE: #85 — the working-set item also forbids
    patrol-history prose (`wiki-memory.md` rule 29b). Three sentences
    join item 5, verbatim (executable pins live in `test_wiki_budget.py`):
    - `The wiki records current state only — never write patrol-history prose: no per-patrol headline log, no History: list, no "as of patrol #N" chronology. Git history is the record of what changed when.`
@@ -323,7 +323,7 @@ entry whose status and severity are unchanged is wiki-only.
     unchanged, never by omitting it). The pass retries once with a
     corrective user message that names the empty `updated_wiki` and
     demands the full content — a message distinct from rule 7's generic
-    invalid-report corrective. [PLANNED: #85 — the corrective repeats
+    invalid-report corrective. [DONE: #85 — the corrective repeats
     rule 5's *narrowed* copy-verbatim ask (`except that patrol-history
     prose is never carried forward`), never the unqualified one:
     `wiki-memory.md` rule 29b applies to a no-change patrol too, and the
@@ -387,7 +387,7 @@ entry whose status and severity are unchanged is wiki-only.
     report's findings and notifications, asking for a corrected
     `PatrolReport` whose `updated_wiki` is the old wiki rewritten
     **minimally** — the findings merged in, everything else preserved.
-    [PLANNED: #85 — "preserved" yields to the no-patrol-history ban
+    [DONE: #85 — "preserved" yields to the no-patrol-history ban
     (`wiki-memory.md` rule 29b): the minimal merge drops patrol-history
     prose rather than carrying it forward, and the user message states it
     verbatim (executable pin lives in `test_empty_report.py`):
@@ -590,7 +590,7 @@ entry whose status and severity are unchanged is wiki-only.
 
 | Ticket | Summary |
 |---|---|
-| #85 | Patrol-history prose is banned in the report contract (rule 5's #85 clauses; behavior in `wiki-memory.md` rule 29b, ADR 0032): the wiki records current state only — no per-patrol headline log, no `History:` list, no "as of patrol #N" chronology, because git history is the record of what changed when; the opening prose stays a few lines; a `###` status block after the Anomaly log is legal while a sixth `##` section is not. #51's copy-verbatim sentence is narrowed by the same exception (`except that patrol-history prose is never carried forward`) and the empty-wiki corrective repeats the narrowed wording, so no model-facing surface carries both asks. The wiki-repair mode's minimal merge drops history prose instead of preserving it (rule 7d). Teaching only — the working-set/size-note machinery is unchanged and length still never gates validation. Impl commit also syncs `AGENTS.md`'s test list and `how/reporting-pipeline.md`'s `REPORT_CONTRACT` row |
+| ~~#85~~ | ~~Patrol-history prose is banned in the report contract (rule 5's #85 clauses; behavior in `wiki-memory.md` rule 29b, ADR 0032): the wiki records current state only — no per-patrol headline log, no `History:` list, no "as of patrol #N" chronology, because git history is the record of what changed when; the opening prose stays a few lines; a `###` status block after the Anomaly log is legal while a sixth `##` section is not. #51's copy-verbatim sentence is narrowed by the same exception (`except that patrol-history prose is never carried forward`) and the empty-wiki corrective repeats the narrowed wording, so no model-facing surface carries both asks. The wiki-repair mode's minimal merge drops history prose instead of preserving it (rule 7d). Teaching only — the working-set/size-note machinery is unchanged and length still never gates validation. Impl commit also syncs `AGENTS.md`'s test list and `how/reporting-pipeline.md`'s `REPORT_CONTRACT` row~~ |
 | ~~#34~~ | ~~Only the Constraint sentence that left network-level egress control open: it now points at `egress-control.md` (the derived default-deny allowlist, ADR 0030). The notification contract here is unchanged — the configured sinks stay the deliberate outbound notification allowlist, and what they may carry is the guard's business~~ |
 | ~~#77~~ | ~~Dev/test host portability (rule 9b here; `wiki-memory.md` rules 4c/4g; ADR 0029): stdout/stderr are reconfigured to UTF-8/LF at startup so the ` · ` separator, severity marks, and `🔔` prefix print as the same bytes on every host, and a non-UTF-8 stream never raises. The wiki half is the byte-determinism pin on rule 4c (`wiki-memory.md`) and the explicit-UTF-8 read rule. Impl commit also syncs `AGENTS.md` (test conventions + test list) and `how/project-structure.md`~~ |
 | ~~#67~~ | ~~Wiki size feedback in the reporting pass (rule 5 amendment here; rule 29a in `wiki-memory.md`): `REPORT_CONTRACT` names the consequence chain (over-budget wiki → slower reporting pass → model gateway's request ceiling → the next patrol re-reading prose) and requires a smaller returned wiki when the size line says over budget (prune at least the excess, unless new facts require the space); every report-pass invocation appends the deterministic `wiki_size_note` line. ADR 0025 rejects process-side prose compaction. Impl commit also syncs `AGENTS.md`'s test list~~ |

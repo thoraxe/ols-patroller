@@ -470,6 +470,9 @@ Your patrol, in order:
    already holds. The layered sweep above is the dry-wiki (first-patrol) map.
 3. Decide what a human should actually care about (don't cry wolf).
 4. Produce an UPDATED wiki and a refined watch-list for the next patrol.
+   Record current state only. The wiki is not a patrol log: never write a per-patrol
+   headline, a History: list, or "as of patrol #N" chronology — git history already
+   records what changed when. Keep the opening prose to a few lines.
 
 When you are DONE exploring, stop calling tools and write your final summary as plain text:
 your key findings with severity and the evidence you saw, what you verified or corrected
@@ -999,7 +1002,8 @@ Produce the final PatrolReport for the cluster patrol above:
   cry wolf), as human-readable messages. Every notification MUST begin with the wiki entry id it concerns in square brackets, then the human-readable message — for example "[W-1] worker-1 has been NotReady for 40 days." Notify only when an entry is new, its severity changed, or its status changed (resolution or re-opening). Do not notify about an entry that is standing and unchanged: update its wiki entry and leave notifications empty for it.
 - "updated_wiki": the FULL new markdown content of the cluster wiki in the
   skeleton format. updated_wiki is required on every report: return the FULL
-  wiki content even when nothing needs changing — copy unchanged sections verbatim.
+  wiki content even when nothing needs changing — copy unchanged sections
+  verbatim except that patrol-history prose is never carried forward.
   An empty updated_wiki is never a valid answer: a patrol with nothing to change
   returns the wiki unchanged. It is validated before it may replace the wiki on
   disk, and MUST have exactly this structure:
@@ -1051,6 +1055,11 @@ Produce the final PatrolReport for the cluster patrol above:
      characters (frontmatter included). The Anomaly log keeps only the
      last {WIKI_ANOMALY_KEEP} resolved/expired entries (the patroller prunes
      older closed ones) — never hoard closed history there.
+     The wiki records current state only — never write patrol-history prose: no
+     per-patrol headline log, no History: list, no "as of patrol #N" chronology.
+     Git history is the record of what changed when. Keep the opening prose to a
+     few lines: what the wiki is and the dominant standing severity. A ### status
+     block after the Anomaly log is legal; a sixth ## section is not.
 
 A size line may be appended below: the current wiki's character count and the
 soft budget. An over-budget wiki slows this reporting pass, risks the model
@@ -1168,11 +1177,13 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
     message states the reporting pass could not emit the wiki and carries the
     old on-disk wiki verbatim plus the observed report's findings and
     notifications, asking for the old wiki rewritten minimally — the findings
-    merged in, everything else preserved. At most one wiki-repair invocation
-    per patrol — the caller owns that bound; the mode shares everything else
-    (the PatrolReport binding, the internal parse/empty retry of rules 7/7b).
-    The caller never delivers this call's own findings or notifications (it
-    never saw the cluster) — only its wiki is used.
+    merged in, everything else preserved bar the patrol-history prose the
+    no-patrol-history rule drops (wiki-memory.md rule 29b, #85). At most one
+    wiki-repair invocation per patrol — the caller owns that bound; the mode
+    shares everything else (the PatrolReport binding, the internal
+    parse/empty retry of rules 7/7b). The caller never delivers this call's own
+    findings or notifications (it never saw the cluster) — only its wiki is
+    used.
 
     A parsed result whose `updated_wiki` is empty is a failed attempt too
     (reporting-notifications.md rule 7b, #51) — the patrol cannot distinguish
@@ -1199,8 +1210,9 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
     attempt, after the corrective on a retry, a blank line between. The
     report pass passes the on-disk wiki; the validation-repair mode measures
     its `rejected_wiki` argument instead; the wiki-repair mode appends none
-    (its ask is a minimal merge that preserves the old wiki). No
-    `current_wiki` (or an empty one) renders no note.
+    (its ask is a minimal merge that preserves the old wiki minus the
+    patrol-history prose rule 29b drops). No `current_wiki` (or an empty one)
+    renders no note.
     """
     if repair is None and wiki_repair is None:
         prefix = ("You are the REPORTING PASS for the cluster patrol recorded above. "
@@ -1216,7 +1228,9 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
                   "The reporting pass could not emit the updated_wiki — it returned "
                   "an empty one even after its retry. Produce a corrected PatrolReport "
                   "whose updated_wiki is the old wiki below rewritten MINIMALLY: fold "
-                  "the observed findings in, preserve everything else verbatim.\n\n"
+                  "the observed findings in. Drop patrol-history prose while "
+                  "merging: no per-patrol headline log, no History: list, no "
+                  "\"as of patrol #N\" chronology — git history is the record.\n\n"
                   "The old on-disk wiki is:\n\n" + old_wiki + "\n\n"
                   "The patrol's observed findings were:\n"
                   + _render_observed(obs_findings)
@@ -1286,8 +1300,9 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
                 corrective = ("Your report parsed, but its updated_wiki was empty. "
                               "updated_wiki is required on every report: return the "
                               "FULL wiki content even when nothing needs changing — "
-                              "copy unchanged sections verbatim. Produce the "
-                              "complete updated_wiki now.")
+                              "copy unchanged sections verbatim except that "
+                              "patrol-history prose is never carried forward. Produce "
+                              "the complete updated_wiki now.")
             else:
                 if reason is None:
                     reason = "empty result"
