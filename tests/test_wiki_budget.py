@@ -1,4 +1,4 @@
-"""Wiki length budget — contract tests for #40.
+"""Wiki length budget — contract tests for #40 (plus the #85 prose contract).
 
 These tests pin the public surface of patrol.py's planned working-set
 budgets:
@@ -10,11 +10,14 @@ budgets:
     wiki_stats: char_count / over_budget keys         # rule 25 amendment
     --wiki-stats: the size line + over-budget warning # rule 24 amendment
     REPORT_CONTRACT: working-set expectations         # reporting rule 5 amendment
+    REPORT_CONTRACT: no-patrol-history clauses         # rule 5's #85 clauses
+    SYSTEM_PROMPT: current-state clause                # patrol-engine rule 3f
 
 They fail before implementation (AttributeError on the missing symbols,
 AssertionError on the missing surfaces) and must pass after.
-Contract: .ai/spec/what/wiki-memory.md rules 28-29 plus the rule 24/25
-amendments [PLANNED: #40].
+Contract: .ai/spec/what/wiki-memory.md rules 28-29 (and rule 29b for the
+no-patrol-history ban) plus the rule 24/25 amendments [PLANNED: #40]
+[PLANNED: #85].
 
 Scope note: like test_wiki_expiry.py, these tests pin the pure passes. The
 wiring into the patrol tail (expire -> compact -> stamp, the prune console
@@ -405,6 +408,61 @@ def test_report_contract_states_working_set_expectations():
         " Anomaly-log history is pruned by the patroller")
 
 
+# ------------------------------- the no-patrol-history contract (#85, rule 29b)
+
+# reporting-notifications.md rule 5's #85 clauses, verbatim. The wiki records
+# current state, git history is the record, the intro stays short, and a
+# level-3 status block is legal while a sixth level-2 section is not.
+NO_PATROL_HISTORY_CONTRACT_CLAUSES = (
+    'The wiki records current state only — never write patrol-history prose: '
+    'no per-patrol headline log, no History: list, no "as of patrol #N" '
+    'chronology. Git history is the record of what changed when.',
+    "Keep the opening prose to a few lines: what the wiki is and the dominant "
+    "standing severity.",
+    "A ### status block after the Anomaly log is legal; a sixth ## section is "
+    "not.",
+)
+
+# patrol-engine.md rule 3f's clause, verbatim — the system prompt's
+# hard-rules / patrol-order teaching.
+NO_PATROL_HISTORY_PROMPT_CLAUSE = (
+    "Record current state only. The wiki is not a patrol log: never write a "
+    'per-patrol headline, a History: list, or "as of patrol #N" chronology — '
+    "git history already records what changed when. Keep the opening prose to "
+    "a few lines."
+)
+
+
+def test_report_contract_bans_patrol_history_prose():
+    """reporting-notifications.md rule 5 (#85): the working-set item carries
+    the three no-patrol-history sentences verbatim — the contract is where
+    the model learns what must never go into the wiki (wiki-memory.md rule
+    29b)."""
+    flat = " ".join(patrol.REPORT_CONTRACT.split())
+    for clause in NO_PATROL_HISTORY_CONTRACT_CLAUSES:
+        assert clause in flat, f"REPORT_CONTRACT must carry {clause!r}"
+
+
+def test_system_prompt_teaches_current_state_not_patrol_history():
+    """patrol-engine.md rule 3f (#85): the system prompt carries the
+    current-state clause verbatim — the hard-rules / patrol-order block is
+    where the model is told that git history is the record, the structured
+    contract only repeats it."""
+    flat = " ".join(patrol.SYSTEM_PROMPT.split())
+    assert NO_PATROL_HISTORY_PROMPT_CLAUSE in flat, (
+        "the system prompt must tell the model to record current state only"
+        " and that git history is the record of what changed when")
+    assert "per-patrol headline" in flat
+    assert "History: list" in flat
+    assert 'as of patrol #N' in flat
+    # rule 3f's placement: the clause rides the standing-instruction block,
+    # not the closing "write your final summary" prose — it is a rule about
+    # what the wiki may contain, not about how to phrase the summary
+    assert flat.index("Record current state only") < flat.index("When you are DONE exploring"), (
+        "the clause belongs before the closing summary guidance — it is a"
+        " wiki-content rule, not summary phrasing")
+
+
 # ------------------------------------ the model-facing size note (#67, rule 29a)
 
 def test_size_note_within_budget_names_count_budget_headroom():
@@ -560,8 +618,9 @@ def test_shape_pass_size_note_persists_on_the_retry():
 
 def test_wiki_repair_pass_carries_no_size_note():
     """Rule 29a (#67): the rule-7d wiki-repair pass carries no size note —
-    its ask is a minimal merge preserving the old wiki, so a prune
-    instruction would contradict it."""
+    its ask is a minimal merge preserving the old wiki (bar the
+    patrol-history prose rule 29b drops), so a prune instruction would
+    contradict it."""
     stub = _StubShapeModel([_report("merged wiki")])
     asyncio.run(patrol.shape_report(
         stub, [HumanMessage("mission")], budget_cut=False,

@@ -54,8 +54,22 @@ in `how/reporting-pipeline.md`.
    `test_empty_report.py`):
    "updated_wiki is required on every report: return the FULL wiki
    content even when nothing needs changing — copy unchanged sections
-   verbatim. An empty updated_wiki is never a valid answer: a patrol with
-   nothing to change returns the wiki unchanged."
+   verbatim except that patrol-history prose is never carried forward.
+   An empty updated_wiki is never a valid answer: a patrol with nothing
+   to change returns the wiki unchanged."
+   [DONE: #85 — the sentence is narrowed by eight words:
+   `except that patrol-history prose is never carried forward`
+   (`wiki-memory.md` rule 29b). Without it the contract contradicts
+   itself on a no-change patrol over a history-bearing wiki — #51's
+   "copy unchanged sections verbatim" versus #85's "never write
+   patrol-history prose" — and the contradiction reaches the wiki-repair
+   pass too, whose user message carries this contract and now also asks
+   for history prose to be dropped (rule 7d). Content completeness is
+   #51's requirement and is untouched (the whole wiki still comes back);
+   patrol-history prose is not content the wiki may keep. Every
+   model-facing surface that repeats the ask carries the narrowed
+   wording, not the old one: this clause, the empty-wiki corrective
+   (rule 7b), and the wiki-repair ask (rule 7d).]
    The schema field keeps its lenient default (an omitted field parses
    to `""`), so a wiki-omitting response still parses and its findings
    survive: the process, not the parser, enforces the requirement
@@ -73,6 +87,25 @@ in `how/reporting-pipeline.md`.
    patrol observed new facts that genuinely require the space; then prune
    elsewhere to pay for them. Use the line: retain what is load-bearing,
    drop what is not."]
+   [DONE: #85 — the working-set item also forbids
+   patrol-history prose (`wiki-memory.md` rule 29b). Three sentences
+   join item 5, verbatim (executable pins live in `test_wiki_budget.py`):
+   - `The wiki records current state only — never write patrol-history prose: no per-patrol headline log, no History: list, no "as of patrol #N" chronology. Git history is the record of what changed when.`
+   - `Keep the opening prose to a few lines: what the wiki is and the dominant standing severity.`
+   - `A ### status block after the Anomaly log is legal; a sixth ## section is not.`
+   It also narrows the #51 verbatim-copy sentence in this same rule (above):
+   the narrowed wording (`except that patrol-history prose is never carried
+   forward`) is what the contract carries, so a no-change patrol returns the
+   whole wiki but never reproduces its history prose.
+   The first sentence is the ban (the scope and rationale are rule 29b's:
+   per-entry state stays, document-level chronology goes), the second keeps
+   the intro bounded, and the third settles the structural question — a
+   level-3 status block is legal prose (rule 11's free section order),
+   a sixth level-2 section is a validation failure. Nothing mechanical
+   changes: the working-set/size-note machinery of rules 29/29a is
+   unchanged, `validate_wiki` still judges no prose (rule 15), and
+   `wiki_version` stays 1 — the rule is taught and measured, never gated
+   (`decisions/0032-no-patrol-history-prose.md`).]
 
 ### Notification Dedup
 
@@ -290,7 +323,11 @@ entry whose status and severity are unchanged is wiki-only.
     unchanged, never by omitting it). The pass retries once with a
     corrective user message that names the empty `updated_wiki` and
     demands the full content — a message distinct from rule 7's generic
-    invalid-report corrective. A retry that returns a wiki recovers
+    invalid-report corrective. [DONE: #85 — the corrective repeats
+    rule 5's *narrowed* copy-verbatim ask (`except that patrol-history
+    prose is never carried forward`), never the unqualified one:
+    `wiki-memory.md` rule 29b applies to a no-change patrol too, and the
+    executable pin lives in `test_empty_report.py`.] A retry that returns a wiki recovers
     normally — and that retry's report is the patrol's report: it replaces
     the first attempt wholesale (findings, notifications, wiki), the same
     wholesale replacement a successful rule-7a repair uses. When the retry
@@ -350,6 +387,16 @@ entry whose status and severity are unchanged is wiki-only.
     report's findings and notifications, asking for a corrected
     `PatrolReport` whose `updated_wiki` is the old wiki rewritten
     **minimally** — the findings merged in, everything else preserved.
+    [DONE: #85 — "preserved" yields to the no-patrol-history ban
+    (`wiki-memory.md` rule 29b): the minimal merge drops patrol-history
+    prose rather than carrying it forward, and the user message states it
+    verbatim (executable pin lives in `test_empty_report.py`):
+    `Drop patrol-history prose while merging: no per-patrol headline log, no History: list, no "as of patrol #N" chronology — git history is the record.`
+    The unqualified `preserve everything else verbatim` ask is reworded
+    out — everything else is still preserved, but the prose rule 29b
+    forbids is not (the same test pins the phrase's absence): a merge that
+    preserved a per-patrol HEADLINE log would re-teach the model exactly
+    the prose the ban forbids.]
     The mode shares everything with the pass's other modes: the
     `PatrolReport` binding, the reporting bounds (rules 8a/8b), and the
     internal parse/empty retry (rules 7/7b — a wiki-repair result with
@@ -631,6 +678,7 @@ entry whose status and severity are unchanged is wiki-only.
 | Ticket | Summary |
 |---|---|
 | #88 | The shape pass inside the model gateway's ~900 s ceiling (rules 7f, 7g, 8a parenthetical, 8b value here; rule 8b's `REPORT_MAX_TOKENS` 64000 → 32000 also lands in `wiki-memory.md`, `patrol-engine.md`, `system-overview.md`, `how/agent-engine.md`, and `how/reporting-pipeline.md`; ADR 0031): the bound halves because a 64k-bounded generation hit the gateway's ~900 s wall clock at ~902 s twice (≈71 output tok/s) while #63's successful run needed only ~20k completion tokens — ~450 s at 32000, still ~12k above the observed completion. A gateway-failure retry becomes ceiling-aware (rule 7g): attempt 2 rebuilds its base from the raw conversation compacted at the new hard-coded `SHAPE_TOOL_KEEP_RETRY` (500 characters) and asks for the most concise valid report — with the contract re-stated after the corrective and the size note last — instead of repeating the identical request; non-gateway failures keep their correctives and the 1500-char cap, and the rule-7b empty-wiki corrective stays distinct. The attempt-failure log line gains the attempt's token counts (`in I out O tokens`, `?` when unknown). Total-failure behavior is unchanged (`wiki-memory.md` rule 33). Splitting the report into two calls was rejected (ADR 0031). Exploration overshoot (547,804 vs 500,000 input tokens, checked per turn) is out of scope here — the token soft-stop owns it (`patrol-engine.md` rule 8b, #10). Impl commit also syncs `AGENTS.md`'s test list |
+| ~~#85~~ | ~~Patrol-history prose is banned in the report contract (rule 5's #85 clauses; behavior in `wiki-memory.md` rule 29b, ADR 0032): the wiki records current state only — no per-patrol headline log, no `History:` list, no "as of patrol #N" chronology, because git history is the record of what changed when; the opening prose stays a few lines; a `###` status block after the Anomaly log is legal while a sixth `##` section is not. #51's copy-verbatim sentence is narrowed by the same exception (`except that patrol-history prose is never carried forward`) and the empty-wiki corrective repeats the narrowed wording, so no model-facing surface carries both asks. The wiki-repair mode's minimal merge drops history prose instead of preserving it (rule 7d). Teaching only — the working-set/size-note machinery is unchanged and length still never gates validation. Impl commit also syncs `AGENTS.md`'s test list and `how/reporting-pipeline.md`'s `REPORT_CONTRACT` row~~ |
 | ~~#34~~ | ~~Only the Constraint sentence that left network-level egress control open: it now points at `egress-control.md` (the derived default-deny allowlist, ADR 0030). The notification contract here is unchanged — the configured sinks stay the deliberate outbound notification allowlist, and what they may carry is the guard's business~~ |
 | ~~#77~~ | ~~Dev/test host portability (rule 9b here; `wiki-memory.md` rules 4c/4g; ADR 0029): stdout/stderr are reconfigured to UTF-8/LF at startup so the ` · ` separator, severity marks, and `🔔` prefix print as the same bytes on every host, and a non-UTF-8 stream never raises. The wiki half is the byte-determinism pin on rule 4c (`wiki-memory.md`) and the explicit-UTF-8 read rule. Impl commit also syncs `AGENTS.md` (test conventions + test list) and `how/project-structure.md`~~ |
 | ~~#67~~ | ~~Wiki size feedback in the reporting pass (rule 5 amendment here; rule 29a in `wiki-memory.md`): `REPORT_CONTRACT` names the consequence chain (over-budget wiki → slower reporting pass → model gateway's request ceiling → the next patrol re-reading prose) and requires a smaller returned wiki when the size line says over budget (prune at least the excess, unless new facts require the space); every report-pass invocation appends the deterministic `wiki_size_note` line. ADR 0025 rejects process-side prose compaction. Impl commit also syncs `AGENTS.md`'s test list~~ |
