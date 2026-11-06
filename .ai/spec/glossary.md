@@ -216,7 +216,12 @@ redefined here.
   apprise multi-sink; #34's data-exfiltration prevention — the derived
   default-deny egress allowlist and the guard's endpoint-override refusal; #63 — reporting token bound +
   visible empty-result reasons — was filed here but pulled forward and
-  closed after the frozen-wiki diagnosis), future (#12–#16, #41). Plans live
+  closed after the frozen-wiki diagnosis), v0.3.1 reporting reliability
+  (#88: the shape pass inside the model gateway's ~900 s ceiling; #85: the
+  wiki prose/history payload the pass reads and re-emits), v0.4.0 fleet
+  memory & wiki usability (#89: one repo, one branch per cluster; #13: fleet
+  spoke push/hub read; #26: wiki viewer; #86: anomaly-log byte bound; #87:
+  process-generated topology diagram), future (#12, #14–#16, #31, #41). Plans live
   in GitHub issues; #9/#11 were promoted into v0.1 (#9's original dedup scope
   later moved to #35) and #20 slotted into v0.2
   after the first in-cluster acceptance run (PR #29 discussion); #39–#41
@@ -227,4 +232,8 @@ redefined here.
   so the model prunes the over-budget wiki — was filed from the same soak
   and slotted into v0.3; #77 — dev/test host portability (UTF-8/LF text I/O,
   a green suite on Windows) — was filed from the Windows dev environment and
-  slotted into v0.3.
+  slotted into v0.3. #85–#89 were filed from the v0.3.0 release soak and the
+  #88 recurrence: the reporting-pass gateway ceiling, the over-budget wiki
+  (prose/history and anomaly-log bytes), the multi-wiki single-repo layout,
+  and the mermaid-topology question; #85/#88 gate v0.3.1, the rest follow
+  in v0.4.0.
