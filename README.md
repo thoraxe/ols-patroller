@@ -10,7 +10,8 @@ human (console / apprise sinks) about anything it thinks is wrong.
 Prior-art landscape and positioning: see [`docs/prior-art.md`](docs/prior-art.md).
 Plans are tracked in [GitHub issues and milestones](../../milestones), not in a
 document — v0.1 *in-cluster*, v0.2 *compounding wiki*, v0.3 *operational
-hardening*, plus a `future` milestone for deferred direction.
+hardening*, v0.3.1 *reporting reliability*, v0.4.0 *fleet memory & wiki
+usability*, plus a `future` milestone for deferred direction.
 
 ## Run it
 
