@@ -1,17 +1,32 @@
-# OLS Patroller PoC
+# Patroller — a resident SRE agent for Kubernetes and OpenShift
 
-Tracked in [OLS-4439](https://redhat.atlassian.net/browse/OLS-4439) (research spike).
+A **proactive, non-deterministic SRE agent** ("resident SRE"): on a schedule, an LLM
+agentically explores a cluster **read-only**, validates reality against a persistent
+**wiki** (its memory), updates/refines the wiki, and notifies a human (console /
+apprise sinks) about anything it thinks is wrong.
 
-A hacky proof-of-concept of a **proactive, non-deterministic SRE agent** ("resident SRE"):
-on a schedule, an LLM agentically explores a cluster **read-only**, validates reality
-against a persistent **wiki** (its memory), updates/refines the wiki, and notifies a
-human (console / apprise sinks) about anything it thinks is wrong.
+The patroller is **platform-agnostic**: any Kubernetes or OpenShift cluster, any
+OpenAI-compatible model endpoint, no vendor or Lightspeed code imported. It began as
+an OpenShift Lightspeed research spike ([OLS-4439](https://redhat.atlassian.net/browse/OLS-4439));
+OLS/Lightspeed is now an optional integration, not a dependency. The repository,
+package, image, and manifest names keep the historical `ols-patroller` name until the
+rename lands.
+
+| Concern | Choice |
+|---|---|
+| Cluster | any Kubernetes/OpenShift, via `oc`/`kubectl`; RBAC is the enforcement boundary |
+| Model | any OpenAI-compatible endpoint (`PATROL_BASE_URL` / `PATROL_MODEL`) |
+| Engine | [`deepagents`](https://github.com/langchain-ai/deepagents) |
+| Memory | a git-backed markdown wiki on a PVC (or any directory) |
+| Notifications | console + [apprise](https://github.com/caronc/apprise) sinks |
+| OLS/Lightspeed | optional: in-flight `AgenticRun` dedup today; governed remediation later (#12) |
 
 Prior-art landscape and positioning: see [`docs/prior-art.md`](docs/prior-art.md).
 Plans are tracked in [GitHub issues and milestones](../../milestones), not in a
 document — v0.1 *in-cluster*, v0.2 *compounding wiki*, v0.3 *operational
-hardening*, v0.3.1 *reporting reliability*, v0.4.0 *fleet memory & wiki
-usability*, plus a `future` milestone for deferred direction.
+hardening*, v0.3.1 *reporting reliability*, v0.3.2 *notification cadence*,
+v0.4.0 *fleet memory & wiki usability*, plus a `future` milestone for unscheduled
+direction and research.
 
 ## Run it
 
@@ -51,7 +66,9 @@ Hints on the human surface, never gates.
 
 ## What it does per patrol
 
-1. Reads in-flight `AgenticRuns` (best-effort dedup context).
+1. Reads in-flight agentic work if the cluster exposes it (OLS `AgenticRuns`
+   today; best-effort dedup context — a cluster without the CRD simply reports
+   nothing).
 2. Loads the wiki (`wiki/cluster-wiki.md`, seeded on first run).
 3. Agentic loop: model explores via a single **`kubectl_readonly`** tool (it decides
    what to look at; ~5–15 steps typical).
@@ -66,9 +83,9 @@ Hints on the human surface, never gates.
 ## Engine
 
 The agent loop is [langchain-ai/deepagents](https://github.com/langchain-ai/deepagents)
-(`create_deep_agent`) — the same upstream library the OLS agentic sandbox uses,
-depending on it **directly** (no OLS code imported, keeps the patroller
-standalone/open-source):
+(`create_deep_agent`) — the same upstream library used by other agentic sandboxes
+(including the OLS agentic sandbox), depended on **directly** (no vendor or
+platform code imported, so the patroller stays standalone/open-source):
 
 - **No backend** → no shell, no filesystem writes; built-in `ls/write_file/
   edit_file/delete/glob/grep/execute` are removed via a replacement
@@ -84,7 +101,7 @@ standalone/open-source):
   tool choice and writes a plain-text summary when done; a separate tool-free
   reporting pass (`with_structured_output`, function-calling) shapes the
   finished conversation into the typed `PatrolReport` — the same "shape pass"
-  pattern as the OLS agentic sandbox.
+  pattern used by other agentic sandboxes.
 - Model via `langchain-openai`'s `ChatOpenAI` — any OpenAI-compatible endpoint,
   same `PATROL_*` env contract as before.
 - Step budget = `recursion_limit` (`max_steps * 2 + 12`) caps exploration.
@@ -127,8 +144,9 @@ without ever rejecting a write.
   Engine above), and when deployed in-cluster the pod SA's RBAC (e.g.
   `cluster-reader`, which grants no Secret access) is the server-side enforcement
   boundary — the tool guard is defense-in-depth, not the boundary itself.
-- The patrol **never mutates the cluster**. Remediation would be delegated to a
-  governed AgenticRun (not implemented in the PoC).
+- The patrol **never mutates the cluster**. Remediation is out of scope for the
+  patroller itself; the planned handoff is a governed agentic run (#12, #14),
+  not implemented yet.
 - Guard is unit-checked (mutation verbs + Secret access + local-file/credential
   flags + endpoint-override flags + `--raw` paths → all refused).
 
@@ -331,20 +349,22 @@ deepagents engine (scripted fake-model e2e, no endpoint needed):
   both flow through the same shape pass (`PatrolReport` parsed), wiki written,
   notifications emitted.
 
-Real-cluster runs (2026-10-13, ols-demo-2 / OCP 4.21, EnMaaS GLM 5.3):
+Early real-cluster runs (2026-10-13, the original demo cluster / OCP 4.21,
+EnMaaS GLM 5.3; that cluster happened to be loaded with the OLS/Lightspeed
+stack, so the findings below are described generically):
 
 - Patrol #4 (fresh wiki): 53 tool calls, 16 findings, 0 guard refusals;
   independently rediscovered the 19-day `wrker` nodeSelector typo plus new
-  catches (DiskPressure↔OLS-restart correlation, all-ephemeral OLS state with
-  unused lvms-vg1, personal-quay RAG source, 4 unapplied errata). Budget
+  catches (DiskPressure↔workload-restart correlation, all-ephemeral platform
+  state on unused storage, a personal registry source, 4 unapplied errata). Budget
   exhausted at 15 turns → salvage pass forced the final report (508k in /
   25k out tokens).
 - Patrol #5 (memory loop): 45 tool calls, 17 findings; watch-list carried
   forward with per-item added/updated/unchanged tracking — "still unfixed at
   2nd patrol", DiskPressure downgraded to FYI after ~4.6h non-recurrence,
   emptyDir risk marked "materialized once, non-fatally" (rhokp Solr rebuild).
-  One guard refusal: jsonpath extracting `credentialsSecret` from OLSConfig
-  (strict by design; model recovered via a plain `get -o yaml`).
+  One guard refusal: jsonpath extracting a credential field from a platform CR
+  (strict by design; the model recovered via a plain `get -o yaml`).
 - Patrol #6 (30-turn budget): 36 turns / 63 tool calls, ~1.02M input tokens —
   still ran to the budget under the then-forced tool choice; this motivated
   the shape-pass switch.
@@ -357,8 +377,17 @@ Real-cluster runs (2026-10-13, ols-demo-2 / OCP 4.21, EnMaaS GLM 5.3):
 
 ## Known limitations (it's a hacky PoC)
 
-- Fixtures are static; a real cluster will exercise the loop differently.
-- No per-scope cadence, no cost control beyond step budget, no notify-dedup
-  beyond the anomaly log, wiki is a plain file (not MCP/vector memory).
-- Investigation engine is intentionally dumb-pluggable: swap in HolmesGPT or an
-  AgenticRun later rather than growing this (see `docs/prior-art.md`).
+- Pre-1.0 (single-file `patrol.py` heritage); fixtures are static and a real
+  cluster exercises the loop differently.
+- Single cluster, single wiki per process: fleet/multi-cluster layout is
+  planned (#89 → #13).
+- No per-scope cadence; the step and token budgets are the only cost controls.
+- The wiki is a plain git-backed markdown file by design — not MCP or vector
+  memory (see #16 for the trigger that would revisit it).
+- Remediation is not implemented: the patrol is read-only, and the governed
+  handoff (#12) is future work.
+- The `ols-patroller` name (repo, package, image, manifests) is historical and
+  will be untied from OLS over the coming releases.
+- The investigation engine is intentionally swappable: HolmesGPT or an
+  AgenticRun RCA phase can slot in later rather than growing this (see
+  `docs/prior-art.md`).
