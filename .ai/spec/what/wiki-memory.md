@@ -334,6 +334,17 @@ the history #7 expires into) carry per-entry structure; everything else is prose
     digest cadence (`reporting-notifications.md` rule 4c) is the only
     reader. An absent pair reads as "not yet notified under this clock";
     the digest falls back to `first_seen` for its migration nudge.
+    [PLANNED: #93 — the clock survives rewrites because the process carries
+    it: before the stamp, the pure
+    `carry_last_notified(new_wiki, old_wiki)` restores the old on-disk value
+    onto every entry present in both wikis, and removes any pair the model
+    wrote for an entry the old wiki carries no parseable clock for (a new
+    entry's own notification is its clock's path) — the same carry the
+    staleness clock gets from the expiry pass (rule 20). A rewrite that
+    omits the pair therefore cannot reset the digest cadence, and the model
+    still need not know the pair exists. Byte-for-byte otherwise; the
+    write-path position is rule 16's (`reporting-notifications.md` rule
+    4d).]
 13. **Prose sections.** Topology, Baselines, and Open questions carry no entry
     metadata: list items there are free prose (rule 6's inline
     `(source, timestamp, confidence)` tag remains the convention, unvalidated).
@@ -406,6 +417,17 @@ attempt, and then the old wiki wins. Persistence problems degrade, never block.
       `reporting-notifications.md` rule 4d) joins after compaction and
       before the frontmatter stamp, and only on accepted writes: expire →
       compact → notify stamp → stamp → write → commit → push];
+      [PLANNED: #93 — the notify clock's **carry** joins between compaction
+      and the notify stamp: expire → compact → notify carry → notify stamp →
+      stamp → write → commit → push. `carry_last_notified(new_wiki, old_wiki)`
+      restores the old on-disk `last_notified` value onto every entry the two
+      wikis share and drops model-written pairs the old wiki has no clock for
+      (rule 12c, `reporting-notifications.md` rule 4d); it is pure and
+      byte-preserving, and runs on the same accepted-write leg as the stamp.
+      The abbreviated `expire → compact → stamp` shorthand other rules use
+      (rules 22, 28–31, 33; ADR 0022) names the housekeeping stages only —
+      this rule is the authoritative order, and the notify clock's carry and
+      stamp sit between compaction and the frontmatter stamp];
     - **invalid** → one repair pass (rule 18). If the repaired report's wiki
       validates, that report is the patrol's final report (expire → compact
       → stamp → write → commit → push [DONE: #40 — compaction joins
@@ -1156,6 +1178,7 @@ write.
 
 | Ticket | Summary |
 |---|---|
+| #93 | The notify clock is carried across rewrites (rule 12c's new carry paragraph + the rule-16 write-path ordering; the behavior contract is `reporting-notifications.md` rules 4c/4d, ADR 0033): `carry_last_notified(new_wiki, old_wiki)` restores the old on-disk `last_notified` onto every entry present in both wikis and drops model-written pairs the old wiki has no clock for, between the anomaly-log compaction and the notify stamp — so a rewrite that omits the optional process-owned pair cannot reset the digest cadence (the #93 evidence: `last_notified` dropped on every rewrite, digest re-firing every other patrol). Byte-for-byte otherwise, no schema change (`wiki_version` stays 1), validation still does not judge the pair. Impl commit also syncs `AGENTS.md`'s test list |
 | ~~#88~~ | ~~The shape pass inside the model gateway's ~900 s ceiling, wiki half (`REPORT_MAX_TOKENS` 64000 → 32000 in the Working-Set Budget intro and rule 29; behavior is `reporting-notifications.md` rules 7f/7g + 8b, ADR 0031): a 64k-bounded shape-pass generation hits the gateway's ~900 s wall clock at ~902 s, so the bound halves to ~450 s of generation while staying ~12k above #63's observed 20k completion — the wiki is still re-emitted whole under this bound, so both the soft budget's arithmetic note and the ceiling argument are re-based, not restructured. Rule 33's total-failure leg is unchanged (the net stays the last resort). Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#85~~ | ~~The wiki records current state, not patrol history (rule 29b; the wiki-repair half is rule 30, ADR `decisions/0032-no-patrol-history-prose.md`): document-level patrol-history prose is banned — a per-patrol HEADLINE log, a hand-maintained `History:` list, an "as of patrol #N" chronology — while per-entry hypothesis state (rule 7's persistence tracking, the metadata line's `first_seen`/`last_verified`/`status`) stays, being current-entry state, not a patrol log. The opening prose stays a few lines; a `###` status block after the Anomaly log is legal, a sixth `##` section is not; the prose sections are summarized rather than accumulated. Taught, never validated: `validate_wiki` judges no prose (rule 15), `wiki_version` stays 1, the write path is unchanged, and the pressure stays rule 29's budget plus rule 29a's size note. The wiki-repair minimal merge drops history prose instead of preserving it (rule 30). The contract text is `reporting-notifications.md` rule 5, the prompt teaching is `patrol-engine.md` rule 3f; the Anomaly log's own byte bound is #86. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#77~~ | ~~Dev/test host portability (rule 4c's byte determinism, rule 4g, rule 27's blob decode, rule 31's legacy leg; the console half is `reporting-notifications.md` rule 9b; ADR 0029): every wiki write is UTF-8/LF/no-BOM with the encoding pinned, every wiki read decodes UTF-8 explicitly (legacy bytes replaced, never fatal; a legacy wiki is runnable but never re-written by a model-free leg; an undecodable history blob yields the empty list), and stdout/stderr are reconfigured to UTF-8/LF so the console surface is host-independent. The suite is green on Linux and Windows with the same command: fake cluster CLIs become host-portable, test subprocess envs start from `os.environ` and delete `PATROL_*`, and test wiki fixtures/readers use explicit UTF-8. The dev-Python pin (`.python-version` 3.12) shipped with #77. Impl commit also syncs `AGENTS.md` (test conventions + test list) and `how/project-structure.md` (the wiki-I/O encoding surface + the new test file)~~ |

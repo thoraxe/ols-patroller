@@ -11,6 +11,7 @@ metadata it reads (`.ai/spec/what/wiki-memory.md` rules 12b-12c, 16):
     digest_notifications(old, new, *, today, digest_after, ...)  # rule 4c
         -> (digest, ids)
     stamp_last_notified(content, ids, day) -> str                # rule 4d
+    carry_last_notified(new_wiki, old_wiki) -> str               # rule 4d (#93)
     NOTIFY_DIGEST_AFTER / PATROL_NOTIFY_DIGEST_AFTER             # rule 4c
     validate_wiki severity pair                                  # wiki rule 12b
     REPORT_CONTRACT dedup instructions                           # rule 4b
@@ -416,6 +417,128 @@ def test_stamp_last_notified_is_fence_aware_and_absent_id_noop():
 def test_stamp_last_notified_missing_id_is_noop():
     content = build_wiki(watch=[entry("W-1", severity="warn")])
     assert patrol.stamp_last_notified(content, ["W-9"], "2026-10-30") == content
+
+
+# ------------------------------------------- rule 4d: notify clock carry (#93)
+# The digest cadence collapsed to every other patrol because the model drops the
+# optional, process-owned `last_notified` pair on every rewrite and the write
+# path only stamped the ids notified THIS patrol. The carry restores the old
+# on-disk value onto every shared entry, so a rewrite cannot reset the cadence.
+
+def _carry(new, old):
+    return patrol.carry_last_notified(new, old)
+
+
+def test_carry_restores_the_old_clock_and_replaces_the_model_copy():
+    old = build_wiki(watch=[entry("W-1", severity="warn",
+                                  last_notified="2026-11-05")])
+    # a rewrite that dropped the pair, and one where the model invented a value
+    dropped = build_wiki(watch=[entry("W-1", severity="warn")])
+    invented = build_wiki(watch=[entry("W-1", severity="warn",
+                                       last_notified="1999-01-01")])
+    for new in (dropped, invented):
+        out = _carry(new, old)
+        body = section_body(out, "Watch-list")
+        assert body.count("last_notified: 2026-11-05") == 1
+        assert "1999-01-01" not in out
+        assert patrol.validate_wiki(out) == []
+    # a duplicate pair on one line leaves exactly one after the carry
+    dup_pairs = build_wiki(watch_body=(
+        meta_line(id="W-1", severity="warn", last_notified="1999-01-01")
+        + " · last_notified: 1998-01-01\n  worker-1 NotReady for 40d."))
+    out = _carry(dup_pairs, old)
+    assert out.count("last_notified: 2026-11-05") == 1
+    assert "1999-01-01" not in out and "1998-01-01" not in out
+
+
+def test_carry_drops_pairs_the_old_wiki_has_no_clock_for():
+    """A model-authored clock is never durable: an entry the old wiki has no
+    parseable clock for (an existing entry without the pair, a brand-new
+    entry) carries no pair at all after the carry."""
+    old = build_wiki(watch=[entry("W-1", severity="warn")])
+    new = build_wiki(
+        watch=[entry("W-1", severity="warn", last_notified="2026-11-01"),
+               entry("W-2", severity="crit", last_notified="2026-11-02")],
+        anomaly=[entry("A-1", status="resolved", recheck=None,
+                       severity="crit", last_notified="2026-11-03")],
+    )
+    out = _carry(new, old)
+    assert "last_notified" not in section_body(out, "Watch-list")
+    assert "last_notified" not in section_body(out, "Anomaly log")
+    assert patrol.validate_wiki(out) == []
+
+
+def test_carry_matrix_present_new_removed_and_unparseable_old_clock():
+    old = build_wiki(
+        watch=[entry("W-1", severity="warn", last_notified="2026-11-05"),
+               # regex-shaped but not a calendar date: no clock
+               entry("W-2", severity="warn", last_notified="2026-02-30"),
+               # moved to the Anomaly log by the model this patrol
+               entry("A-1", severity="crit", status="watching",
+                     last_notified="2026-11-03")],
+        anomaly=[entry("A-9", status="resolved", recheck=None,
+                       severity="crit", last_notified="2026-11-04")],
+    )
+    # W-1 present in both (carried); W-2's old clock is not a calendar date
+    # (dropped); A-1 moved Watch-list → Anomaly log (carried across sections by
+    # id); A-9 was removed by the model (no target, nothing to assert about its
+    # old clock); W-4 is new (its own notification is the path).
+    new = build_wiki(
+        watch=[entry("W-1", severity="warn"),
+               entry("W-2", severity="warn", last_notified="2026-11-06"),
+               entry("W-4", severity="warn", last_notified="2026-11-07")],
+        anomaly=[entry("A-1", status="resolved", recheck=None,
+                       severity="crit")],
+    )
+    out = _carry(new, old)
+    assert "last_notified: 2026-11-05" in section_body(out, "Watch-list")
+    assert out.count("last_notified: 2026-11-05") == 1
+    assert "2026-11-06" not in out          # not a calendar date: dropped
+    assert "2026-11-07" not in out          # new entry: no clock yet
+    # the section move carries the clock: it is keyed by id, not by section
+    assert "last_notified: 2026-11-03" in section_body(out, "Anomaly log")
+    assert section_body(out, "Watch-list").count("2026-11-03") == 0
+    assert patrol.validate_wiki(out) == []
+
+
+def test_carry_preserves_everything_else_byte_for_byte():
+    old = build_wiki(watch=[entry("W-1", severity="warn",
+                                  last_notified="2026-11-05")])
+    new = build_wiki(
+        watch=[entry("W-1", severity="warn")],
+        anomaly=[entry("A-1", status="resolved", recheck=None,
+                       severity="crit")],
+    )
+    out = _carry(new, old)
+    # frontmatter, prose, and untargeted entries are untouched
+    assert new.split("## Topology")[0] == out.split("## Topology")[0]
+    assert "  worker-1 NotReady for 40d." in out
+    assert section_body(new, "Anomaly log") == section_body(out, "Anomaly log")
+    # idempotent: carrying the carried wiki changes nothing
+    assert _carry(out, old) == out
+    # a wiki with no clocks anywhere is returned unchanged
+    plain = build_wiki(watch=[entry("W-1", severity="warn")])
+    assert _carry(plain, plain) == plain
+
+
+def test_carry_is_fence_aware_and_first_occurrence_wins():
+    old = build_wiki(watch=[entry("W-1", severity="warn",
+                                  last_notified="2026-11-05")])
+    fenced = "```\n" + meta_line(id="W-1") + "\n```"
+    new = build_wiki(watch_body=fenced)
+    assert _carry(new, old) == new       # a fenced list line is never an entry
+    # duplicate id: the first occurrence is the entry the carry touches, the
+    # later one is left byte-for-byte alone (rule 4d's first-occurrence rule)
+    dup = build_wiki(watch=[entry("W-1", severity="warn"),
+                            entry("W-1", severity="warn",
+                                  last_notified="1997-01-01")], valid=False)
+    out = _carry(dup, old)
+    assert out.count("last_notified: 2026-11-05") == 1
+    lines = [ln for ln in out.split("\n") if "id: W-1" in ln]
+    assert "last_notified: 2026-11-05" in lines[0]
+    assert "1997-01-01" not in lines[0]
+    assert "1997-01-01" in lines[1]          # the later duplicate is untouched
+    assert "2026-11-05" not in lines[1]
 
 
 # ------------------------------------------------------- config surface (4c)

@@ -72,6 +72,12 @@ Covers (safety-model.md rules 6b-6c, wiki-memory.md rules 4f and 15-19):
   carries the clause telling it to record current state only — no
   per-patrol headline log, no History: list, no "as of patrol #N"
   chronology — because git history is the record of what changed when
+- notify-clock carry wiring of #93 (reporting-notifications.md rule 4d):
+  the write path restores the old on-disk last_notified onto every entry
+  present in both wikis before the stamp, so a model rewrite that drops
+  the optional pair carries the OLD date forward (never a fresh stamp on
+  a quiet patrol), and three patrols over dropping rewrites digest once
+  instead of on every other patrol
 
 The `--raw` guard refusal is not e2e-covered: it is unit-checked in
 test_kubectl_guard.py (kubectl-guard.md rule 6a, #11).
@@ -83,7 +89,7 @@ import json
 import re
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -1407,16 +1413,18 @@ def test_minimal_write_on_a_fresh_deployment_writes_the_stamped_seed(
 # --------------------------------------------------- notification dedup (#35)
 
 def dedup_watch_body(status="watching", severity="warn",
-                     first_seen="2026-10-15", last_verified="2026-10-20"):
+                     first_seen="2026-10-15", last_verified="2026-10-20",
+                     last_notified=None):
     """A Watch-list body whose one entry carries the #35 severity pair
-    (rule 12b)."""
-    return (
-        "- id: W-1 · status: " + status + " · first_seen: " + first_seen
-        + " · last_verified: " + last_verified
-        + " · source: kubectl get nodes · confidence: high"
-        + " · recheck: get nodes · severity: " + severity + "\n"
-        "  worker-1 has been NotReady for 40 days."
-    )
+    (rule 12b) — and, when given, the process-owned notify clock (rule 12c,
+    #93's carry fixture)."""
+    line = ("- id: W-1 · status: " + status + " · first_seen: " + first_seen
+            + " · last_verified: " + last_verified
+            + " · source: kubectl get nodes · confidence: high"
+            + " · recheck: get nodes · severity: " + severity)
+    if last_notified is not None:
+        line += " · last_notified: " + last_notified
+    return line + "\n  worker-1 has been NotReady for 40 days."
 
 
 def dedup_wiki(**kw):
@@ -1509,6 +1517,71 @@ def test_periodic_digest_wiring_stamps_the_notify_clock(
     today = datetime.now().strftime("%Y-%m-%d")
     assert f"last_notified: {today}" in written
     assert frontmatter(written)["patrol_count"] == 4
+
+
+def test_notify_clock_is_carried_across_a_rewrite_that_omits_it(
+        tmp_path, monkeypatch, capsys):
+    """#93 rule 4d: the model drops the optional, process-owned
+    `last_notified` pair on every rewrite, so the write path must carry the
+    old on-disk value forward — otherwise the digest cadence resets and the
+    same entries re-digest every other patrol. The carried value is the old
+    one, never a fresh stamp (this entry is not notified this patrol)."""
+    clock = (datetime.now() - timedelta(days=4)).strftime("%Y-%m-%d")
+    first_seen = (datetime.now() - timedelta(days=60)).strftime("%Y-%m-%d")
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    wiki.parent.mkdir(parents=True)
+    wiki.write_text(expiry_wiki_text(
+        dedup_watch_body(first_seen=first_seen, last_notified=clock),
+        patrol_count=3), encoding="utf-8", newline="\n")
+
+    run_patrol_cli(monkeypatch, ScriptedEndpoint(
+        turns=NATURAL_TURNS[:1],
+        report=dict(REPORT, notifications=[],
+                    # the model's rewrite omits last_notified entirely
+                    updated_wiki=dedup_wiki(first_seen=first_seen)),
+    ), wiki, "--max-steps", "8", digest_after=7)
+
+    captured = capsys.readouterr()
+    assert "[digest]" not in captured.out       # carried clock: 4 days < 7
+    written = wiki.read_text(encoding="utf-8")
+    assert f"last_notified: {clock}" in written  # the OLD value, carried
+    today = datetime.now().strftime("%Y-%m-%d")
+    assert f"last_notified: {today}" not in written  # not a fresh stamp
+
+
+def test_digest_cadence_survives_rewrites_that_drop_the_clock(
+        tmp_path, monkeypatch, capsys):
+    """#93's acceptance: after a digest at patrol N, patrol N+1 rewrites and
+    drops the pair, and patrol N+2 does NOT digest the same entries — the
+    cadence survives the rewrites. The pre-#93 outcome was a digest at every
+    other patrol (N, N+2, N+4)."""
+    clock = (datetime.now() - timedelta(days=20)).strftime("%Y-%m-%d")
+    first_seen = (datetime.now() - timedelta(days=60)).strftime("%Y-%m-%d")
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    wiki.parent.mkdir(parents=True)
+    wiki.write_text(expiry_wiki_text(
+        dedup_watch_body(first_seen=first_seen, last_notified=clock),
+        patrol_count=3), encoding="utf-8", newline="\n")
+
+    digests = 0
+    for _ in range(3):
+        endpoint = ScriptedEndpoint(
+            turns=NATURAL_TURNS[:1],
+            report=dict(REPORT, notifications=[],
+                        updated_wiki=dedup_wiki(first_seen=first_seen)),
+        )
+        run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8",
+                       digest_after=7)
+        out = capsys.readouterr().out
+        digests += out.count("[digest] 1 entry unfixed for more than 7 days: W-1")
+
+    # patrol 1 digests (20 days overdue); patrols 2 and 3 stay quiet because
+    # patrol 1's stamp is carried through both dropping rewrites
+    assert digests == 1
+    today = datetime.now().strftime("%Y-%m-%d")
+    written = wiki.read_text(encoding="utf-8")
+    assert f"last_notified: {today}" in written
+    assert frontmatter(written)["patrol_count"] == 6
 
 
 def test_notification_dedup_fails_open_on_the_minimal_write_leg(

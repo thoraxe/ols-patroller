@@ -236,6 +236,15 @@ entry whose status and severity are unchanged is wiki-only.
       — is at least `digest_after`
       days old: `(today - last).days >= digest_after`. This makes the
       cadence weekly by default rather than per patrol.
+      [PLANNED: #93 — the cadence is only durable because rule 4d
+      **carries** the clock: the `last_notified` this bullet reads is the
+      old on-disk wiki's value, and the write path restores that same value
+      onto the new wiki before stamping, so a model rewrite that omits the
+      pair cannot reset the cadence (the #93 evidence: the pair was dropped
+      on every rewrite, and the digest re-fired every other patrol). The
+      `first_seen` fallback therefore stays what it was meant to be — one
+      migration nudge for a pre-#35 entry — and never a recurring
+      substitute for a clock the model keeps dropping.]
     Candidates are ordered Watch-list document order, then Anomaly-log
     document order. When there is at least one, the digest is exactly
     `[digest] <count> entry unfixed for more than <N> days: <id>, <id>` for
@@ -270,6 +279,44 @@ entry whose status and severity are unchanged is wiki-only.
     skipped on a patrol that writes no wiki (empty, rejected, or
     total-failure legs) — no accepted write, no clock advance (rule 20's
     accepted-write semantics).
+    [PLANNED: #93 — the clock is **carried**, never merely re-stamped. Before
+    the stamp, the write path runs a second pure function,
+    `carry_last_notified(new_wiki, old_wiki) -> str`, which restores the old
+    on-disk clock onto the wiki about to be written: for each
+    metadata-section entry of `new_wiki` (first occurrence per id,
+    fence-aware scanning, both metadata sections — the same reader discipline
+    as `wiki_entry_states`, and the same first-occurrence-only rule as
+    `stamp_last_notified` — a duplicate id's later lines are left
+    byte-for-byte alone), the entry's `last_notified` pair becomes the
+    **old wiki's** value for that id when that value is a valid calendar date
+    in `YYYY-MM-DD` form (the `_is_calendar_date` test `wiki_entry_states`
+    uses — `2026-02-30` is not a clock) — an existing pair replaced in place,
+    an absent one appended
+    as the metadata line's final pair — and is **removed** from the line when
+    the old wiki carries no parseable clock for the id, or does not carry the
+    id at all (a model-authored clock is never durable: whatever the model
+    wrote is either replaced by the old value or dropped). Nothing else on
+    the line, in the prose, or in the frontmatter is touched (byte-for-byte
+    otherwise; a duplicate `last_notified` pair on the line collapses to the
+    single carried value (all model-written pairs on that line go); an id
+    absent from
+    `new_wiki` is a no-op). It runs on the same leg as the stamp — a
+    model-authored accepted write with a non-empty final wiki — after the
+    anomaly-log compaction and **before** `stamp_last_notified`
+    (`wiki-memory.md` rule 16), so an entry notified this patrol carries its
+    old value and is then stamped with today's date, while an entry notified
+    earlier keeps the carried date. Unlike the stamp it is **not** gated by a
+    non-empty notified-id set: a quiet patrol whose model rewrite drops the
+    pair still preserves the clock. The keep-old-wiki,
+    empty-wiki, and rule-31/33 minimal-write legs run no carry: they write no
+    model-authored content, and the minimal write re-writes the old wiki
+    verbatim, its clocks included. Both functions are pure — no I/O, no model
+    calls. `last_notified` stays unjudged by validation (`wiki-memory.md` rule
+    15) and `wiki_version` stays 1: the schema does not change. Teaching the
+    pair to the model is explicitly **not** the fix (the issue's direction 2):
+    the model already drops optional process-owned pairs, so `REPORT_CONTRACT`
+    is unchanged and the clock's durability is the process's job
+    (`decisions/0033-process-owned-carry-of-the-notify-clock.md`).]
 4e. **Delivery order and scope** [DONE: #35]. `run_patrol` builds the
     delivered list as the rule-4a `delivered` messages in proposed order,
     followed by the rule-4c digest when one exists (and only when a
@@ -677,6 +724,7 @@ entry whose status and severity are unchanged is wiki-only.
 
 | Ticket | Summary |
 |---|---|
+| #93 | The notify clock is carried, not just stamped (rule 4d's new carry paragraph, plus rule 4c's durability note; the wiki half is `wiki-memory.md` rules 12c/16; ADR 0033): the digest cadence collapsed to every other patrol because the model drops the optional process-owned `last_notified` pair on every rewrite and rule 4d only stamped the ids notified *this* patrol. A new pure `carry_last_notified(new_wiki, old_wiki)` restores the old on-disk value onto every entry present in both wikis and drops any model-written pair for an entry the old wiki has no clock for, running on the same accepted-write leg as the stamp — after compaction, before `stamp_last_notified`. The model's copy is never trusted, `REPORT_CONTRACT` is unchanged (teaching is not the fix), and the keep-old-wiki/empty-wiki/minimal-write legs run no carry. No schema change (`wiki_version` stays 1), no configuration surface change. Impl commit also syncs `AGENTS.md`'s test list |
 | ~~#88~~ | ~~The shape pass inside the model gateway's ~900 s ceiling (rules 7f, 7g, 8a parenthetical, 8b value here; rule 8b's `REPORT_MAX_TOKENS` 64000 → 32000 also lands in `wiki-memory.md`, `patrol-engine.md`, `system-overview.md`, `how/agent-engine.md`, and `how/reporting-pipeline.md`; ADR 0031): the bound halves because a 64k-bounded generation hit the gateway's ~900 s wall clock at ~902 s twice (≈71 output tok/s) while #63's successful run needed only ~20k completion tokens — ~450 s at 32000, still ~12k above the observed completion. A gateway-failure retry becomes ceiling-aware (rule 7g): attempt 2 rebuilds its base from the raw conversation compacted at the new hard-coded `SHAPE_TOOL_KEEP_RETRY` (500 characters) and asks for the most concise valid report — with the contract re-stated after the corrective and the size note last — instead of repeating the identical request; non-gateway failures keep their correctives and the 1500-char cap, and the rule-7b empty-wiki corrective stays distinct. The attempt-failure log line gains the attempt's token counts (`in I out O tokens`, `?` when unknown). Total-failure behavior is unchanged (`wiki-memory.md` rule 33). Splitting the report into two calls was rejected (ADR 0031). Exploration overshoot (547,804 vs 500,000 input tokens, checked per turn) is out of scope here — the token soft-stop owns it (`patrol-engine.md` rule 8b, #10). Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#85~~ | ~~Patrol-history prose is banned in the report contract (rule 5's #85 clauses; behavior in `wiki-memory.md` rule 29b, ADR 0032): the wiki records current state only — no per-patrol headline log, no `History:` list, no "as of patrol #N" chronology, because git history is the record of what changed when; the opening prose stays a few lines; a `###` status block after the Anomaly log is legal while a sixth `##` section is not. #51's copy-verbatim sentence is narrowed by the same exception (`except that patrol-history prose is never carried forward`) and the empty-wiki corrective repeats the narrowed wording, so no model-facing surface carries both asks. The wiki-repair mode's minimal merge drops history prose instead of preserving it (rule 7d). Teaching only — the working-set/size-note machinery is unchanged and length still never gates validation. Impl commit also syncs `AGENTS.md`'s test list and `how/reporting-pipeline.md`'s `REPORT_CONTRACT` row~~ |
 | ~~#34~~ | ~~Only the Constraint sentence that left network-level egress control open: it now points at `egress-control.md` (the derived default-deny allowlist, ADR 0030). The notification contract here is unchanged — the configured sinks stay the deliberate outbound notification allowlist, and what they may carry is the guard's business~~ |

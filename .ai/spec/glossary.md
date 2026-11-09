@@ -84,9 +84,11 @@ redefined here.
 - **Last-notified clock** — the process-owned `last_notified: YYYY-MM-DD`
   pair on an entry metadata line (#35, `wiki-memory.md` rule 12c): the
   patrol start date on which the entry was last named by a delivered
-  notification, stamped by `stamp_last_notified` on accepted writes. The
-  digest cadence's state; never model-trusted, never judged by the
-  validator.
+  notification, stamped by `stamp_last_notified` on accepted writes and
+  **carried** across rewrites by `carry_last_notified` — the old on-disk
+  value restored onto every entry present in both wikis, any model-written
+  pair replaced or dropped (#93, ADR 0033). The digest cadence's durable
+  state; never model-trusted, never judged by the validator.
 - **Digest** — the periodic reminder notification (#35, `reporting-notifications.md`
   rule 4c): at most one process-authored message per patrol naming standing
   watching entries older than `PATROL_NOTIFY_DIGEST_AFTER` days (default 7)
