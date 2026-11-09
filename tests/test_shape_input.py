@@ -12,7 +12,8 @@ the *gateway* caps the request.
 
 The contract (reporting-notifications.md rules 6, 7, 7e, 7f; #66):
 - every shape-pass invocation carries the COMPACTED conversation (pure
-  `compact_messages`, `SHAPE_TOOL_KEEP` 1500 chars): all messages kept in
+  `compact_messages`, `SHAPE_TOOL_KEEP` 500 chars since #97, 1500 before):
+  all messages kept in
   order, tool-result bodies over the cap truncated with a marker, all
   non-tool text — the patrol's final summary included — verbatim;
 - every attempt-failure log line carries the attempt's elapsed seconds,
@@ -28,12 +29,19 @@ a token bound. The contract additions (rules 7f amendment, 7g):
 - the attempt-failure line also carries the attempt's token counts —
   `in I out O tokens`, `?` when there is no raw response (an exception);
 - a **gateway-failure** retry rebuilds its base from the raw conversation
-  compacted at the hard-coded `SHAPE_TOOL_KEEP_RETRY` (500 chars), discards
-  the attempt-1 message list, and appends one user message: mode prefix,
-  the pinned ceiling corrective (verbatim), `REPORT_CONTRACT`, then the
-  rule-29a size note last;
-- non-gateway failures keep today's append-only retry: the 1500-char base
-  plus the existing corrective.
+  at the same `SHAPE_TOOL_KEEP` cap, discards the attempt-1 message list, and
+  appends one user message: mode prefix, the pinned ceiling corrective
+  (verbatim), `REPORT_CONTRACT`, then the rule-29a size note last;
+- non-gateway failures keep today's append-only retry plus the existing
+  corrective.
+
+#97's follow-up (the cheap shape becomes the default):
+- `SHAPE_TOOL_KEEP` drops 1500 -> 500 and is the ONLY cap:
+  `SHAPE_TOOL_KEEP_RETRY` is retired, so a gateway-failure retry rebuilds
+  rather than shrinks (there is nothing left to shrink);
+- one pinned concision ask (two sentences) joins `REPORT_CONTRACT`, so every
+  attempt of every mode carries it;
+- the attempt-failure line gains `bound B tokens` (`REPORT_MAX_TOKENS`).
 
 The pure-function matrices and the shape-pass prompt compaction are
 driven here; the total-failure tail wiring (notification + minimal
@@ -51,15 +59,18 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 # ------------------------------------------------------------ constants
 
 def test_shape_tool_keep_constant():
-    """Rule 7e (#66): the compaction cap is a hard-coded constant (not
-    env-configurable — the same convention as the rules-8a/8b bounds)."""
-    assert patrol.SHAPE_TOOL_KEEP == 1500
+    """Rule 7e (#66, flipped by #97): the compaction cap is a hard-coded
+    constant (not env-configurable — the same convention as the rules-8a/8b
+    bounds) and, since #97, the only one — 500 characters, the payload the
+    #94 soak's successful retries carried."""
+    assert patrol.SHAPE_TOOL_KEEP == 500
 
 
-def test_shape_tool_keep_retry_constant():
-    """Rule 7g (#88): the gateway-failure retry's cap is a hard-coded
-    constant too — a third of the first attempt's tool-result payload."""
-    assert patrol.SHAPE_TOOL_KEEP_RETRY == 500
+def test_retry_compaction_cap_is_retired():
+    """Rule 7g (#97, flipped from #88's second constant): one cap governs
+    every attempt — a second, smaller one would describe a payload no attempt
+    sends, because attempt 1 now carries the retry's shape."""
+    assert not hasattr(patrol, "SHAPE_TOOL_KEEP_RETRY")
 
 
 # ------------------------------------------------- compact_messages matrix
@@ -88,7 +99,7 @@ def test_compact_messages_truncates_long_tool_results():
     assert len(out) == 5                       # every message kept, in order
     assert out[0].content == "system prompt"   # non-tool messages verbatim
     assert out[1]["content"] == "mission"
-    expected = big[:1500] + "\n" + _marker(1500, 4000)
+    expected = big[:500] + "\n" + _marker(500, 4000)
     assert out[2].content == expected          # langchain ToolMessage
     assert out[3]["content"] == expected       # dict form, same rule
     assert out[4].content == "FINAL SUMMARY"   # the final summary survives
@@ -101,11 +112,11 @@ def test_compact_messages_leaves_short_content_alone():
     """Rule 7e: lossy in exactly one dimension — at-or-under-cap tool
     bodies and every non-tool message pass through unchanged, object
     identity included."""
-    tool_ok = _tool("y" * 1500)
+    tool_ok = _tool("y" * 500)
     msgs = [HumanMessage("mission"), tool_ok, AIMessage("summary")]
     out = patrol.compact_messages(msgs)
     assert out[0] is msgs[0] and out[1] is tool_ok and out[2] is msgs[2]
-    assert out[1].content == "y" * 1500
+    assert out[1].content == "y" * 500
 
 
 def test_compact_messages_keep_chars_is_a_parameter():
@@ -155,9 +166,9 @@ def _conversation():
 # Rule 7g's pinned corrective, verbatim (reporting-notifications.md).
 CEILING_CORRECTIVE = (
     "Your previous attempt failed at the model gateway's request ceiling — "
-    "the request took too long. Return the PatrolReport as concisely as "
-    "possible: the shortest valid updated_wiki, findings reduced to one "
-    "line each, no optional prose.")
+    "the request took too long. Return the PatrolReport again, stated without "
+    "padding: the FULL updated_wiki unchanged in content, findings at one line "
+    "each, no optional prose around the report.")
 
 
 def test_shape_pass_prompt_is_compacted():
@@ -165,7 +176,7 @@ def test_shape_pass_prompt_is_compacted():
     conversation — the tool body truncated with its marker, the final
     summary verbatim — and the corrective retry message is appended after
     compaction, untruncated. Rule 7g: a NON-gateway failure keeps exactly
-    this append-only retry (the 1500-char base, the generic corrective),
+    this append-only retry (the same 500-char base, the generic corrective),
     so the attempt-1 message list is extended, never rebuilt."""
     stub = _StubShapeModel([RuntimeError("nope"), _report("full wiki")])
     result = asyncio.run(patrol.shape_report(
@@ -174,25 +185,25 @@ def test_shape_pass_prompt_is_compacted():
     assert len(stub.prompts) == 2
     prompt = stub.prompts[0]
     tool_body = prompt[1].content
-    assert tool_body.startswith("x" * 1500)
-    assert _marker(1500, 4000) in tool_body
-    assert "x" * 1600 not in tool_body           # the tail is gone
+    assert tool_body.startswith("x" * 500)
+    assert _marker(500, 4000) in tool_body
+    assert "x" * 600 not in tool_body            # the tail is gone
     assert "FINAL SUMMARY: all quiet" in prompt[2].content
     # the retry corrective rides after the compacted base, in full
     assert "not a valid PatrolReport" in stub.prompts[1][-1]["content"]
     assert stub.prompts[1][1].content == tool_body  # base unchanged on retry
-    # the ceiling-aware leg is NOT taken: the smaller cap and the pinned
-    # ceiling corrective belong to gateway failures alone (rule 7g)
-    assert _marker(500, 4000) not in stub.prompts[1][1].content
+    # the ceiling-aware leg is NOT taken: the rebuild and the pinned ceiling
+    # corrective belong to gateway failures alone (rule 7g)
     assert CEILING_CORRECTIVE not in stub.prompts[1][-1]["content"]
 
 
-def test_gateway_failure_retry_shrinks_the_payload_and_asks_for_brevity():
-    """Rule 7g (#88): a gateway-failure retry discards the attempt-1 message
-    list, rebuilds the base from the raw conversation compacted at
-    `SHAPE_TOOL_KEEP_RETRY` (500), and appends one user message: the mode
-    prefix, the pinned ceiling corrective, `REPORT_CONTRACT`, then the
-    rule-29a size note last."""
+def test_gateway_failure_retry_rebuilds_at_the_same_cap_and_asks_for_brevity():
+    """Rule 7g (#88, flipped by #97): a gateway-failure retry discards the
+    attempt-1 message list and rebuilds its base from the raw conversation —
+    but at the SAME `SHAPE_TOOL_KEEP` cap as attempt 1, because #97 made that
+    cheap shape the default and retired the smaller retry cap. It still
+    appends one user message: the mode prefix, the pinned ceiling corrective,
+    `REPORT_CONTRACT`, then the rule-29a size note last."""
     wiki = "w" * 5000
     stub = _StubShapeModel([RuntimeError("Error code: 504 - upstream timed out"),
                             _report("full wiki")])
@@ -201,17 +212,22 @@ def test_gateway_failure_retry_shrinks_the_payload_and_asks_for_brevity():
     assert result.updated_wiki == "full wiki"
     assert len(stub.prompts) == 2
     first, retry = stub.prompts
-    assert _marker(1500, 4000) in first[1].content   # attempt 1: rule 7e's cap
-    # attempt 2: the base was rebuilt at the smaller cap — nothing of the
-    # attempt-1 message list (its appended user message included) survives
+    assert _marker(500, 4000) in first[1].content    # attempt 1: the only cap
+    # attempt 2: the base was rebuilt — nothing of the attempt-1 message list
+    # (its appended user message included) survives — at the same cap
     assert len(retry) == len(first) == 4             # 3 base + 1 appended
     assert retry[1].content.startswith("x" * 500)
     assert _marker(500, 4000) in retry[1].content
+    assert retry[1].content == first[1].content      # no further shrink left
     assert "x" * 600 not in retry[1].content
     assert "FINAL SUMMARY: all quiet" in retry[2].content  # non-tool verbatim
     prompt = retry[-1]["content"]
     assert prompt.count(CEILING_CORRECTIVE) == 1
     assert "not a valid PatrolReport" not in prompt   # not the generic one
+    # the #97 rewording replaces the old ask, it does not sit beside it: the
+    # pre-#97 text asked for "the shortest valid updated_wiki", which
+    # contradicts rule 5's completeness clause
+    assert "shortest valid updated_wiki" not in prompt
     # the order the rule pins: prefix, corrective, contract, note last
     assert prompt.index("You are the REPORTING PASS") < prompt.index(CEILING_CORRECTIVE)
     assert prompt.index(CEILING_CORRECTIVE) < prompt.index(patrol.REPORT_CONTRACT)
@@ -223,9 +239,9 @@ def test_gateway_failure_retry_shrinks_the_payload_and_asks_for_brevity():
 
 def test_gateway_failure_retry_applies_in_repair_and_wiki_repair_modes():
     """Rule 7g: every shape-pass invocation's internal retry is
-    ceiling-aware — the validation-repair and wiki-repair invocations
-    shrink their base too, and the wiki-repair mode still appends no size
-    note (rule 29a)."""
+    ceiling-aware — the validation-repair and wiki-repair invocations rebuild
+    their base too, and the wiki-repair mode still appends no size note
+    (rule 29a)."""
     gateway = RuntimeError("Error code: 504 - upstream timed out")
     stub = _StubShapeModel([gateway, _report("fixed wiki")])
     result = asyncio.run(patrol.shape_report(
@@ -235,6 +251,8 @@ def test_gateway_failure_retry_applies_in_repair_and_wiki_repair_modes():
     assert _marker(500, 4000) in retry[1].content
     assert CEILING_CORRECTIVE in retry[-1]["content"]
     assert patrol.REPORT_CONTRACT in retry[-1]["content"]
+    # every mode's retry re-states the contract, so it carries the #97 ask too
+    assert CONCISION_ASK in retry[-1]["content"]
     # the mode's own framing is re-stated too — the rejected wiki rides verbatim
     assert "rejected" in retry[-1]["content"]
 
@@ -245,6 +263,7 @@ def test_gateway_failure_retry_applies_in_repair_and_wiki_repair_modes():
     retry = stub.prompts[1]
     assert _marker(500, 4000) in retry[1].content
     assert CEILING_CORRECTIVE in retry[-1]["content"]
+    assert CONCISION_ASK in retry[-1]["content"]
     assert "OLD WIKI" in retry[-1]["content"]     # the wiki-repair ask survives
     assert "Current wiki size:" not in retry[-1]["content"]
 
@@ -259,15 +278,15 @@ def test_repair_and_wiki_repair_modes_are_compacted_too():
     result = asyncio.run(patrol.shape_report(
         stub, conversation, budget_cut=False, repair=("rejected", ["error one"])))
     assert result.updated_wiki == "fixed wiki"
-    assert _marker(1500, 4000) in stub.prompts[0][1].content
-    assert "x" * 1600 not in stub.prompts[0][1].content
+    assert _marker(500, 4000) in stub.prompts[0][1].content
+    assert "x" * 600 not in stub.prompts[0][1].content
 
     stub = _StubShapeModel([_report("merged wiki")])
     result = asyncio.run(patrol.shape_report(
         stub, conversation, budget_cut=False,
         wiki_repair=("OLD WIKI", [], [])))
     assert result.updated_wiki == "merged wiki"
-    assert _marker(1500, 4000) in stub.prompts[0][1].content
+    assert _marker(500, 4000) in stub.prompts[0][1].content
 
 
 # ------------------------------------------------ classify_exception matrix
@@ -297,7 +316,9 @@ def test_failure_line_carries_elapsed_and_gateway_reason(capsys):
     """Rule 7f: the attempt-failure log line carries the attempt's elapsed
     seconds and the classified gateway reason — the ceiling is measurable
     from pod logs. Rule 7f's #88 amendment: it also carries the attempt's
-    token counts, `?` on the exception leg (there is no raw response)."""
+    token counts, `?` on the exception leg (there is no raw response); #97
+    adds the completion bound the attempt ran under, so a tail is comparable
+    across image versions."""
     stub = _StubShapeModel([RuntimeError("Error code: 504 - upstream timed out"),
                             RuntimeError("Error code: 504 - upstream timed out")])
     result = asyncio.run(patrol.shape_report(
@@ -306,7 +327,45 @@ def test_failure_line_carries_elapsed_and_gateway_reason(capsys):
     err = capsys.readouterr().err
     assert re.search(r"attempt 1 failed \(gateway failure "
                      r"\(Error code: 504 - upstream timed out\), took \d+ s, "
-                     r"in \? out \? tokens\)", err)
+                     r"in \? out \? tokens, bound 24000 tokens\)", err)
     assert re.search(r"attempt 2 failed \(gateway failure "
                      r"\(Error code: 504 - upstream timed out\), took \d+ s, "
-                     r"in \? out \? tokens\)", err)
+                     r"in \? out \? tokens, bound 24000 tokens\)", err)
+
+
+# ------------------------------------------ the cheap first attempt (#97)
+
+CONCISION_ASK = (
+    "Be concise: one line per finding with a short evidence citation, and no "
+    "optional prose padding around the report — the wiki keeps its own section "
+    "and entry prose. Brevity governs how you say it, never what you include: "
+    "every finding, notification, and the FULL updated_wiki are still required.")
+
+
+def test_report_contract_carries_the_concision_ask():
+    """Rule 5 (#97): the pinned concision wording lives in REPORT_CONTRACT,
+    verbatim — so the rule-7g retry, which re-states the contract, cannot
+    carry a different ask than the attempt that follows it. Its wiki clause
+    is pinned too: the ask may never read as a licence to strip the wiki's
+    free prose (wiki-memory.md rules 13, 29b)."""
+    assert CONCISION_ASK in patrol.REPORT_CONTRACT
+    assert "the wiki keeps its own section and entry prose" in patrol.REPORT_CONTRACT
+
+
+def test_every_attempt_of_every_mode_carries_the_concision_ask():
+    """Rule 5 (#97): the ask reaches the model on the first attempt of the
+    report, validation-repair, and wiki-repair modes, and again on the
+    gateway-failure retry (contract re-stated after the corrective)."""
+    for kwargs in ({}, {"repair": ("rejected", ["error one"])},
+                   {"wiki_repair": ("OLD WIKI", [], [])}):
+        stub = _StubShapeModel([_report("full wiki")])
+        asyncio.run(patrol.shape_report(
+            stub, _conversation(), budget_cut=False, **kwargs))
+        assert CONCISION_ASK in stub.prompts[0][-1]["content"], kwargs
+
+    stub = _StubShapeModel([RuntimeError("Error code: 504 - upstream timed out"),
+                            _report("full wiki")])
+    asyncio.run(patrol.shape_report(stub, _conversation(), budget_cut=False))
+    retry_prompt = stub.prompts[1][-1]["content"]
+    assert CONCISION_ASK in retry_prompt
+    assert retry_prompt.index(CEILING_CORRECTIVE) < retry_prompt.index(CONCISION_ASK)

@@ -7,9 +7,9 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
 
 | Symbol | Responsibility |
 |---|---|
-| `REPORT_CONTRACT` | Instructions appended for the reporting pass (field semantics, wiki skeleton format: frontmatter keys, section set, entry metadata line [DONE: #5]; the Watch-list recheck requirement + its tool-argument form [DONE: #6]; the staleness clock's model-facing half — `verified_patrol` is process-stamped, `last_verified` advances only on actual re-verification, unverified watching entries auto-expire [DONE: #7]; the working-set expectations — the wiki is a working set (git history is the archive), summarize and prune within the soft character budget, the Anomaly log keeps the last `WIKI_ANOMALY_KEEP` closed entries [DONE: #40], plus #67's consequence chain and over-budget-must-shrink instruction [DONE: #67]; the wiki-required instruction — `updated_wiki` is required on every report, full content even when nothing needs changing, an empty one is never a valid answer [DONE: #51] — its copy-verbatim ask narrowed by the no-patrol-history exception (unchanged sections copied, patrol-history prose never carried forward), plus the ban itself: current state only, no per-patrol headline log / `History:` list / "as of patrol #N" chronology, a few-line intro, and the `###` status block legal / sixth `##` section illegal rule [DONE: #85]) |
+| `REPORT_CONTRACT` | Instructions appended for the reporting pass (field semantics, wiki skeleton format: frontmatter keys, section set, entry metadata line [DONE: #5]; the Watch-list recheck requirement + its tool-argument form [DONE: #6]; the staleness clock's model-facing half — `verified_patrol` is process-stamped, `last_verified` advances only on actual re-verification, unverified watching entries auto-expire [DONE: #7]; the working-set expectations — the wiki is a working set (git history is the archive), summarize and prune within the soft character budget, the Anomaly log keeps the last `WIKI_ANOMALY_KEEP` closed entries [DONE: #40], plus #67's consequence chain and over-budget-must-shrink instruction [DONE: #67]; the wiki-required instruction — `updated_wiki` is required on every report, full content even when nothing needs changing, an empty one is never a valid answer [DONE: #51] — its copy-verbatim ask narrowed by the no-patrol-history exception (unchanged sections copied, patrol-history prose never carried forward), plus the ban itself: current state only, no per-patrol headline log / `History:` list / "as of patrol #N" chronology, a few-line intro, and the `###` status block legal / sixth `##` section illegal rule [DONE: #85]; the #97 concision ask — one line per finding, short citation, no padding around the report, the wiki keeping its own section and entry prose, and the FULL `updated_wiki` still required [PLANNED: #97]) |
 | `wiki_size_note` | Pure model-facing size line (#67, `wiki-memory.md` rule 29a): `wiki_size_note(content, *, budget=None) -> str` — empty for empty content, else one line naming the character count, budget, floored percentage, and the excess (`N characters OVER budget. Prune at least N characters…`) or headroom; `budget` defaults to `WIKI_CHAR_BUDGET` read at call time [DONE: #67] |
-| `shape_report` | Tool-free structured-output pass with one schema retry; `repair=(rejected_wiki, errors)` re-invokes it as the wiki-validation repair pass [DONE: #5]; a parsed result with an empty `updated_wiki` is a failed attempt — retried with a corrective message naming it, a still-empty retry returns the report [DONE: #51]; a `None`/unparsed result's failure reason is classified from the raw response (`classify_empty_result`: truncated-at-max_tokens vs no-tool-call) [DONE: #63]; `wiki_repair=(old_wiki, findings, notifications)` re-invokes it as the wiki-repair pass — the old wiki verbatim plus the observed findings, minimal-merge ask that drops patrol-history prose rather than carrying it forward (rule 7d's #85 amendment) [DONE: #60]; every report-pass invocation appends the `wiki_size_note` of its wiki-in-play (on-disk wiki for the report pass, rejected wiki for the validation repair; none for the wiki-repair pass) [DONE: #67]; every attempt-failure line carries elapsed seconds and, since #88, the attempt's token counts (`in I out O tokens`, `?` when unknown) [DONE: #66] [DONE: #88]; a gateway-failure retry rebuilds its base at `SHAPE_TOOL_KEEP_RETRY` and asks for the most concise valid report (rule 7g) [DONE: #88] |
+| `shape_report` | Tool-free structured-output pass with one schema retry; `repair=(rejected_wiki, errors)` re-invokes it as the wiki-validation repair pass [DONE: #5]; a parsed result with an empty `updated_wiki` is a failed attempt — retried with a corrective message naming it, a still-empty retry returns the report [DONE: #51]; a `None`/unparsed result's failure reason is classified from the raw response (`classify_empty_result`: truncated-at-max_tokens vs no-tool-call) [DONE: #63]; `wiki_repair=(old_wiki, findings, notifications)` re-invokes it as the wiki-repair pass — the old wiki verbatim plus the observed findings, minimal-merge ask that drops patrol-history prose rather than carrying it forward (rule 7d's #85 amendment) [DONE: #60]; every report-pass invocation appends the `wiki_size_note` of its wiki-in-play (on-disk wiki for the report pass, rejected wiki for the validation repair; none for the wiki-repair pass) [DONE: #67]; every attempt-failure line carries elapsed seconds and, since #88, the attempt's token counts (`in I out O tokens`, `?` when unknown) [DONE: #66] [DONE: #88]; a gateway-failure retry rebuilds its base at the same cap and re-asks with the pinned ceiling corrective (rule 7g) [DONE: #88] [PLANNED: #97 — no smaller cap is left, so the retry rebuilds rather than shrinks] |
 | `report_fields` | Normalizes the result (pydantic model or dict) into plain data |
 | `notify` | Console `🔔 NOTIFY` + apprise multi-sink delivery (`PATROL_NOTIFY_URLS`, rules 10a–10c) [DONE: #9] |
 | `notification_entry_id` | Pure parser for a proposed notification's leading `[<entry id>]` tag (rule 4a); `None` for an untagged message [DONE: #35] |
@@ -19,7 +19,7 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
 | `stamp_last_notified` | Pure process-owned per-entry clock stamp (rule 4d): `stamp_last_notified(content, ids, day) -> str` — rewrites or appends `last_notified: <day>` for the notified ids, nothing else touched [DONE: #35] |
 | `classify_empty_result` | Pure classifier for a `None`/unparsed result's failure reason from the raw response (truncated-at-max_tokens vs no-tool-call) [DONE: #63] |
 | `classify_exception` | Pure classifier for an exception failure's reason — 5xx (`Error code: 5NN`) or timeout markers become `gateway failure (…)`; anything else keeps the exception's string [DONE: #66] |
-| `compact_messages` | Pure conversation compaction for every shape-pass invocation: all messages kept in order, tool-result bodies over `SHAPE_TOOL_KEEP` (1500) chars truncated with a marker; non-tool messages verbatim; `keep_chars` parametrizes the cap [DONE: #66] — and rule 7g's gateway-failure retry passes `SHAPE_TOOL_KEEP_RETRY` (500) to it [DONE: #88] |
+| `compact_messages` | Pure conversation compaction for every shape-pass invocation: all messages kept in order, tool-result bodies over `SHAPE_TOOL_KEEP` (500) chars truncated with a marker; non-tool messages verbatim; `keep_chars` parametrizes the cap [DONE: #66] — one cap governs every attempt of every mode since #97 retired `SHAPE_TOOL_KEEP_RETRY` [PLANNED: #97] |
 | `run_patrol` (tail) | Validates the report's wiki against the skeleton (one repair pass on failure, `validate_wiki`), delivers findings/notifications, expires stale watch-list entries (`expire_stale_entries`) [DONE: #7], compacts the Anomaly log to its keep budget (`compact_anomaly_log`) [DONE: #40], stamps the per-entry `last_notified` clock for entries notified this patrol (`stamp_last_notified`) [DONE: #35], stamps the frontmatter (`stamp_wiki`), then warns on soft-budget overshoot (`wiki_budget_warnings` on the final wiki, stderr — post-stamp, rule 29) [DONE: #40], writes the wiki atomically, commits + pushes it (wiki git persistence — `project-structure.md`) [#3: DONE; validation/repair/stamp: DONE: #5]; notification delivery is filtered first (`filter_state_change_notifications` over the on-disk and final wiki) and the rule-4c digest appended last [DONE: #35]; an empty `updated_wiki` on arrival (post-retry) logs one stderr warning naming it before delivery — the no-op is never silent [DONE: #51]; after that warning the tail runs the #60 safety net: one wiki-repair pass (rule 7d), then the minimal-write fallback — the accepted-write tail on the old wiki, no-op without a frontmatter block, one console line [DONE: #60]; a `None` report (total failure) warns, sends one FAILURE notification, and runs the rule-31 fallback directly — the wiki-repair pass skipped (rule 33) [DONE: #66] |
 
 ## Data Flow
@@ -44,18 +44,22 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
    retry prompt also ends with the note, exactly once [DONE: #67]. A
    **gateway-failure** retry (rule 7g, DONE: #88) is the exception to that
    shape: attempt 2 throws away the attempt-1 message list, rebuilds the base
-   from the raw conversation compacted at `SHAPE_TOOL_KEEP_RETRY` (500), and
-   appends one user message = mode prefix, the pinned ceiling corrective,
+   from the raw conversation at the same `compact_messages` cap, and appends
+   one user message = mode prefix, the pinned ceiling corrective,
    `REPORT_CONTRACT`, then the size note last (none in the wiki-repair mode) —
-   the ceiling corrective asks for the most concise valid report instead of
-   re-sending the request that just spent a full gateway window. Non-gateway
-   failures keep the append-only retry above. Two failures → `None` — and the tail's `None` leg
+   the ceiling corrective labels the failure and re-states the ask instead of
+   inheriting attempt 1's appended user message. There is exactly one cap
+   (`SHAPE_TOOL_KEEP`; #97 retired `SHAPE_TOOL_KEEP_RETRY`, because attempt 1
+   already carries the retry's 500-character payload), so the rebuild no
+   longer shrinks anything. Non-gateway failures keep the append-only retry
+   above. Two failures → `None` — and the tail's `None` leg
    warns, notifies (FAILURE), and minimal-writes (rule 33) [DONE: #66]. Every
-   attempt-failure log line carries the attempt's elapsed seconds and, since
-   #88, its input/output token counts (`in I out O tokens`, `?` when there is
-   no raw response), and an
+   attempt-failure log line carries the attempt's elapsed seconds, since
+   #88 its input/output token counts (`in I out O tokens`, `?` when there is
+   no raw response), and since #97 the completion bound it ran under
+   (`bound B tokens`) — so a tail is comparable across image versions — and an
    exception's reason passes `classify_exception` (rule 7f) [DONE: #66]
-   [DONE: #88]. A
+   [DONE: #88] [PLANNED: #97]. A
    parsed result whose
    `updated_wiki` is empty is equally a failed attempt
    (`reporting-notifications.md` rule 7b): its corrective message names the
@@ -150,10 +154,12 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
   request timeout — exploration 300 s, structured calls 900 s
   (`reporting-notifications.md` rule 8a; see `agent-engine.md`)
   [DONE: #49 — was one shared instance] — and in completion-token bound:
-  exploration 16000, structured calls 32000
+  exploration 16000, structured calls 24000
   (`reporting-notifications.md` rule 8b) [DONE: #63 — was one flat
   16000; DONE: #88 — lowered from 64000 because a 64k-bounded
-  generation hits the gateway's ~900 s wall clock at ~902 s].
+  generation hits the gateway's ~900 s wall clock at ~902 s; PLANNED: #97 —
+  lowered again to 24000 while the first attempt takes the retry's cheap
+  shape].
 
 ## Integration Points
 
