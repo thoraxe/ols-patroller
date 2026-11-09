@@ -78,7 +78,53 @@ Hints on the human surface, never gates.
    `notifications`, `updated_wiki`.
 5. Writes the wiki back atomically and commits it to the wiki repo (one
    wiki-changing patrol, one commit; optional `PATROL_WIKI_REMOTE` replication);
-   prints/Sends notifications.
+   prints/sends notifications.
+
+## Architecture
+
+One patrol is a straight pipeline; the process is a timer around it (`--once` for
+a single run):
+
+```text
+ timer / --once
+       │
+       ▼
+ exploration ── deepagents agent, auto tool choice
+       │         one tool: kubectl_readonly (guard-enforced)
+       │         budgets: turn cap + input-token soft-stop
+       ▼
+ shape pass ── tool-free structured output → PatrolReport
+       │         {findings, notifications, updated_wiki}
+       │         bounds: 300 s/turn vs 900 s shape; 16k vs 32k tokens
+       │         one retry; a gateway failure re-compacts and asks for brevity
+       ▼
+ wiki gate ── validate the skeleton → one repair pass → else keep the old wiki
+       │
+       ▼
+ wiki tail ── expire stale entries → compact the anomaly log → stamp counters
+       │         atomic UTF-8/LF write → git commit → optional push
+       ▼
+ delivery ── state-change filter → periodic digest → console + apprise sinks
+```
+
+- **Process:** `patrol.py` is the whole implementation (single-file by design).
+  `main()` owns the event loop, the wiki repo, and the timer; the agent never
+  touches disk or the shell.
+- **Model seam:** any OpenAI-compatible endpoint. Exploration and the reporting
+  pass are two `ChatOpenAI` instances from the same `make_model` seam, so each
+  call shape carries its own request timeout and completion bound
+  (ADRs 0018/0021/0031).
+- **Failure behavior:** one retry per reporting call; a rejected wiki gets one
+  repair pass; a patrol that cannot produce a report still advances the wiki
+  clock with a minimal write and sends one FAILURE notification (rule 33) —
+  memory never freezes silently.
+- **Storage and packaging:** the wiki is a git repo on the `/wiki` PVC (one
+  commit per accepted write; optional remote push). The image is built in CI
+  from the pinned `Containerfile` + `requirements.txt`; `manifests/` deploys it
+  with kustomize.
+
+Deeper maps: [`ARCHITECTURE.md`](ARCHITECTURE.md) and the specs under
+[`.ai/spec/`](.ai/spec/README.md).
 
 ## Engine
 
@@ -128,27 +174,50 @@ pruned by the patroller — one console line each — and stay recoverable from
 the repo's history), and a soft 20,000-character budget warns on overshoot
 without ever rejecting a write.
 
-## Safety model
+## Security model
 
-- **Read-only by construction**: the only cluster tool is `kubectl_readonly`, which
-  whitelist-checks the first verb (`get/describe/logs/top/version/api-resources/
-  api-versions/explain/status/cluster-info/whoami`), runs via `subprocess` list
-  (no shell), refuses all Secret access (any command containing `secret` — names
-  and metadata included, not just `-o yaml/json/jsonpath` values), refuses
-  local-file/credential flags (`-f`/`--filename`, `--kubeconfig`/token/cert,
-  `*-file` output formats), refuses endpoint-override flags (`--server`/`-s` in
-  every spelling — kubectl must use the ambient in-cluster API endpoint), and
-  refuses `--raw` proxy/stats paths
-  (multi-hundred-KB dumps that would truncate).
-  The deepagents engine adds **no shell/filesystem/execute tools** on top (see
-  Engine above), and when deployed in-cluster the pod SA's RBAC (e.g.
-  `cluster-reader`, which grants no Secret access) is the server-side enforcement
-  boundary — the tool guard is defense-in-depth, not the boundary itself.
-- The patrol **never mutates the cluster**. Remediation is out of scope for the
-  patroller itself; the planned handoff is a governed agentic run (#12, #14),
-  not implemented yet.
-- Guard is unit-checked (mutation verbs + Secret access + local-file/credential
-  flags + endpoint-override flags + `--raw` paths → all refused).
+Read-only access is enforced in four independent layers; the tool guard is
+defense-in-depth, not the boundary itself.
+
+| Layer | Control | Enforced by |
+|---|---|---|
+| **1. Tool guard** | `kubectl_readonly` only: verb allowlist, no Secret access at all, no local-file/credential flags, no endpoint overrides, no `--raw` | unit tests |
+| **2. Engine surface** | exactly `[read_file, kubectl_readonly]` — no shell, no filesystem writes, no subagents | fake-model e2e |
+| **3. RBAC** | pod ServiceAccount bound to the built-in `cluster-reader` role (no Secret access, read verbs only) | cluster-side |
+| **4. Network egress** | optional default-deny `NetworkPolicy`: cluster DNS + kube-apiserver + the model/sink/wiki-remote hosts | operator-applied (opt-in) |
+
+**Tool guard (layer 1).** The only cluster tool whitelist-checks the first verb
+(`get/describe/logs/top/version/api-resources/api-versions/explain/status/
+cluster-info/whoami`) and runs via a `subprocess` list (no shell). It refuses all
+Secret access (any command containing `secret` — names and metadata included, not
+just `-o yaml/json/jsonpath` values), local-file/credential flags
+(`-f`/`--filename`, `--kubeconfig`/token/cert, `*-file` output formats),
+endpoint-override flags (`--server`/`-s` in every spelling — kubectl must use the
+ambient in-cluster API endpoint), and `--raw` proxy/stats paths
+(multi-hundred-KB dumps that would truncate). The patrol **never mutates the
+cluster**; remediation is out of scope for the patroller itself (the governed
+handoff is #12).
+
+**Container and supply chain.** Non-root and random-UID compatible (`USER 1001:0`),
+admitted under the restricted SCC: `runAsNonRoot`, `seccompProfile:
+RuntimeDefault`, `allowPrivilegeEscalation: false`, all capabilities dropped.
+Python dependencies install at build time from the exactly pinned
+`requirements.txt` — nothing resolves or installs at start — on a pinned
+UBI9-minimal base, with the `oc`/`kubectl` client fetched at build time from a
+version-pinned mirror and SHA-256 verified before extraction. CI builds the
+image; the manifests use `:main` with `imagePullPolicy: Always` (a mutable tag
+must re-pull), and releases are registry-side retags of the same sha image
+(ADR 0010).
+
+**Credentials and data egress.** All secret material arrives through the
+`ols-patroller` Secret (`envFrom`); nothing sensitive is literal in a committed
+manifest, and `secret.yaml` is gitignored. The optional wiki deploy key is its
+own Secret, mounted read-only. **What leaves the cluster:** cluster observations
+→ the configured model endpoint; findings/notifications → the configured apprise
+sinks; the wiki → the optional git remote; plus the kube-apiserver and cluster
+DNS. Nothing else is contacted. The optional egress allowlist (layer 4) turns
+that list into a default-deny policy — render it with `--egress-policy` (see
+[Restrict egress](#restrict-egress-optional)).
 
 ## Config (env)
 
@@ -375,7 +444,7 @@ stack, so the findings below are described generically):
   exactly" — wiki baselines verified instead of re-derived. Watch-list
   entries carry "Unfixed through 5th patrol" persistence tracking.
 
-## Known limitations (it's a hacky PoC)
+## Known limitations (pre-1.0)
 
 - Pre-1.0 (single-file `patrol.py` heritage); fixtures are static and a real
   cluster exercises the loop differently.
