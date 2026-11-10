@@ -422,7 +422,7 @@ entry whose status and severity are unchanged is wiki-only.
     write path: the patrol tail runs the wiki-repair pass (rule 7d) and,
     behind it, the minimal-write fallback (`wiki-memory.md` rules 30–32).
     The warning above still fires first, verbatim.]
-    [PLANNED: #106 — the reason this attempt logs gains rule 7h's
+    [DONE: #106 — the reason this attempt logs gains rule 7h's
     truncation qualifier (`empty wiki (truncated at max_tokens)`).
     Nothing else in this rule moves: the classification, the corrective
     text, the one-retry bound, the last-parsed return, the verbatim
@@ -453,7 +453,7 @@ entry whose status and severity are unchanged is wiki-only.
     wiki keeps its `empty wiki` reason unless rule 7h's truncation
     qualifier applies — and that qualifier fires on this rule's predicate
     (`hit_completion_bound`, rule 7h), never on a second definition of
-    "truncated". [PLANNED: #106 — that "unless" clause is this sentence's only
+    "truncated". [DONE: #106 — that "unless" clause is this sentence's only
     change; this rule's classifier, its `max_tokens` parameter, and both of its
     result strings are unchanged.]
 7d. **Wiki-repair pass** [DONE: #60]. The shape pass's third
@@ -570,7 +570,7 @@ entry whose status and severity are unchanged is wiki-only.
     `I`/`O` (no raw response, no metadata) is unchanged. Without it the
     #97 soak's question — "was the 24000 bound in force on this patrol?" —
     could only be answered from the image tag.]
-    [PLANNED: #106 — the line's reason can now carry a qualifier: an empty-wiki
+    [DONE: #106 — the line's reason can now carry a qualifier: an empty-wiki
     failure reads `empty wiki (truncated at max_tokens)` when the attempt
     reached its completion bound (rule 7h). The line's shape —
     `(<reason>, took E s, in I out O tokens, bound B tokens)` — its elapsed,
@@ -655,7 +655,7 @@ entry whose status and severity are unchanged is wiki-only.
       first attempts failed, attempt 2 completed the full report every time
       in ~260 s), so attempt 2 is a genuine second roll of the dice and
       stays the last-resort net before rule 33's total-failure leg.]
-7h. **Bound-truncation qualifier on the empty-wiki reason** [PLANNED: #106].
+7h. **Bound-truncation qualifier on the empty-wiki reason** [DONE: #106].
     A failed empty-wiki attempt (rule 7b) reports **why** it was empty when
     the attempt hit its completion budget. The attempt-failure log line's
     reason (rules 7/7b/7f — every attempt of every mode) is
@@ -835,7 +835,7 @@ entry whose status and severity are unchanged is wiki-only.
     truncation qualifier — is **deferred** to its own spec item and is not
     part of this retune: it changes rule 7b/7c classification, and a value
     change must not carry a classification change through the same gate.
-    [PLANNED: #106 — that deferred item is now specced as rule 7h; nothing
+    [DONE: #106 — that deferred item is now specced as rule 7h; nothing
     above moves.]
 
 ### Delivery
@@ -940,7 +940,7 @@ entry whose status and severity are unchanged is wiki-only.
 
 | Ticket | Summary |
 |---|---|
-| #106 | The empty-wiki reason names bound truncation (rule 7h; rule 7c's truncation predicate shared by both reason paths, ADR 0036's design-space option 4 deferred there): a parsed report whose `updated_wiki` is empty logs `empty wiki (truncated at max_tokens)` when the attempt reached its completion bound and plain `empty wiki` otherwise, so a tail is self-diagnosing from pod logs across image versions. Observability only — classification, corrective, retry bound, last-parsed return, verbatim warning, keep-old-wiki outcome, and rule 33's total-failure leg are unchanged; no new configuration surface. Impl commit also syncs `AGENTS.md`'s test list and `how/project-structure.md`'s per-file test inventory (both enumerate `test_empty_report.py`'s coverage) and extends `shape_report`'s docstring where it states the empty-wiki classification (the reason now has two strings). |
+| ~~#106~~ | ~~The empty-wiki reason names bound truncation (rule 7h; rule 7c's truncation predicate shared by both reason paths, ADR 0036's design-space option 4 deferred there): a parsed report whose `updated_wiki` is empty logs `empty wiki (truncated at max_tokens)` when the attempt reached its completion bound and plain `empty wiki` otherwise, so a tail is self-diagnosing from pod logs across image versions. Observability only — classification, corrective, retry bound, last-parsed return, verbatim warning, keep-old-wiki outcome, and rule 33's total-failure leg are unchanged; no new configuration surface. Impl commit also syncs `AGENTS.md`'s test list and `how/project-structure.md`'s per-file test inventory (both enumerate `test_empty_report.py`'s coverage) and extends `shape_report`'s docstring where it states the empty-wiki classification (the reason now has two strings).~~ |
 | ~~#101~~ | ~~The reporting pass's completion bound retunes `REPORT_MAX_TOKENS` 24000 → **28000** (rule 8b's `[DONE: #101]` block, ADR 0036; the value also lands in `patrol-engine.md`, `system-overview.md`, `wiki-memory.md` rule 29, `how/agent-engine.md`, `how/reporting-pipeline.md`, and the glossary): the v0.3.2 soak's first attempt exhausted the 24000 completion budget (`out 24000`, 289 s — the token bound, not the gateway clock) and returned an empty wiki, so the goal is headroom over the bound that was actually exhausted while staying inside the gateway's ~900 s window at the slowest observed throughput (~35–40 output tok/s, where 28000 is ~700–800 s and 32000 would be ~800–914 s). #97's cheap shape is unchanged — one `SHAPE_TOOL_KEEP` cap of 500 characters, the rule-5 concision ask, rule 7g's same-cap rebuild — as are rule 8a's `REPORT_TIMEOUT` 900 s, rule 7f's `bound B tokens` field (which follows the constant), and rule 33's total-failure net. The optional #101 observability narrowing (a truncation qualifier on rule 7b's `empty wiki` reason) is deferred to its own spec item, named in rule 8b. A 3–5 patrol real-cluster soak recording attempt-1 outcomes with the existing failure line is the issue's acceptance evidence, and it is not a test. Impl commit also syncs `AGENTS.md`'s test list and rewrites the stale `patrol.py` comment above `REPORT_MAX_TOKENS` (its “at that honest rate 24000 is ~600–685 s” arithmetic and its ADR list carry the pre-#101 value; they must state 28000's ~700–800 s at the slow rate and cite ADR 0036)~~ |
 | ~~#93~~ | ~~The notify clock is carried, not just stamped (rule 4d's new carry paragraph, plus rule 4c's durability note; the wiki half is `wiki-memory.md` rules 12c/16; ADR 0033): the digest cadence collapsed to every other patrol because the model drops the optional process-owned `last_notified` pair on every rewrite and rule 4d only stamped the ids notified *this* patrol. A new pure `carry_last_notified(new_wiki, old_wiki)` restores the old on-disk value onto every entry present in both wikis and drops any model-written pair for an entry the old wiki has no clock for, running on the same accepted-write leg as the stamp — after compaction, before `stamp_last_notified`. The model's copy is never trusted, `REPORT_CONTRACT` is unchanged (teaching is not the fix), and the keep-old-wiki/empty-wiki/minimal-write legs run no carry. No schema change (`wiki_version` stays 1), no configuration surface change. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#97~~ | ~~The reporting pass's **first** attempt becomes the cheap one (rules 5's concision ask, 7e's cap, 7f's bound field, 7g's narrowed retry, 8a parenthetical, 8b value here; the bound also lands in `wiki-memory.md`, `patrol-engine.md`, `system-overview.md`, `how/agent-engine.md`, `how/reporting-pipeline.md`, `how/project-structure.md`, and the glossary; ADR 0034 amends ADR 0031): after #88 the first attempt still 504ed at ~900 s on 3 of 5 patrols while the retry — 500-character tool results plus the brevity corrective — finished the full report in ~260 s every time, so the retry's shape becomes the default. `SHAPE_TOOL_KEEP` drops 1500 → 500 and becomes the only compaction cap (`SHAPE_TOOL_KEEP_RETRY` retired: there is nothing left for a retry to shrink, so rule 7g keeps its rebuild and corrective but no longer claims a smaller payload); one pinned concision ask (two sentences) joins `REPORT_CONTRACT`, so every attempt of every mode carries it; `REPORT_MAX_TOKENS` drops 32000 → 24000 (≈600–685 s of generation at the observed throughput, still ~4k above #63's observed ~20k completion — the starvation floor is untouched); and the attempt-failure log line gains `bound B tokens` so a tail is comparable across image versions. The rule-7g retry, rule 7b's empty-wiki corrective, and rule 33's total-failure net are unchanged in reach. A real-cluster soak showing zero attempt-1 504s (or a recorded decision that the retry remains the intended path) is the issue's acceptance evidence, and it is not a test. Impl commit also syncs `AGENTS.md`'s test list — which includes **rewriting** its #88 retry paragraph (it still describes the retry as shrinking its base to a `SHAPE_TOOL_KEEP_RETRY` cap and the non-gateway retry as append-only at a 1500-char base), not merely appending a #97 bullet. The impl commit also rewrites the stale `patrol.py` comments: the `SHAPE_TOOL_KEEP_RETRY` constant and its comment go, `shape_report`'s docstring stops describing a smaller retry cap, and the `SHAPE_TOOL_KEEP`/`REPORT_MAX_TOKENS` comments carry the #97 values~~ |
