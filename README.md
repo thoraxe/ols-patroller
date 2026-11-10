@@ -24,7 +24,7 @@ rename lands.
 Prior-art landscape and positioning: see [`docs/prior-art.md`](docs/prior-art.md).
 Plans are tracked in [GitHub issues and milestones](../../milestones), not in a
 document — v0.1 *in-cluster*, v0.2 *compounding wiki*, v0.3 *operational
-hardening*, v0.3.1 *reporting reliability*, v0.3.2 *notification cadence*,
+hardening*, v0.3.1 *reporting reliability*, v0.3.2 *notification cadence*, v0.3.3 *reporting-bound patch*,
 v0.4.0 *fleet memory & wiki usability*, plus a `future` milestone for unscheduled
 direction and research.
 
