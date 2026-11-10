@@ -1,6 +1,10 @@
 # 0010. Release tags are registry-side retags of the sha image, not rebuilds
 
-Date: 2026-10-15 · Status: proposed
+Date: 2026-10-15 · Status: accepted
+
+> **Manifest default amended.** ADR 0035 acts on this record's last consequence:
+> the manifests now deploy the current release tag by default, and the pin commit
+> must precede the release tag. Retagging (not rebuilding) is unchanged.
 
 ## Context
 

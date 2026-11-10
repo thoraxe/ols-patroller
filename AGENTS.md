@@ -131,7 +131,12 @@ under current policy (clean implementation review + `implementation-complete`):
   (incl. the deploy-key wiring of #39, the pull-policy invariant of
   #61: a mutable kustomization tag requires `imagePullPolicy: Always`,
   and the storage-class override of #68: the pvc-patch template's
-  shape, the gitignored operator copy, and the README procedure);
+  shape, the gitignored operator copy, and the README procedure; and the
+  release-pinned default and local-override procedure of #102: the committed
+  default's exact current release tag, the README `Test the latest merge`
+  tokens, and the `## Releasing` pin-before-tag order plus the never-move
+  rule, and the image-CI side of #102 — the workflow never writes
+  `manifests/`);
   and `tests/test_wiki_expiry.py`
   covers the stale-entry auto-expiry contract (#7: the `verified_patrol`
   clock matrix and the expiry flip); and `tests/test_wiki_stats.py` covers

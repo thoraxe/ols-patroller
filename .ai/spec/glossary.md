@@ -214,9 +214,15 @@ redefined here.
   `uv run patrol.py` via the PEP 723 header.
 - **GHCR** — GitHub Container Registry (`ghcr.io`); merges to `main` publish
   the patrol image there (`main` rolling tag + `sha-<SHA>` pins) and the
-  in-cluster manifests deploy it (#2); published `v*` releases retag the
-  matching `sha-<SHA>` image with the release tag — a pointer, not a rebuild
-  (#36).
+  in-cluster manifests deploy the current release tag by default (#2, #102);
+  published `v*` releases retag the matching `sha-<SHA>` image with the release
+  tag — a pointer, not a rebuild (#36).
+- **Release-pinned default** — the manifests' committed image tag is the newest
+  published `vX.Y.Z` release, so `oc apply -k manifests/` installs a known
+  release (#102; `in-cluster-deployment.md` rules 8/8b, ADR 0035). The pin
+  commit merges before the tag is published, and a published tag is never
+  moved. `:main` is the local override for testing the latest merge;
+  `sha-<SHA>`/digest remains the operator's hardening pin.
 - **cluster-reader** — built-in OpenShift ClusterRole (94 rules, zero Secret access)
   planned as the patrol pod's RBAC boundary in-cluster (#2).
 - **Deploy key** — an SSH key pair registered with the git host (write access

@@ -1,6 +1,11 @@
 # 0008. Post-merge CI publishes the image; the manifests deploy it
 
-Date: 2026-10-14 · Status: proposed
+Date: 2026-10-14 · Status: accepted
+
+> **Manifest default amended.** The `:main` deployment default decided below was
+> replaced by ADR 0035: the manifests now name the current `vX.Y.Z` release tag,
+> and `:main` is a local override for testing the latest merge. The build/tag
+> publication decision itself is unchanged.
 
 ## Context
 

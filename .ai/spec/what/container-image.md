@@ -127,8 +127,12 @@ manifests deploy by default.
     `packages: write` — no personal access tokens, no registry credentials
     stored anywhere [DONE: #2].
 16. The CI-published image is the deployment artifact: the #2 manifests
-    reference `ghcr.io/thoraxe/ols-patroller:main` by default (kustomize
-    `images` override — `in-cluster-deployment.md` rule 8). The first publish
+    reference `ghcr.io/thoraxe/ols-patroller:<current-release-tag>` by default
+    (kustomize `images` override — `in-cluster-deployment.md` rule 8) — the
+    newest published `vX.Y.Z` release tag, never the rolling `:main` tag
+    (rule 19) [DONE: #2] [release-pinned default: DONE: #102]. `:main`
+    remains the rolling tag for local override/testing
+    (`in-cluster-deployment.md` rule 8b). The first publish
     requires flipping the GHCR package to public once (the repo is public), or
     the deploying cluster uses an image pull secret / an overridden ref
     (ADR `decisions/0008-ci-published-image.md`) [DONE: #2].
@@ -177,6 +181,35 @@ manifests deploy by default.
     skipped with no registry write. This is the retro path for releases that
     predate the trigger (v0.1) and the recovery path when the release job
     failed.
+19. **Release-pinned manifests: pin before tag** [DONE: #102]. A release is
+    a tag plus a manifest default that names it. The commit a `vX.Y.Z` tag
+    points at MUST carry `manifests/kustomization.yaml` with
+    `newTag: vX.Y.Z` (`in-cluster-deployment.md` rule 8), and the release is
+    published only after that pin commit has merged to `main` and the
+    `push` build has published the commit's `sha-<SHA>` image — the source
+    rule 17's retag copies. The release flow is therefore ordered:
+    (1) merge the pin commit (`newTag: vX.Y.Z`); (2) confirm the main-push
+    build published `sha-<SHA>` for that commit; (3) publish the GitHub
+    release whose tag points at that commit; (4) rule 17's retag applies
+    `vX.Y.Z` to the image. Publishing a release from a commit whose manifests
+    name a different tag is a contract violation (the tagged tree is the
+    deployable artifact). A published release tag is **never moved,
+    retargeted, or force-updated**: a wrong pin is fixed forward by the next
+    release, and the default on `main` may be corrected by a follow-up pin
+    commit. Releases that predate this rule are corrected that same way — a
+    follow-up pin commit on `main`, never by moving their tag. The pin is a
+    reviewed commit, never workflow automation: `image.yml` must not write
+    `manifests/` (its jobs build and retag only). README's `## Releasing`
+    section documents this exact order — pin (`newTag: vX.Y.Z`) → wait for the
+    main-push `sha-<SHA>` build → publish the release → retag — plus the
+    never-move rule. That section MUST contain, in this order, the literal
+    `newTag: vX.Y.Z`, a `sha-<` reference, and the `gh release create`
+    command, and MUST contain the literal words `Never move`; the static suite
+    pins the documented order and tokens. Because a
+    wrong pin is content, the static manifest test pins the **exact** current
+    release tag (not just its shape): a release pin commit updates
+    `manifests/kustomization.yaml`, the test's expected tag, and any README
+    release text together, so a stale or wrong pin fails the suite.
 
 ## Constraints
 
@@ -199,7 +232,7 @@ manifests deploy by default.
   having succeeded for that commit — releasing an unbuilt commit fails loudly
   instead of publishing (ADR `decisions/0010-release-retag-not-rebuild.md`)
   [DONE: #36].
-- The CI contract (rules 13–18) is unit-checked statically in
+- The CI contract (rules 13–19) is unit-checked statically in
   `tests/test_image_ci.py`, which parses `.github/workflows/image.yml` and
   fails on a missing or non-conforming workflow — no workflow run needed
   [rules 13–16: DONE: #2] [rules 17–18: DONE: #36].
@@ -208,6 +241,7 @@ manifests deploy by default.
 
 | Ticket | Summary |
 |---|---|
+| ~~#102~~ | Release-pinned manifests and the release ordering (rule 16's rewrite + new rule 19; the manifest-side behavior is `in-cluster-deployment.md` rules 8/8b, ADR 0035): the manifest default names the newest published `vX.Y.Z` release, not `:main`; the pin commit (`newTag: vX.Y.Z`) merges and its `sha-<SHA>` build must exist **before** the release tag is published; published tags are never moved (a wrong pin is fixed forward, and pre-rule releases get a follow-up pin on `main`); `image.yml` never writes `manifests/`. The v0.3.2 release predates the rule — its pin lands on `main` in the implementation commit without moving the tag. Impl commit also syncs `AGENTS.md`'s test list and the stale `image.yml` rule-range comment |
 | ~~#1~~ | This file's own contract: Containerfile + `requirements.txt` (rules 1–12) |
 | ~~#2~~ | Manifests consuming this image (`in-cluster-deployment.md`) + the post-merge CI that publishes it to GHCR (rules 13–16) |
 | ~~#25~~ | Default cadence 6 h: CMD `--interval 21600` (rule 9), kept identical to the Deployment args and the `patrol.py` env default |

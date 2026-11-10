@@ -13,6 +13,7 @@ Contract: .ai/spec/what/in-cluster-deployment.md [PLANNED: #2]
 [deploy-key wiring: rules 16a-16d, PLANNED: #39]
 [pull policy: rule 8a, PLANNED: #61]
 [storage-class override: rule 5a, PLANNED: #68]
+[release-pinned default + local override: rules 8/8b/17 step 6, PLANNED: #102]
 [egress allowlist template: rule 1 + `.ai/spec/what/egress-control.md` rule 8,
 PLANNED: #34 — the policy contract itself lives in `tests/test_egress_control.py`].
 
@@ -32,6 +33,9 @@ KUSTOMIZATION = MANIFESTS / "kustomization.yaml"
 NAMESPACE = "ols-patroller"
 PVC_NAME = "ols-patroller-wiki"
 IMAGE_KEY = "ols-patroller"
+# The release the committed manifests ship (rule 8, #102). A release pin
+# commit updates this expectation together with the kustomization.
+CURRENT_RELEASE_TAG = "v0.3.2"
 DEPLOY_KEY_SECRET = "ols-patroller-deploy-key"
 DEPLOY_KEY_PATCH_EXAMPLE = MANIFESTS / "deploy-key-patch.yaml.example"
 
@@ -313,19 +317,68 @@ def test_image_key_and_kustomize_override():
         "the images override must map to the CI-published GHCR image "
         "(rule 8, container-image.md rules 13-16)"
     )
-    assert entry.get("newTag") == "main", (
-        "the images override must default to the rolling :main tag (rule 8)"
+    # Rule 8 (#102): the committed default is the current release tag — the
+    # tagged tree is the deployable artifact, and `:main` is a local override
+    # (rule 8b). A default of `main`, a sha pin, or a digest is a violation.
+    tag = str(entry.get("newTag") or "")
+    assert re.fullmatch(r"v\d+\.\d+\.\d+", tag), (
+        f"the images override must default to a release tag vX.Y.Z (rule 8, "
+        f"#102), got: {tag!r}"
+    )
+    assert tag == CURRENT_RELEASE_TAG, (
+        f"the images override must pin the exact current release "
+        f"{CURRENT_RELEASE_TAG!r} (rule 8, #102) — a stale or wrong pin is a "
+        f"release-pin bug, not a shape question; got: {tag!r}"
+    )
+    assert tag != "main", (
+        "the committed default must never be the rolling :main tag — that is "
+        "the local 'test latest' override (rules 8/8b, #102)"
+    )
+    assert not entry.get("digest"), (
+        "the committed default is a release tag, not a digest pin — a digest "
+        "is an operator hardening override (rules 8/8a, #102)"
     )
 
 
-def test_container_pulls_always_for_the_rolling_tag():
-    # Rule 8a (#61): the deployed tag is rolling (:main) — under the
+def test_readme_documents_the_local_image_override():
+    """Rule 8b (#102): the committed default is a release tag, and the
+    README documents the supported local overrides (latest merge, another
+    registry) so an operator never has to guess."""
+    readme = (REPO / "README.md").read_text(encoding="utf-8")
+    assert "Test the latest merge" in readme, (
+        "README must document the local image override / test-latest procedure "
+        "(rule 8b, #102)"
+    )
+    assert "oc -n ols-patroller set image deploy/ols-patroller" in readme, (
+        "README must show the `oc set image` override form (rule 8b, #102)"
+    )
+    assert "newTag: main" in readme, (
+        "README must name `main` as the supported 'test latest' override "
+        "(rule 8b, #102)"
+    )
+    assert "sha-<SHA>" in readme, (
+        "README must name a `sha-<SHA>` override as the pinned-merge form "
+        "(rule 8b, #102)"
+    )
+    assert "another registry" in readme, (
+        "README must name the another-registry override form (rule 8b, #102)"
+    )
+    assert "the manifests use `:main`" not in readme, (
+        "README must not carry the superseded claim that the committed "
+        "manifests deploy `:main` (rules 8/8b, #102)"
+    )
+
+
+def test_container_pulls_always_for_mutable_tags():
+    # Rule 8a (#61): the deployed tag is mutable — the pinned release tag is
+    # written by CI's retag and local overrides may be :main — under the
     # k8s-default IfNotPresent, every rollout restart on a node with the
     # tag cached is a silent no-op that keeps the stale image.
     assert _container().get("imagePullPolicy") == "Always", (
         "the patrol container must set imagePullPolicy: Always while the "
-        "kustomization tag is rolling (:main) — IfNotPresent makes every "
-        "rollout restart silently keep the cached stale image (rule 8a, #61)"
+        "kustomization tag is mutable (release tag or a local override) — "
+        "IfNotPresent makes every rollout restart silently keep the cached "
+        "stale image (rule 8a, #61)"
     )
 
 
