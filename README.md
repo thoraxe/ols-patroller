@@ -205,9 +205,10 @@ Python dependencies install at build time from the exactly pinned
 `requirements.txt` — nothing resolves or installs at start — on a pinned
 UBI9-minimal base, with the `oc`/`kubectl` client fetched at build time from a
 version-pinned mirror and SHA-256 verified before extraction. CI builds the
-image; the manifests use `:main` with `imagePullPolicy: Always` (a mutable tag
-must re-pull), and releases are registry-side retags of the same sha image
-(ADR 0010).
+image; the manifests pin the current release tag with `imagePullPolicy: Always`
+(a mutable tag must re-pull), testing the latest merge is a local `:main`
+override (see [Test the latest merge](#test-the-latest-merge)), and releases are
+registry-side retags of the same sha image (ADR 0010).
 
 **Credentials and data egress.** All secret material arrives through the
 `ols-patroller` Secret (`envFrom`); nothing sensitive is literal in a committed
@@ -255,6 +256,12 @@ its wiki on a PVC at `/wiki`, and needs the image pullable from
 `ghcr.io/thoraxe/ols-patroller` (flip the GHCR package to public once, or edit
 the `images:` entry in `kustomization.yaml` to a registry your cluster pulls).
 
+The committed kustomization pins the **current `vX.Y.Z` release tag**, not the
+rolling `:main` tag: a plain `oc apply -k manifests/` deploys a known release,
+not the latest merge. Testing unreleased work — or pulling from another
+registry — is a local override that never changes the committed default (see
+[Test the latest merge](#test-the-latest-merge)).
+
 Check it worked:
 
 ```bash
@@ -262,6 +269,35 @@ oc auth can-i get pods -A --as=system:serviceaccount:ols-patroller:ols-patroller
 oc -n ols-patroller logs deploy/ols-patroller                                      # patrol output
 oc -n ols-patroller exec deploy/ols-patroller -- git -C /wiki log --oneline       # wiki commits
 ```
+
+### Test the latest merge
+
+The committed default is a release tag, so testing the latest merge is an
+explicit local override — the same applies to pulling from another registry.
+Pick one form:
+
+```bash
+# 1. Uncommitted working-tree edit of the images entry, then apply:
+#      images:
+#        - name: ols-patroller
+#          newName: ghcr.io/thoraxe/ols-patroller
+#          newTag: main
+oc apply -k manifests/
+
+# 2. Override the running Deployment directly (rolling latest):
+oc -n ols-patroller set image deploy/ols-patroller ols-patroller=ghcr.io/thoraxe/ols-patroller:main
+
+# 3. Pin one specific merge by its immutable sha-<SHA> tag:
+oc -n ols-patroller set image deploy/ols-patroller ols-patroller=ghcr.io/thoraxe/ols-patroller:sha-<SHA>
+```
+
+A kustomize overlay works too. For another registry, use the same forms with
+the other registry's `newName`/image ref. Overrides are local: never commit
+them — the committed `newTag` stays a `vX.Y.Z` release tag, and changing the
+release default is a release-pin commit (see [Releasing](#releasing)). The
+pull policy is unchanged: a mutable `:main` override follows
+`imagePullPolicy: Always`, while an immutable `sha-<SHA>`/digest pin may drop
+it.
 
 ### No default storage class?
 
@@ -397,6 +433,42 @@ whose host is not in the policy: the console `🔔 NOTIFY:` line still prints,
 that sink's delivery fails with a stderr warning, and the patrol still exits
 zero. Restore the Secret afterwards. Enabling the allowlist can only break
 traffic, never heal it — that is the point of default-deny.
+
+## Releasing
+
+The committed manifest default is the current release tag, and the tagged tree
+is the deployable artifact — so a release is pinned **before** it is tagged.
+
+1. **Pin the manifest default.** Open a PR that sets the incoming release tag
+   and the static suite's expected tag together:
+
+   ```yaml
+   images:
+     - name: ols-patroller
+       newName: ghcr.io/thoraxe/ols-patroller
+       newTag: vX.Y.Z
+   ```
+
+   Merge it to `main`.
+2. **Wait for the main-push build.** The merge publishes
+   `ghcr.io/thoraxe/ols-patroller:sha-<SHA>` for the pin commit. Confirm that
+   build succeeded — the retag copies exactly that image.
+3. **Publish the GitHub release** whose tag points at the pin commit:
+
+   ```bash
+   gh release create vX.Y.Z --target <pin-commit> --title vX.Y.Z --notes "..."
+   ```
+
+   The `release: published` job then retags the image `vX.Y.Z` from its
+   `sha-<SHA>` image — a registry-side copy, never a rebuild.
+4. **Apply.** Once the retag has completed, `oc apply -k manifests/` on a
+   cluster picks up the release tag (the pod template changes, so the rollout
+   happens on its own).
+
+**Never move** a published release tag — no retargeting, no force-update. A
+wrong pin is fixed forward by the next release, and a release that predates
+this rule gets a follow-up pin commit on `main`, never a moved tag. `image.yml`
+only builds and retags; it never writes `manifests/`.
 
 ## Smoke-test results (2026-10-13, dry-cluster)
 

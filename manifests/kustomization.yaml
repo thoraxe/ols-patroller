@@ -18,8 +18,11 @@ resources:
 
 # Rule 8: the single override point — the Deployment carries the literal image
 # key `ols-patroller`; this maps it to the CI-published GHCR image
-# (container-image.md rules 13-16). Edit here to pull from elsewhere.
+# (container-image.md rules 13-19). The committed default is the current
+# release tag, never the rolling :main tag (rule 8, #102): applying these
+# manifests deploys a known release. Override locally — not in a commit — to
+# test the latest merge (:main, rule 8b) or to pull from another registry.
 images:
   - name: ols-patroller
     newName: ghcr.io/thoraxe/ols-patroller
-    newTag: main
+    newTag: v0.3.2

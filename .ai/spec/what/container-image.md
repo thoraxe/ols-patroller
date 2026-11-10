@@ -130,7 +130,7 @@ manifests deploy by default.
     reference `ghcr.io/thoraxe/ols-patroller:<current-release-tag>` by default
     (kustomize `images` override — `in-cluster-deployment.md` rule 8) — the
     newest published `vX.Y.Z` release tag, never the rolling `:main` tag
-    (rule 19) [DONE: #2] [release-pinned default: PLANNED: #102]. `:main`
+    (rule 19) [DONE: #2] [release-pinned default: DONE: #102]. `:main`
     remains the rolling tag for local override/testing
     (`in-cluster-deployment.md` rule 8b). The first publish
     requires flipping the GHCR package to public once (the repo is public), or
@@ -181,7 +181,7 @@ manifests deploy by default.
     skipped with no registry write. This is the retro path for releases that
     predate the trigger (v0.1) and the recovery path when the release job
     failed.
-19. **Release-pinned manifests: pin before tag** [PLANNED: #102]. A release is
+19. **Release-pinned manifests: pin before tag** [DONE: #102]. A release is
     a tag plus a manifest default that names it. The commit a `vX.Y.Z` tag
     points at MUST carry `manifests/kustomization.yaml` with
     `newTag: vX.Y.Z` (`in-cluster-deployment.md` rule 8), and the release is
@@ -241,7 +241,7 @@ manifests deploy by default.
 
 | Ticket | Summary |
 |---|---|
-| #102 | Release-pinned manifests and the release ordering (rule 16's rewrite + new rule 19; the manifest-side behavior is `in-cluster-deployment.md` rules 8/8b, ADR 0035): the manifest default names the newest published `vX.Y.Z` release, not `:main`; the pin commit (`newTag: vX.Y.Z`) merges and its `sha-<SHA>` build must exist **before** the release tag is published; published tags are never moved (a wrong pin is fixed forward, and pre-rule releases get a follow-up pin on `main`); `image.yml` never writes `manifests/`. The v0.3.2 release predates the rule — its pin lands on `main` in the implementation commit without moving the tag. Impl commit also syncs `AGENTS.md`'s test list and the stale `image.yml` rule-range comment |
+| ~~#102~~ | Release-pinned manifests and the release ordering (rule 16's rewrite + new rule 19; the manifest-side behavior is `in-cluster-deployment.md` rules 8/8b, ADR 0035): the manifest default names the newest published `vX.Y.Z` release, not `:main`; the pin commit (`newTag: vX.Y.Z`) merges and its `sha-<SHA>` build must exist **before** the release tag is published; published tags are never moved (a wrong pin is fixed forward, and pre-rule releases get a follow-up pin on `main`); `image.yml` never writes `manifests/`. The v0.3.2 release predates the rule — its pin lands on `main` in the implementation commit without moving the tag. Impl commit also syncs `AGENTS.md`'s test list and the stale `image.yml` rule-range comment |
 | ~~#1~~ | This file's own contract: Containerfile + `requirements.txt` (rules 1–12) |
 | ~~#2~~ | Manifests consuming this image (`in-cluster-deployment.md`) + the post-merge CI that publishes it to GHCR (rules 13–16) |
 | ~~#25~~ | Default cadence 6 h: CMD `--interval 21600` (rule 9), kept identical to the Deployment args and the `patrol.py` env default |

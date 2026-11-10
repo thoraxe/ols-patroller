@@ -122,7 +122,7 @@ layer 3 (RBAC boundary) real, and what the CI-published image
    must pull from elsewhere (private registry, the cluster's internal
    registry) and for deliberately testing the latest merge (`:main`, rule 8b);
    an override is local and never changes the committed release default
-   [DONE: #2] [release-pinned default: PLANNED: #102].
+   [DONE: #2] [release-pinned default: DONE: #102].
 8a. **Mutable tag, `imagePullPolicy: Always`** [DONE: #61]. The patrol
    container sets `imagePullPolicy: Always` while the deployed tag is a
    mutable tag — the release tag the manifests pin by default (a `vX.Y.Z`
@@ -144,7 +144,7 @@ layer 3 (RBAC boundary) real, and what the CI-published image
    the tag to `sha-<full SHA>` (or a digest) is the other legal form
    (immutable, reproducible); an operator who pins may drop the policy
    back to the default.
-8b. **Local image override** [PLANNED: #102]. Overriding the image is a
+8b. **Local image override** [DONE: #102]. Overriding the image is a
    supported, local operation and never changes the committed default: the
    operator edits the `images:` entry in their working tree (uncommitted),
    uses a kustomize overlay, or runs
@@ -322,7 +322,7 @@ layer 3 (RBAC boundary) real, and what the CI-published image
        override, rule 8b), the template does not change — add
        `oc -n ols-patroller rollout restart deployment/ols-patroller`
        [DONE: #61 — the container pulls `Always` (rule 8a), so a restart
-       never reuses the node's cached tag] [PLANNED: #102];
+       never reuses the node's cached tag] [DONE: #102];
     7. optional, with the deploy-key wiring enabled (rule 16c): the next
        patrol's push lands — the remote's copy of the wiki advances one
        commit. Verify in the git host's web view (the patrol pushes to the
@@ -405,7 +405,7 @@ layer 3 (RBAC boundary) real, and what the CI-published image
 
 | Ticket | Summary |
 |---|---|
-| #102 | The manifests default to the **current release tag**, not `:main` (rule 8's rewrite + new rule 8b's local override + rule 8a's mutable-tag wording + rule 17 step 6's release-update path; contract behavior is `container-image.md` rules 17/19, ADR 0035): `oc apply -k manifests/` deploys the newest published `vX.Y.Z` release, and testing the latest merge or another registry is an explicit local override (uncommitted `images:` edit, overlay, or `oc set image`). Release cutting pins before tagging (`container-image.md` rule 19), and a published tag is never moved. README documents the override and the release order; the static suite pins the default's exact current release tag (flipping the old `newTag == main` assertion) and the README procedures. The v0.3.2 release predates the rule; its pin lands on `main` in the implementation commit, without moving the tag. Impl commit also syncs `AGENTS.md`'s test list and the stale `manifests/deployment.yaml`/`image.yml` rule-range comments |
+| ~~#102~~ | The manifests default to the **current release tag**, not `:main` (rule 8's rewrite + new rule 8b's local override + rule 8a's mutable-tag wording + rule 17 step 6's release-update path; contract behavior is `container-image.md` rules 17/19, ADR 0035): `oc apply -k manifests/` deploys the newest published `vX.Y.Z` release, and testing the latest merge or another registry is an explicit local override (uncommitted `images:` edit, overlay, or `oc set image`). Release cutting pins before tagging (`container-image.md` rule 19), and a published tag is never moved. README documents the override and the release order; the static suite pins the default's exact current release tag (flipping the old `newTag == main` assertion) and the README procedures. The v0.3.2 release predates the rule; its pin lands on `main` in the implementation commit, without moving the tag. Impl commit also syncs `AGENTS.md`'s test list and the stale `manifests/deployment.yaml`/`image.yml` rule-range comments |
 | ~~#34~~ | ~~The optional egress allowlist artifact (rule 1's directory amendment + the Configuration Surface entry): a committed `manifests/egress-networkpolicy.yaml.example` template, the gitignored operator `egress-networkpolicy.yaml` rendered by `--egress-policy` and applied with `oc apply -f`, and the superseded “no NetworkPolicy” constraint. Contract: `egress-control.md` (ADR 0030)~~ |
 | ~~#68~~ | ~~The storage-class override patch (rule 5a + the rule 1 directory amendment): a committed `manifests/pvc-patch.yaml.example` strategic-merge template setting exactly `spec.storageClassName`, the gitignored operator copy + `patches:` opt-in (the deploy-key pattern), and the README procedure. Impl commit also syncs `AGENTS.md`'s test list~~
 | ~~#61~~ | ~~`imagePullPolicy: Always` on the patrol container while the kustomization tag is rolling (rule 8a), the static-suite invariant (mutable tag → Always; `sha-…`/digest pin is the other legal form), and rule 17 step 6's image-pull premise stated. Impl commit also syncs `AGENTS.md`'s test list~~

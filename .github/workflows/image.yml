@@ -1,6 +1,6 @@
 # Post-merge image CI (#2) + release retag (#36) — builds and publishes the
 # patrol image to GHCR, and tags published releases via registry-side retag.
-# Contract: .ai/spec/what/container-image.md rules 13-18
+# Contract: .ai/spec/what/container-image.md rules 13-19
 # (ADR decisions/0008-ci-published-image.md,
 # ADR decisions/0010-release-retag-not-rebuild.md).
 #
