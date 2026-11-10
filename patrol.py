@@ -111,13 +111,16 @@ TOOL_TIMEOUT = int(os.environ.get("PATROL_TOOL_TIMEOUT", "60"))
 REQUEST_TIMEOUT = 300  # seconds per exploration turn
 REPORT_TIMEOUT  = 900  # seconds per structured reporting/repair call
 # The reporting bound is also a *wall-clock* bound in disguise (#88, rule 8b;
-# ADR 0031): the gateway caps a request at ~900 s, and at the observed ~71
-# output tok/s a 64000-token bound needs the whole window — both attempts of
-# the #88 soak 504ed at ~902 s. 32000 is ~450 s of generation and still ~12k
-# above #63's observed ~20k completion, so the reasoning-exhaustion fix stays
-# in force (the bound must never come back down to the starvation point).
+# ADRs 0031/0034): the gateway caps a request at ~900 s, and at the observed
+# ~71 output tok/s a 64000-token bound needs the whole window — both attempts
+# of the #88 soak 504ed at ~902 s. 32000 was ~450 s at that rate, but #97's
+# soak still measured ~900 s on the first attempt of 3 of 5 patrols while the
+# cheap retry wrote a full report in ~260 s, i.e. ~35–40 output tok/s. At that
+# honest rate 24000 is ~600–685 s, inside the window, and still ~4k above
+# #63's observed ~20k completion, so the reasoning-exhaustion fix stays in
+# force (the bound must never come back down to the starvation point).
 REQUEST_MAX_TOKENS = 16_000  # completion tokens per exploration turn
-REPORT_MAX_TOKENS  = 32_000  # completion tokens per structured reporting/repair call
+REPORT_MAX_TOKENS  = 24_000  # completion tokens per structured reporting/repair call
 OUT_CAP    = 15_000  # max chars of tool output fed back to the model
 # Head+tail split of rule 11's truncated output (kubectl-guard.md rule 11, #10;
 # ADR 0027): kubectl tables carry headers/oldest rows at the head, logs and
@@ -126,25 +129,21 @@ OUT_CAP    = 15_000  # max chars of tool output fed back to the model
 # at or under OUT_CAP.
 OUT_HEAD   = 9_000  # head chars kept by the truncation marker
 OUT_TAIL   = 5_000  # tail chars kept after the truncation marker
-# Shape-pass compaction cap (reporting-notifications.md rule 7e, #66): the
-# tool-result keep budget for `compact_messages` — every shape-pass invocation
-# carries the compacted conversation. Hard-coded, not env-configurable (the
-# same convention as the rules-8a/8b request/token bounds): the shape pass's
-# input grew with the wiki until it flirted with the model gateway's ~900 s
-# request ceiling (both attempts 504ing at ~902 s on one soaked patrol), and a
-# client-side timeout raise cannot help while the *gateway* caps the request —
-# only shrinking what the pass carries can. A 1500-character excerpt of any
+# Shape-pass compaction cap (reporting-notifications.md rule 7e, #66/#97): the
+# tool-result keep budget for `compact_messages` — every shape-pass invocation,
+# and every attempt of every mode, carries the conversation compacted at this
+# one cap. Hard-coded, not env-configurable (the same convention as the
+# rules-8a/8b request/token bounds): the shape pass's input grew until it hit
+# the model gateway's ~900 s request ceiling (both attempts 504ing at ~902 s on
+# one soaked patrol), and a client-side timeout raise cannot help while the
+# *gateway* caps the request — only shrinking what the pass carries can. #97
+# made the retry's shape the default: 500 characters (the payload the soaked
+# retries carried), so attempt 1 and attempt 2 send the same floor and the
+# #88-era `SHAPE_TOOL_KEEP_RETRY` constant is retired — a second, smaller cap
+# would describe a payload no attempt sends. A 500-character excerpt of any
 # tool result is more citation than the report contract asks for; the full
 # text stays in the patrol's own transcript (pod logs) and the wiki's prose.
-SHAPE_TOOL_KEEP = 1500  # chars of each tool result the shape pass carries
-# Ceiling-aware retry cap (reporting-notifications.md rule 7g, #88; ADR 0031):
-# when attempt 1 failed at the gateway's wall clock, repeating the identical
-# request spends a second full window and fails the same way — so attempt 2
-# rebuilds its base from the raw conversation compacted at this smaller cap
-# (a third of the first attempt's tool-result payload, which is what the
-# gateway's clock actually bills) and asks for the most concise valid report.
-# Hard-coded, not env-configurable — the same convention as the bounds above.
-SHAPE_TOOL_KEEP_RETRY = 500  # chars of each tool result the retry carries
+SHAPE_TOOL_KEEP = 500  # chars of each tool result the shape pass carries
 CLUSTER_ID = os.environ.get("PATROL_CLUSTER_ID", "local")  # wiki commit identity
 WIKI_REMOTE = os.environ.get("PATROL_WIKI_REMOTE", "")     # optional wiki replication
 # Wiki push bounds (wiki-memory.md rule 4e). Read at call time, not import time,
@@ -1075,6 +1074,8 @@ Produce the final PatrolReport for the cluster patrol above:
      few lines: what the wiki is and the dominant standing severity. A ### status
      block after the Anomaly log is legal; a sixth ## section is not.
 
+Be concise: one line per finding with a short evidence citation, and no optional prose padding around the report — the wiki keeps its own section and entry prose. Brevity governs how you say it, never what you include: every finding, notification, and the FULL updated_wiki are still required.
+
 A size line may be appended below: the current wiki's character count and the
 soft budget. An over-budget wiki slows this reporting pass, risks the model
 gateway's request ceiling, and makes the next patrol re-read prose that should
@@ -1228,24 +1229,26 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
     patrol-history prose rule 29b drops). No `current_wiki` (or an empty one)
     renders no note.
 
-    The retry is ceiling-aware (reporting-notifications.md rule 7g, #88): when
-    attempt 1 failed at the model gateway (a rule-7f `gateway failure (...)`
-    reason), attempt 2 discards the attempt-1 message list, rebuilds its base
-    from the raw conversation compacted at `SHAPE_TOOL_KEEP_RETRY`, and appends
-    one user message — the mode's prefix, the pinned brevity corrective,
-    REPORT_CONTRACT (the rebuilt base no longer carries it), then the size note
-    last. Every other failure keeps the append-only retry and the
-    `SHAPE_TOOL_KEEP` base, so an empty wiki is still answered by re-demanding
-    the wiki, never by asking for brevity.
+    The retry is ceiling-aware (reporting-notifications.md rule 7g, #88/#97):
+    when attempt 1 failed at the model gateway (a rule-7f `gateway failure
+    (...)`) reason), attempt 2 discards the attempt-1 message list, rebuilds its
+    base from the raw conversation compacted at the same `SHAPE_TOOL_KEEP` cap
+    (the single cap every attempt sends), and appends one user message — the
+    mode's prefix, the pinned ceiling corrective, REPORT_CONTRACT (the rebuilt
+    base no longer carries it), then the size note last. Every other failure
+    keeps the append-only retry and the same `SHAPE_TOOL_KEEP` base, so an
+    empty wiki is still answered by re-demanding the wiki, never by asking for
+    brevity.
     """
-    # Rule 7g (#88): the pinned brevity corrective — the ceiling is wall-clock
-    # time, so the retry must ask for a smaller answer, not just a smaller
-    # prompt.
+    # Rule 7g (#88/#97): the pinned ceiling corrective — the retry now sends
+    # the same floor payload as attempt 1, so its value is labeling the
+    # failure and re-stating the ask (the full wiki, without padding), not
+    # shrinking a request that is already compacted.
     ceiling_corrective = (
         "Your previous attempt failed at the model gateway's request ceiling — "
-        "the request took too long. Return the PatrolReport as concisely as "
-        "possible: the shortest valid updated_wiki, findings reduced to one "
-        "line each, no optional prose.")
+        "the request took too long. Return the PatrolReport again, stated without "
+        "padding: the FULL updated_wiki unchanged in content, findings at one line "
+        "each, no optional prose around the report.")
     if repair is None and wiki_repair is None:
         prefix = ("You are the REPORTING PASS for the cluster patrol recorded above. "
                   "The patrol completed and wrote its final summary. "
@@ -1297,9 +1300,11 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
     base = compact_messages(messages)
     msgs: list = [*base, {"role": "user",
                           "content": prefix + REPORT_CONTRACT + note_suffix}]
-    # Rule 7g (#88): attempt 2's prompt when attempt 1 died at the gateway —
-    # the shrunk base plus one message that keeps the mode's framing, asks for
-    # brevity, re-states the contract, and leaves the size note last.
+    # Rule 7g (#88/#97): attempt 2's prompt when attempt 1 died at the gateway —
+    # the rebuilt base (same cap as attempt 1) plus one message that keeps the
+    # mode's framing, labels the ceiling failure with the pinned corrective,
+    # re-states the contract and its concision ask, and leaves the size note
+    # last.
     ceiling_prompt = (f"{prefix}\n\n{ceiling_corrective}\n\n"
                       f"{REPORT_CONTRACT}{note_suffix}")
     # Rule 7b (#51): the empty-wiki classification keys on the wiki field alone
@@ -1358,11 +1363,10 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
         in_text = in_tokens if isinstance(in_tokens, int) else "?"
         out_text = out_tokens if isinstance(out_tokens, int) else "?"
         print(f"[patrol] reporting pass attempt {attempt} failed ({reason}, "
-              f"took {elapsed} s, in {in_text} out {out_text} tokens)",
-              file=sys.stderr)
-        if reason.startswith("gateway failure ("):  # rule 7g (#88)
-            msgs = [*compact_messages(messages,
-                                      keep_chars=SHAPE_TOOL_KEEP_RETRY),
+              f"took {elapsed} s, in {in_text} out {out_text} tokens, "
+              f"bound {REPORT_MAX_TOKENS} tokens)", file=sys.stderr)
+        if reason.startswith("gateway failure ("):  # rule 7g (#88/#97)
+            msgs = [*compact_messages(messages),
                     {"role": "user", "content": ceiling_prompt}]
         else:
             msgs = [*msgs, {"role": "user", "content": corrective + note_suffix}]

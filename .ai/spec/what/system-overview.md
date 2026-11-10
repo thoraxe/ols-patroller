@@ -189,7 +189,7 @@ the prompt's soft turn target `SOFT_TARGET_TURNS` = 20, decoupled from the hard
 per structured reporting/repair call
 (`reporting-notifications.md` rule 8b) [DONE: #63 — was a flat
 `max_tokens` 16000; DONE: #88 lowers the reporting bound
-64000 → 32000; PLANNED: #97 lowers it 32000 → 24000], request
+64000 → 32000; DONE: #97 lowers it 32000 → 24000], request
 timeout — `REQUEST_TIMEOUT` 300 s per exploration turn, `REPORT_TIMEOUT`
 900 s per structured reporting/repair call
 (`reporting-notifications.md` rule 8a) [DONE: #49 — was a flat 300 s on
@@ -221,7 +221,7 @@ documents). Milestone shape:
 
 | Ticket | Summary |
 |---|---|
-| #97 | The hard-coded constant line's `REPORT_MAX_TOKENS` drops 32000 → 24000 (`reporting-notifications.md` rule 8b, ADR 0034), alongside the first attempt taking the #88 retry's cheap shape. No other constant changes; `REPORT_TIMEOUT` stays 900 s. Tracked in milestone v0.3.2 (patch), not v0.3.1's reliability gate |
+| ~~#97~~ | ~~The hard-coded constant line's `REPORT_MAX_TOKENS` drops 32000 → 24000 (`reporting-notifications.md` rule 8b, ADR 0034), alongside the first attempt taking the #88 retry's cheap shape. No other constant changes; `REPORT_TIMEOUT` stays 900 s. Tracked in milestone v0.3.2 (patch), not v0.3.1's reliability gate~~ |
 | v0.1 (#1–#4, #9, #11, #24, #25, #27, #28) | In-cluster: Containerfile, manifests (SA + cluster-reader + PVC + Deployment), git-backed wiki, e2e tests in-repo, deployment defaults & observability (6 h cadence, unbuffered + verbose logs, git-safe `/wiki`), guard `--raw` refusal [#9 was later re-scoped to apprise multi-sink (v0.3) with its original dedup scope moved to #35] |
 | v0.2 (#5–#8, #20, #39, #40) | Compounding wiki: skeleton schema + validation-on-write, per-entry recheck commands, `stale_after` expiry, `--wiki-stats`, efficient-sweep guidance, deploy-key remote-push wiring, wiki length budget |
 | v0.2.1 (#49, #50, #51) | Real-cluster validation fixes: per-call-shape request bounds (300 s exploration / 900 s structured reporting, #49), empty-`updated_wiki` classification — the contract requires the wiki every report, one named retry + stderr warning (#51), one event loop per `--loop` process (#50); in-cluster operational acceptance is deferred to the v0.2.1 release validation. Impl commits sync `AGENTS.md`'s test list |
