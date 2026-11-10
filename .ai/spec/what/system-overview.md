@@ -92,7 +92,7 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
      publish the image to GHCR,
      and published `v*` releases retag the matching `sha-<SHA>` image with the
      release tag
-     (`container-image.md` rules 13–18) [DONE: #2] [DONE: #25]
+     (`container-image.md` rules 13–19) [DONE: #2] [DONE: #25]
      [release retag: DONE: #36]
      (`in-cluster-deployment.md`).
 12c. **Egress control** — the opt-in default-deny egress allowlist for the
@@ -204,7 +204,7 @@ names — `EGRESS_POLICY_NAME` (`ols-patroller-egress`) and
 
 In-cluster wiring (Secret keys, the `PATROL_CLUSTER_ID` literal, kustomize image
 override, the CI workflow) is deployment surface, not patrol surface —
-`in-cluster-deployment.md` + `container-image.md` rules 13–18.
+`in-cluster-deployment.md` + `container-image.md` rules 13–19.
 
 ## Constraints
 

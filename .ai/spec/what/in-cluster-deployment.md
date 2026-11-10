@@ -111,14 +111,24 @@ layer 3 (RBAC boundary) real, and what the CI-published image
 8. The container image is the literal name `ols-patroller` (no registry, no
    tag — a stable key for the kustomize `images` transformer); the
    kustomization's `images:` entry maps it to the CI-published
-   `ghcr.io/thoraxe/ols-patroller:main` (`container-image.md` rules 13–16).
-   That entry is the single override point for clusters that must pull from
-   elsewhere (private registry, the cluster's internal registry) [DONE:
-   #2].
+   `ghcr.io/thoraxe/ols-patroller:<current-release-tag>`, where the default
+   tag is the **current release** — the newest published `vX.Y.Z` release tag
+   (`container-image.md` rules 17 and 19), never the rolling `:main` tag.
+   Applying the committed manifests therefore deploys a known release, not the
+   latest merge. During a release cut (the pin commit has merged but the
+   release has not been published/retagged yet) the manifest already names the
+   incoming tag but the tag is not pullable yet — apply only after the release's
+   retag has completed (rule 17 step 6, `container-image.md` rule 19). The same entry is the single override point for clusters that
+   must pull from elsewhere (private registry, the cluster's internal
+   registry) and for deliberately testing the latest merge (`:main`, rule 8b);
+   an override is local and never changes the committed release default
+   [DONE: #2] [release-pinned default: PLANNED: #102].
 8a. **Mutable tag, `imagePullPolicy: Always`** [DONE: #61]. The patrol
-   container sets `imagePullPolicy: Always` while the deployed tag is
-   rolling (`:main` — CI republishes it on every merge, rule 8 /
-   `container-image.md` rule 15). A rolling tag under the k8s-default
+   container sets `imagePullPolicy: Always` while the deployed tag is a
+   mutable tag — the release tag the manifests pin by default (a `vX.Y.Z`
+   tag whose registry manifest is written by CI's release retag,
+   `container-image.md` rules 17–19) or an operator's local `:main`/`sha-…`
+   override (rule 8b). A mutable tag under the k8s-default
    `IfNotPresent` makes every `rollout restart` a silent no-op whenever
    the node has the tag cached: the rollout succeeds, the pod runs
    healthy, and the cluster keeps the stale image — exactly how a fixed
@@ -134,6 +144,26 @@ layer 3 (RBAC boundary) real, and what the CI-published image
    the tag to `sha-<full SHA>` (or a digest) is the other legal form
    (immutable, reproducible); an operator who pins may drop the policy
    back to the default.
+8b. **Local image override** [PLANNED: #102]. Overriding the image is a
+   supported, local operation and never changes the committed default: the
+   operator edits the `images:` entry in their working tree (uncommitted),
+   uses a kustomize overlay, or runs
+   `oc set image deploy/ols-patroller ols-patroller=<ref>`. The supported
+   "test the latest merge" override is `:main` (or a specific `sha-<SHA>`
+   pin); the supported "another registry" override is any pullable ref.
+   The committed `newTag` remains a `vX.Y.Z` release tag (rule 8) — a change
+   to the release default is a release-pin commit (`container-image.md` rule
+   19), not a local override. The override works with the same pull policy:
+   a mutable override tag follows rule 8a, an immutable one may drop it.
+   README's in-cluster deployment section documents the procedure (the
+   rule-16d standard: README plus the committed manifests suffice): it MUST
+   carry the override heading `Test the latest merge`, the `newTag: main`
+   form, the `oc -n ols-patroller set image deploy/ols-patroller` form, a
+   `sha-<SHA>` form, and the words `another registry`; and the README
+   (anywhere — the superseded sentence lives in the security section) MUST NOT
+   state that the committed manifests deploy `:main` by default (the
+   superseded claim). The static suite pins the committed default's **exact current
+   release tag** (not just its shape) and those README tokens.
 9. The container args are exactly `--loop --interval 21600 --wiki
    /wiki/cluster-wiki.md` (identical to the image's default CMD; stated
    explicitly so the manifests are self-describing) [DONE: #2] [DONE:
@@ -283,13 +313,16 @@ layer 3 (RBAC boundary) real, and what the CI-published image
        app=ols-patroller` — the replacement pod's next patrol reads the
        existing wiki and the commit numbering continues (patrol N increments
        across the restart);
-    6. updating after a merge: `oc apply -k manifests/ && oc -n ols-patroller
-       rollout restart deployment/ols-patroller` (the rolling `:main` tag —
-       an unchanged template alone does not restart the running pod)
-       [DONE: #61 — this step's premise is rule 8a: with the rolling
-       `:main` tag the container must pull `Always`, or the restart reuses
-       the node's cached tag and the rollout silently keeps the stale
-       image];
+    6. updating to a new release: after the release has been published and
+       its retag job has completed (`container-image.md` rules 17/19 — the
+       pin commit merging alone is not enough; the `vX.Y.Z` image tag does not
+       exist until the retag), `oc apply -k manifests/` changes the pod
+       template's image tag and therefore triggers the rollout on its own.
+       For a same-tag refresh (a re-tagged release, or a local `:main`
+       override, rule 8b), the template does not change — add
+       `oc -n ols-patroller rollout restart deployment/ols-patroller`
+       [DONE: #61 — the container pulls `Always` (rule 8a), so a restart
+       never reuses the node's cached tag] [PLANNED: #102];
     7. optional, with the deploy-key wiring enabled (rule 16c): the next
        patrol's push lands — the remote's copy of the wiki advances one
        commit. Verify in the git host's web view (the patrol pushes to the
@@ -302,8 +335,9 @@ layer 3 (RBAC boundary) real, and what the CI-published image
 
 - `manifests/` — the kustomize root (files per rule 1); namespace and object
   names are per-file literals kept consistent by tests (rule 2)
-- kustomization `images:` entry — the image override point (rule 8)
-- container `imagePullPolicy` — `Always` while the deployed tag is rolling
+- kustomization `images:` entry — the image override point (rule 8); the
+  committed default is the current release tag, a local override is rule 8b
+- container `imagePullPolicy` — `Always` while the deployed tag is mutable
   (rule 8a); may be dropped when the tag is pinned to `sha-…` or a digest
   [DONE: #61]
 - `manifests/pvc-patch.yaml.example` — committed template for the optional
@@ -332,7 +366,7 @@ layer 3 (RBAC boundary) real, and what the CI-published image
   git's ssh, not by `patrol.py` (rule 16a) [DONE: #39]
 - `.github/workflows/image.yml` — the CI that publishes the deployed image
   and retags published `v*` releases onto the matching `sha-<SHA>` image
-  (`container-image.md` rules 13–18)
+  (`container-image.md` rules 13–19)
 
 ## Constraints
 
@@ -371,6 +405,7 @@ layer 3 (RBAC boundary) real, and what the CI-published image
 
 | Ticket | Summary |
 |---|---|
+| #102 | The manifests default to the **current release tag**, not `:main` (rule 8's rewrite + new rule 8b's local override + rule 8a's mutable-tag wording + rule 17 step 6's release-update path; contract behavior is `container-image.md` rules 17/19, ADR 0035): `oc apply -k manifests/` deploys the newest published `vX.Y.Z` release, and testing the latest merge or another registry is an explicit local override (uncommitted `images:` edit, overlay, or `oc set image`). Release cutting pins before tagging (`container-image.md` rule 19), and a published tag is never moved. README documents the override and the release order; the static suite pins the default's exact current release tag (flipping the old `newTag == main` assertion) and the README procedures. The v0.3.2 release predates the rule; its pin lands on `main` in the implementation commit, without moving the tag. Impl commit also syncs `AGENTS.md`'s test list and the stale `manifests/deployment.yaml`/`image.yml` rule-range comments |
 | ~~#34~~ | ~~The optional egress allowlist artifact (rule 1's directory amendment + the Configuration Surface entry): a committed `manifests/egress-networkpolicy.yaml.example` template, the gitignored operator `egress-networkpolicy.yaml` rendered by `--egress-policy` and applied with `oc apply -f`, and the superseded “no NetworkPolicy” constraint. Contract: `egress-control.md` (ADR 0030)~~ |
 | ~~#68~~ | ~~The storage-class override patch (rule 5a + the rule 1 directory amendment): a committed `manifests/pvc-patch.yaml.example` strategic-merge template setting exactly `spec.storageClassName`, the gitignored operator copy + `patches:` opt-in (the deploy-key pattern), and the README procedure. Impl commit also syncs `AGENTS.md`'s test list~~
 | ~~#61~~ | ~~`imagePullPolicy: Always` on the patrol container while the kustomization tag is rolling (rule 8a), the static-suite invariant (mutable tag → Always; `sha-…`/digest pin is the other legal form), and rule 17 step 6's image-pull premise stated. Impl commit also syncs `AGENTS.md`'s test list~~

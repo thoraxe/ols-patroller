@@ -8,9 +8,9 @@ contract (rules 13-16) plus the release-tag contract (rules 17-18: published
 never a rebuild). No workflow run is needed; they fail on a missing or
 non-conforming file.
 
-Contract: .ai/spec/what/container-image.md rules 13-18
+Contract: .ai/spec/what/container-image.md rules 13-19
 (ADR decisions/0010-release-retag-not-rebuild.md)
-[rules 17-18: PLANNED: #36].
+[rules 17-18: PLANNED: #36] [release pinning: rule 19, PLANNED: #102].
 
 Run: uv run --group dev pytest tests/ -q
 """
@@ -325,4 +325,52 @@ def test_release_retag_fails_loudly():
         "the retag step must fail loudly when the source sha-<SHA> tag does "
         "not exist — releasing an unbuilt commit is an error, not a silent "
         "skip (rule 17)"
+    )
+
+
+# --------------------------------------- release pinning (#102, rule 19)
+
+def test_readme_documents_the_release_pin_order():
+    """Rule 19 (#102): the pin commits before the tag — the tagged tree is the
+    deployable artifact. The README's release procedure must carry that order
+    (pin `newTag: vX.Y.Z`, wait for the sha build, then publish), so an
+    operator cannot publish a tag whose manifests name another release."""
+    readme = (REPO / "README.md").read_text(encoding="utf-8")
+    assert "## Releasing" in readme, (
+        "README must document the release procedure (rule 19, #102)"
+    )
+    section = readme.split("## Releasing", 1)[1]
+    section = section.split("\n## ", 1)[0]
+    assert "newTag: vX.Y.Z" in section, (
+        "the release procedure must pin the manifest default to the release "
+        "tag (rule 19, #102)"
+    )
+    assert "gh release create" in section, (
+        "the release procedure must publish the GitHub release (rule 19, #102)"
+    )
+    assert "sha-<" in section, (
+        "the release procedure must wait for / name the main-push sha-<SHA> "
+        "build the retag copies (rules 17/19, #102)"
+    )
+    assert (section.index("newTag: vX.Y.Z") < section.index("sha-<")
+            < section.index("gh release create")), (
+        "the release procedure must pin, wait for the sha build, then publish "
+        "the tag — in that order (rule 19, #102)"
+    )
+    assert "Never move" in section, (
+        "the release procedure must state the never-move rule (rule 19, #102)"
+    )
+
+
+
+def test_workflow_never_writes_manifests():
+    """Rule 19 (#102): the pin is reviewed content, not automation —
+    image.yml builds and retags only; it must never write manifests/."""
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "manifests/" not in text, (
+        "image.yml must not write the manifest default — the pin is a "
+        "reviewed commit (rule 19, #102)"
+    )
+    assert "git commit" not in text and "git push" not in text, (
+        "image.yml must not commit/push manifest changes (rule 19, #102)"
     )
