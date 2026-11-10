@@ -106,6 +106,25 @@ in `how/reporting-pipeline.md`.
    unchanged, `validate_wiki` still judges no prose (rule 15), and
    `wiki_version` stays 1 — the rule is taught and measured, never gated
    (`decisions/0032-no-patrol-history-prose.md`).]
+   [DONE: #97 — the contract also asks for **concision**, because a
+   verbose answer is what spends the model gateway's wall clock (rule 7g's
+   ceiling). Two pinned sentences join the contract, verbatim (executable
+   pins live in `test_shape_input.py`):
+   `Be concise: one line per finding with a short evidence citation, and no optional prose padding around the report — the wiki keeps its own section and entry prose. Brevity governs how you say it, never what you include: every finding, notification, and the FULL updated_wiki are still required.`
+   It rides in `REPORT_CONTRACT`, so every attempt of every mode carries it
+   (the rule-7g retry re-states the contract), and it is an ask, never a
+   gate: rule 5's completeness requirements, rule 7b's empty-wiki
+   classification, and the wiki's own content rules are unchanged. The
+   wiki clause is not decoration: "no optional prose" is scoped to padding
+   *around* the report, so the model must never read the ask as a licence to
+   strip the free prose inside Topology/Baselines/Open-questions entries
+   (`wiki-memory.md` rules 13 and 29b keep that prose). The
+   sentence exists because #97's soak measured the first reporting attempt
+   hitting the gateway ceiling on slow runs while the retry — compacted to
+   500-character tool results *and* asked for the most concise valid report
+   — finished the full report in ~260 s every time; making that shape the
+   default is the fix (rule 7e's cap, this sentence), not a per-attempt
+   special case.]
 
 ### Notification Dedup
 
@@ -409,10 +428,7 @@ entry whose status and severity are unchanged is wiki-only.
     this pass — the report pass, the rule-7a repair pass, and the rule-7d
     wiki-repair pass — carries a **compacted** copy of the patrol
     conversation, not the raw one, produced by the pure function
-    `compact_messages(messages, *, keep_chars=SHAPE_TOOL_KEEP)`. Rule
-    7g's gateway-failure retry compacts at the smaller
-    `SHAPE_TOOL_KEEP_RETRY` instead — the mechanics below are identical,
-    only the cap differs. The
+    `compact_messages(messages, *, keep_chars=SHAPE_TOOL_KEEP)`. The
     compaction is mechanical and lossy in exactly one dimension: every
     message is kept, in order, with its role — but a tool-result body
     (a langchain `ToolMessage`, or a dict with `role == "tool"`) longer
@@ -426,7 +442,7 @@ entry whose status and severity are unchanged is wiki-only.
     duck-types both langchain message objects and plain dicts. The
     corrective retry messages the pass itself appends (rules 7/7b) are
     added after compaction, untruncated. `SHAPE_TOOL_KEEP` is a
-    hard-coded constant (1500 characters, not env-configurable — the
+    hard-coded constant (**500** characters, not env-configurable — the
     same convention as the rules-8a/8b bounds): real-run evidence
     (#66's soak) shows the shape pass's *input* — the full raw
     conversation plus the wiki plus the contract — has grown with the
@@ -435,9 +451,27 @@ entry whose status and severity are unchanged is wiki-only.
     one patrol); a client-side timeout raise cannot help while the
     *gateway* caps the request, so the fix is to reduce what the pass
     carries. Evidence survives: findings cite short excerpts, and a
-    1500-character excerpt of any tool result is more citation than the
+    500-character excerpt of any tool result is more citation than the
     report contract asks for; the full text remains in the patrol's own
     transcript (pod logs, rule 9a) and in the wiki's prose.
+    [DONE: #97 — the cap drops 1500 → **500** and becomes the *only*
+    cap: `SHAPE_TOOL_KEEP_RETRY` is retired — the symbol is **removed from
+    `patrol.py`**, not left defined-but-unused, so `hasattr(patrol,
+    "SHAPE_TOOL_KEEP_RETRY")` is false after implementation — and one
+    constant governs every attempt of every mode. The evidence is the #97 soak — after #88 bounded
+    the pass, the FIRST attempt still 504ed at ~902 s on 3 of 5 patrols,
+    while the retry (500-char tool results plus the rule-7g brevity ask)
+    completed the full report in ~260 s every time. The retry's shape is
+    now the default instead of the recovery. Two levers made the retry
+    cheap, and this rule owns one of them: `compact_messages` truncates
+    **tool-result bodies only** (the wiki is not compacted here — it rides
+    in the initial user message; its own pressure is the rule-29a size note
+    and `wiki-memory.md` rules 28–29), so the smaller cap cuts the
+    patrol transcript's tool payload; the rule-5 concision ask cuts the
+    answer. 500 characters still carries every citation the report contract
+    asks for, so the tool payload shrink is free at the report's fidelity. There is nothing
+    left for a retry to shrink, which is why rule 7g loses its smaller
+    cap (see that rule).]
 7f. **Visible failure timing and gateway classification** [DONE: #66].
     Every attempt-failure log line (rules 7/7b/7c — the pass's internal
     retry, in every mode) carries the attempt's elapsed wall-time:
@@ -470,26 +504,32 @@ entry whose status and severity are unchanged is wiki-only.
     size). Everything else in this rule — elapsed seconds,
     `classify_exception`, and the rule-7c/rule-7b reasons — is
     unchanged.]
-7g. **Ceiling-aware retry** [DONE: #88]. The failed attempt's **cause**
-    decides what the retry sends. When attempt 1 fails with a **gateway
-    failure** — the rule-7f `classify_exception` reason beginning
-    `gateway failure (` (an OpenAI-style 5xx or a timeout) — attempt 2
-    MUST NOT repeat the identical request: the gateway caps wall-clock
-    time, not tokens, so an identical retry spends a second full window
-    and fails the same way (the #88 evidence: two 504s at ~902 s apiece,
-    ~41 minutes and ~550k input tokens for no report). Attempt 2 instead:
+    [DONE: #97 — the line also names the completion bound the attempt
+    ran under, so a tail is comparable across image versions: the full
+    format becomes `[patrol] reporting pass attempt N failed (<reason>,
+    took E s, in I out O tokens, bound B tokens)` with `B` =
+    `REPORT_MAX_TOKENS` (rule 8b). It is a client-side constant, not
+    gateway-reported data — nothing is invented, and the `?` rendering of
+    `I`/`O` (no raw response, no metadata) is unchanged. Without it the
+    #97 soak's question — "was the 24000 bound in force on this patrol?" —
+    could only be answered from the image tag.]
+7g. **Ceiling-aware retry** [DONE: #88]. A **gateway failure** — the rule-7f `classify_exception` reason
+    beginning `gateway failure (` (an OpenAI-style 5xx or a timeout) —
+    still sends attempt 2 down its own path rather than extending attempt
+    1's list: the gateway caps wall-clock time, not tokens, so a rebuild
+    keeps the request from inheriting attempt 1's appended user message,
+    and the pinned ceiling corrective labels the failure for the model and
+    the log (the #88 evidence: two 504s at ~902 s apiece, ~41 minutes and
+    ~550k input tokens for no report). Attempt 2 instead:
     - rebuilds its base message list from the raw patrol conversation
-      compacted at the hard-coded constant `SHAPE_TOOL_KEEP_RETRY` (500
-      characters) instead of `SHAPE_TOOL_KEEP` (1500) — exactly
-      `compact_messages(messages, keep_chars=SHAPE_TOOL_KEEP_RETRY)`, so
-      rule 7e's mechanics are unchanged (every message kept, in order,
-      with its role; a tool-result body over the cap replaced by its
-      first 500 characters plus the rule-7e marker line naming 500 and
-      the true total; all non-tool text verbatim; the input never
-      mutated) and only the cap differs. The attempt-1 message list is
-      **discarded** — including the user message the pass appended to it
-      — so the retry's prompt is the shrunk base plus exactly one
-      appended user message;
+      with exactly `compact_messages(messages)` — the same single cap as
+      attempt 1, so rule 7e's mechanics are unchanged (every message
+      kept, in order, with its role; a tool-result body over the cap
+      replaced by its first 500 characters plus the rule-7e marker line
+      naming 500 and the true total; all non-tool text verbatim; the
+      input never mutated). The attempt-1 message list is **discarded** —
+      including the user message the pass appended to it — so the retry's
+      prompt is the rebuilt base plus exactly one appended user message;
     - appends that one user message, which carries in this order, a blank
       line between each part: the mode's prefix (rule 7's report framing,
       rule 7a's validation-repair framing, or rule 7d's wiki-repair
@@ -498,31 +538,59 @@ entry whose status and severity are unchanged is wiki-only.
       `wiki_size_note`, which stays **last**. The contract is re-stated
       after the corrective because the rebuilt base no longer carries
       attempt 1's contract message, and a request for brevity must never
-      cost the wiki-required instruction (rule 5); the note stays last
-      and appears exactly once in the prompt (rule 29a unchanged).
-      The corrective, verbatim:
+      cost the wiki-required instruction or the rule-5 concision ask (both
+      live in the contract); the note stays last and appears exactly once
+      in the prompt (rule 29a unchanged).
+      The corrective, verbatim (reworded by #97 so it cannot contradict
+      rule 5's completeness clause or the contract's wiki clause: it asks for
+      the FULL wiki *without padding*, never for a shorter one, and confines
+      "no optional prose" to the text around the report):
 
-      `Your previous attempt failed at the model gateway's request ceiling — the request took too long. Return the PatrolReport as concisely as possible: the shortest valid updated_wiki, findings reduced to one line each, no optional prose.`
+      `Your previous attempt failed at the model gateway's request ceiling — the request took too long. Return the PatrolReport again, stated without padding: the FULL updated_wiki unchanged in content, findings at one line each, no optional prose around the report.`
 
+    The rebuild and the corrective are the retry's whole value now: the
+    payload is already at its floor, a gateway 504 is **tail latency** —
+    #97's soak had 3 of 5 first attempts fail and attempt 2 complete the
+    full report every time in ~260 s — so the second attempt is a genuine
+    second roll of the dice, and it stays the last-resort net before rule
+    33. The corrective remains verbatim (not folded into the contract) so
+    a ceiling failure still labels itself in the prompt and in the
+    attempt log.
     Every shape-pass invocation's internal retry is ceiling-aware: the
     report pass, the rule-7a validation-repair pass, and the rule-7d
-    wiki-repair pass all share the loop, so all three shrink their base
-    on a gateway failure (the wiki-repair mode still appends no size
-    note, rule 29a). **Non**-gateway failures — a 4xx status, a plain
-    exception, a raw empty result (rule 7c), or an empty wiki (rule 7b)
-    — keep today's behavior exactly: the attempt-1 message list is
-    extended, never rebuilt, with the existing corrective (the generic
-    `That was not a valid PatrolReport. Produce it now.` or rule 7b's
-    named empty-wiki corrective) plus the note suffix, and the base keeps
-    the `SHAPE_TOOL_KEEP` (1500) compaction. The empty-wiki corrective
+    wiki-repair pass all share the loop, so all three rebuild on a gateway
+    failure (the wiki-repair mode still appends no size note, rule 29a).
+    **Non**-gateway failures — a 4xx status, a plain exception, a raw empty
+    result (rule 7c), or an empty wiki (rule 7b) — keep today's behavior
+    exactly: the attempt-1 message list is extended, never rebuilt, with
+    the existing corrective (the generic `That was not a valid
+    PatrolReport. Produce it now.` or rule 7b's named empty-wiki
+    corrective) plus the note suffix, and the base keeps the same
+    `SHAPE_TOOL_KEEP` (500) compaction. The empty-wiki corrective
     therefore stays distinct and unchanged (rule 7b): a wiki omission is
-    still answered by re-demanding the wiki, never by asking for
-    brevity. `SHAPE_TOOL_KEEP_RETRY` is a hard-coded constant (500
-    characters, not env-configurable — the rules-8a/8b convention): the
-    retry's tool-result payload is a third of the first attempt's, and
-    that payload is what the gateway's wall clock actually bills (the
-    #88 wiki carried a 16,402-character Anomaly log inside a 27,773-char
-    document).
+    still answered by re-demanding the wiki, never by asking for brevity.
+    There is exactly one compaction cap in the code (`SHAPE_TOOL_KEEP`).
+    [DONE: #97 — the retry keeps its own path but can no longer shrink
+    the payload, because attempt 1 now carries the retry's shape (rule 7e's
+    single `SHAPE_TOOL_KEEP` cap of 500 characters, the rule-5 concision
+    ask). Three things change, all of them narrowings:
+    - the rebuild above uses **the same** `compact_messages(messages)` cap
+      as attempt 1 (the pre-#97 text differed: 500 for the retry, 1500 for
+      attempt 1), and the #88-era `SHAPE_TOOL_KEEP_RETRY` constant is
+      **retired and deleted** from `patrol.py` (the module defines no such
+      name after implementation), because a second, smaller cap would
+      describe a payload no attempt sends;
+    - the pinned corrective above is reworded as printed: it asks for the
+      FULL `updated_wiki` *without padding* rather than "the shortest valid
+      updated_wiki", so it cannot contradict rule 5's completeness clause or
+      the contract's wiki clause (unqualified "no optional prose" was a
+      licence to strip the wiki's free prose — `wiki-memory.md` rules 13,
+      29b);
+    - the retry's remaining value is stated plainly: the payload is already
+      at its floor, a gateway 504 is **tail latency** (#97's soak: 3 of 5
+      first attempts failed, attempt 2 completed the full report every time
+      in ~260 s), so attempt 2 is a genuine second roll of the dice and
+      stays the last-resort net before rule 33's total-failure leg.]
 8. A budget-cut report must cover only what was actually observed; the pass is told
    which commands never executed.
 8a. **Per-call-shape request bounds** [DONE: #49]. The two call shapes
@@ -532,8 +600,9 @@ entry whose status and severity are unchanged is wiki-only.
     while this pass and its repair pass (rule 7a) are bounded at
     `REPORT_TIMEOUT` (900 s) — the single tool-free structured call
     carries the entire patrol conversation (real-run evidence: ~100k
-    tokens in, up to 16k out at the time; the bound is 32k once #88
-    lands — 64k from #63 until then — rule 8b [DONE: #88]) and
+    tokens in, up to 16k out at the time; the bound is 24k since #97 —
+    32k from #88 and 64k from #63 until then — rule 8b [DONE: #88]
+    [DONE: #97]) and
     legitimately runs minutes on
     reasoning-capable models. A reporting pass that cannot finish under
     the bound never writes the wiki, so the next patrol re-explores just
@@ -546,7 +615,7 @@ entry whose status and severity are unchanged is wiki-only.
     constants (not env-configurable): exploration turns keep
     `REQUEST_MAX_TOKENS` (16000 — turns are small), while this pass and
     its repair pass (rule 7a) are bounded at `REPORT_MAX_TOKENS`
-    (32000). The shape pass must emit the entire wiki — ~15 KB of
+    (24000). The shape pass must emit the entire wiki — ~15 KB of
     markdown — in one structured response, and on a reasoning model the
     reasoning tokens come out of the same `max_tokens` allowance
     (real-run evidence, the frozen-wiki root cause: a 43.5k-token report
@@ -574,6 +643,29 @@ entry whose status and severity are unchanged is wiki-only.
     `decisions/0031-bound-the-shape-pass-with-a-ceiling-aware-retry.md`,
     which amends this value and leaves ADR 0021's per-call-shape split
     in force.]
+    [DONE: #97 — the reporting bound drops 32000 → **24000**, keeping
+    every word of the reasoning-exhaustion rationale above. #88's 32000
+    capped generation at ~450 s at the ~71 output tok/s the 64k-bound
+    full-payload run implied — a rate that belongs to the pre-#97 request —
+    but the #97 soak (post-#88 image, a >20k-char wiki) still hit the ~900 s
+    ceiling on the FIRST attempt of 3 of 5 patrols. The retry's rate is the
+    honest one to plan from: it wrote a full report (~10k completion tokens:
+    the ~20.5k-char wiki at ≈4 characters per token, plus findings and
+    reasoning) in ~260 s, i.e. ~35–40 output tok/s, at which a 32000-token
+    bound needs ~800–900 s — the window itself. 24000 needs ~600–685 s, leaving
+    headroom under the ceiling, and sits ~4k above #63's observed ~20k
+    completion, so the bound stays strictly above the reasoning-starvation
+    point #63's fix depends on (the condition is "above 20k", not "12k
+    above"). Lowering the bound is the *insurance*, not the fix: the #97
+    soak's own recovery was the smaller payload plus the brevity ask, which
+    now shape every attempt (rule 7e's 500-character cap, the rule-5
+    concision ask). The value and the first-attempt compaction are recorded
+    in ADR
+    `decisions/0034-first-attempt-cheap-and-a-24k-report-bound.md`, which
+    amends ADR 0031's values and leaves ADR 0021's per-call-shape split and
+    the rule 8b reasoning rationale in force. If a 24k bound still measures
+    tight after #86's anomaly-log byte bound lands, retuning it is another
+    spec change with a fresh soak.]
 
 ### Delivery
 
@@ -677,6 +769,7 @@ entry whose status and severity are unchanged is wiki-only.
 
 | Ticket | Summary |
 |---|---|
+| ~~#97~~ | ~~The reporting pass's **first** attempt becomes the cheap one (rules 5's concision ask, 7e's cap, 7f's bound field, 7g's narrowed retry, 8a parenthetical, 8b value here; the bound also lands in `wiki-memory.md`, `patrol-engine.md`, `system-overview.md`, `how/agent-engine.md`, `how/reporting-pipeline.md`, `how/project-structure.md`, and the glossary; ADR 0034 amends ADR 0031): after #88 the first attempt still 504ed at ~900 s on 3 of 5 patrols while the retry — 500-character tool results plus the brevity corrective — finished the full report in ~260 s every time, so the retry's shape becomes the default. `SHAPE_TOOL_KEEP` drops 1500 → 500 and becomes the only compaction cap (`SHAPE_TOOL_KEEP_RETRY` retired: there is nothing left for a retry to shrink, so rule 7g keeps its rebuild and corrective but no longer claims a smaller payload); one pinned concision ask (two sentences) joins `REPORT_CONTRACT`, so every attempt of every mode carries it; `REPORT_MAX_TOKENS` drops 32000 → 24000 (≈600–685 s of generation at the observed throughput, still ~4k above #63's observed ~20k completion — the starvation floor is untouched); and the attempt-failure log line gains `bound B tokens` so a tail is comparable across image versions. The rule-7g retry, rule 7b's empty-wiki corrective, and rule 33's total-failure net are unchanged in reach. A real-cluster soak showing zero attempt-1 504s (or a recorded decision that the retry remains the intended path) is the issue's acceptance evidence, and it is not a test. Impl commit also syncs `AGENTS.md`'s test list — which includes **rewriting** its #88 retry paragraph (it still describes the retry as shrinking its base to a `SHAPE_TOOL_KEEP_RETRY` cap and the non-gateway retry as append-only at a 1500-char base), not merely appending a #97 bullet. The impl commit also rewrites the stale `patrol.py` comments: the `SHAPE_TOOL_KEEP_RETRY` constant and its comment go, `shape_report`'s docstring stops describing a smaller retry cap, and the `SHAPE_TOOL_KEEP`/`REPORT_MAX_TOKENS` comments carry the #97 values~~ |
 | ~~#88~~ | ~~The shape pass inside the model gateway's ~900 s ceiling (rules 7f, 7g, 8a parenthetical, 8b value here; rule 8b's `REPORT_MAX_TOKENS` 64000 → 32000 also lands in `wiki-memory.md`, `patrol-engine.md`, `system-overview.md`, `how/agent-engine.md`, and `how/reporting-pipeline.md`; ADR 0031): the bound halves because a 64k-bounded generation hit the gateway's ~900 s wall clock at ~902 s twice (≈71 output tok/s) while #63's successful run needed only ~20k completion tokens — ~450 s at 32000, still ~12k above the observed completion. A gateway-failure retry becomes ceiling-aware (rule 7g): attempt 2 rebuilds its base from the raw conversation compacted at the new hard-coded `SHAPE_TOOL_KEEP_RETRY` (500 characters) and asks for the most concise valid report — with the contract re-stated after the corrective and the size note last — instead of repeating the identical request; non-gateway failures keep their correctives and the 1500-char cap, and the rule-7b empty-wiki corrective stays distinct. The attempt-failure log line gains the attempt's token counts (`in I out O tokens`, `?` when unknown). Total-failure behavior is unchanged (`wiki-memory.md` rule 33). Splitting the report into two calls was rejected (ADR 0031). Exploration overshoot (547,804 vs 500,000 input tokens, checked per turn) is out of scope here — the token soft-stop owns it (`patrol-engine.md` rule 8b, #10). Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#85~~ | ~~Patrol-history prose is banned in the report contract (rule 5's #85 clauses; behavior in `wiki-memory.md` rule 29b, ADR 0032): the wiki records current state only — no per-patrol headline log, no `History:` list, no "as of patrol #N" chronology, because git history is the record of what changed when; the opening prose stays a few lines; a `###` status block after the Anomaly log is legal while a sixth `##` section is not. #51's copy-verbatim sentence is narrowed by the same exception (`except that patrol-history prose is never carried forward`) and the empty-wiki corrective repeats the narrowed wording, so no model-facing surface carries both asks. The wiki-repair mode's minimal merge drops history prose instead of preserving it (rule 7d). Teaching only — the working-set/size-note machinery is unchanged and length still never gates validation. Impl commit also syncs `AGENTS.md`'s test list and `how/reporting-pipeline.md`'s `REPORT_CONTRACT` row~~ |
 | ~~#34~~ | ~~Only the Constraint sentence that left network-level egress control open: it now points at `egress-control.md` (the derived default-deny allowlist, ADR 0030). The notification contract here is unchanged — the configured sinks stay the deliberate outbound notification allowlist, and what they may carry is the guard's business~~ |

@@ -16,12 +16,19 @@ twice per patrol), freezing the wiki for ~14 patrols; the same run at a
 the 64k bound itself outran the model gateway's ~900 s wall clock (both
 attempts 504ing at ~902 s, ≈71 output tok/s), so the reporting bound
 halves to 32k: ~450 s of generation, still ~12k above the observed 20k
-completion, so #63's reasoning-exhaustion fix stays intact.
+completion, so #63's reasoning-exhaustion fix stays intact. Then #97 — 3 of
+5 post-#88 patrols STILL 504ed at ~902 s on the first attempt while the
+retry (500-char tool results + the brevity ask) finished in ~260 s every
+time, so the cheap shape becomes the default and the bound drops again to
+24000: ~600–685 s at the ~35–40 output tok/s that retry implies, still
+~4k above the observed 20k completion (the floor is "above 20k", not
+"12k above").
 
 The contracts (reporting-notifications.md rules 8a + 8b): exploration turns
 keep `REQUEST_TIMEOUT` (300 s) / `REQUEST_MAX_TOKENS` (16000), the
 structured reporting/repair calls get `REPORT_TIMEOUT` (900 s) /
-`REPORT_MAX_TOKENS` (32000). Unit pins here: the constants and the
+`REPORT_MAX_TOKENS` (24000 since #97; 32000 from #88). Unit pins here: the
+constants and the
 `make_model` passthrough for both bounds; the two-model wiring is pinned by
 the e2e in test_patrol_deepagents.py, and the empty-result reason
 classification (rule 7c) in test_empty_report.py.
@@ -38,11 +45,12 @@ def test_request_bound_constants():
 
 
 def test_token_bound_constants():
-    """Rule 8b (#63, flipped by #88): the two call-shape completion-token
-    bounds, as specced constants — the reporting bound is 32k so one
-    generation finishes inside the gateway's ~900 s window."""
+    """Rule 8b (#63, flipped by #88 and again by #97): the two call-shape
+    completion-token bounds, as specced constants — the reporting bound is
+    24k so one generation finishes inside the gateway's ~900 s window even
+    when the first attempt is slow."""
     assert patrol.REQUEST_MAX_TOKENS == 16000
-    assert patrol.REPORT_MAX_TOKENS == 32000
+    assert patrol.REPORT_MAX_TOKENS == 24000
 
 
 def test_make_model_passes_the_request_bound(monkeypatch):
