@@ -111,16 +111,23 @@ TOOL_TIMEOUT = int(os.environ.get("PATROL_TOOL_TIMEOUT", "60"))
 REQUEST_TIMEOUT = 300  # seconds per exploration turn
 REPORT_TIMEOUT  = 900  # seconds per structured reporting/repair call
 # The reporting bound is also a *wall-clock* bound in disguise (#88, rule 8b;
-# ADRs 0031/0034): the gateway caps a request at ~900 s, and at the observed
-# ~71 output tok/s a 64000-token bound needs the whole window — both attempts
-# of the #88 soak 504ed at ~902 s. 32000 was ~450 s at that rate, but #97's
-# soak still measured ~900 s on the first attempt of 3 of 5 patrols while the
-# cheap retry wrote a full report in ~260 s, i.e. ~35–40 output tok/s. At that
-# honest rate 24000 is ~600–685 s, inside the window, and still ~4k above
-# #63's observed ~20k completion, so the reasoning-exhaustion fix stays in
-# force (the bound must never come back down to the starvation point).
+# ADRs 0031/0034/0036): the gateway caps a request at ~900 s, and at the
+# observed ~71 output tok/s a 64000-token bound needs the whole window — both
+# attempts of the #88 soak 504ed at ~902 s. 32000 was ~450 s at that rate, but
+# #97's soak still measured ~900 s on the first attempt of 3 of 5 patrols while
+# the cheap retry wrote a full report in ~260 s, i.e. ~35–40 output tok/s. At
+# that honest rate the #97 bound of 24000 was ~600–685 s, inside the window,
+# and still ~4k above #63's observed ~20k completion. #101 then showed the
+# token bound itself binding: attempt 1 exhausted 24000 completion tokens
+# (`out 24000`, `bound 24000`) at 289 s — nowhere near the clock — and returned
+# an empty wiki, while the retry still produced a valid report under that same
+# bound, so the overshoot is reasoning variance. 28000 buys 4000 tokens of
+# headroom over the bound that was actually exhausted, and is ~700–800 s at the
+# slow ~35–40 tok/s rate — inside the window, where 32000 would be ~800–914 s
+# and race it. The bound must never come back down to the starvation point
+# (#63's ~20k observed completion).
 REQUEST_MAX_TOKENS = 16_000  # completion tokens per exploration turn
-REPORT_MAX_TOKENS  = 24_000  # completion tokens per structured reporting/repair call
+REPORT_MAX_TOKENS  = 28_000  # completion tokens per structured reporting/repair call
 OUT_CAP    = 15_000  # max chars of tool output fed back to the model
 # Head+tail split of rule 11's truncated output (kubectl-guard.md rule 11, #10;
 # ADR 0027): kubectl tables carry headers/oldest rows at the head, logs and

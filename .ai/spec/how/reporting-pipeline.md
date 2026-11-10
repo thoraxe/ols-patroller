@@ -164,7 +164,7 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
   16000; DONE: #88 — lowered from 64000 because a 64k-bounded
   generation hits the gateway's ~900 s wall clock at ~902 s; DONE: #97 —
   lowered again to 24000 while the first attempt takes the retry's cheap
-  shape; PLANNED: #101 — retuned to 28000 after the first attempt exhausted
+  shape; DONE: #101 — retuned to 28000 after the first attempt exhausted
   24000 with the gateway window far from binding].
 
 ## Integration Points
