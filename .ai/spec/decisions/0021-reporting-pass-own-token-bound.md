@@ -1,6 +1,11 @@
 # 0021. The reporting pass gets its own completion-token bound
 
-Date: 2026-10-26 · Status: proposed
+Date: 2026-10-26 · Status: accepted; value amended by 0031 (#88) and 0034 (#97)
+
+> **Value amended.** The 64000 bound below was first halved to 32000 by ADR 0031
+> and then lowered to 24000 by ADR 0034, which also made the first reporting
+> attempt take the retry's cheap shape. The per-call-shape split this record
+> decided is unchanged.
 
 ## Context
 

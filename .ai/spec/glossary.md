@@ -138,12 +138,21 @@ redefined here.
   pattern as the OLS agentic sandbox.
 - **Ceiling-aware retry** — the shape pass's attempt 2 when attempt 1 failed at
   the model gateway's ~900 s request ceiling (#88, `reporting-notifications.md`
-  rule 7g): instead of re-sending the identical request, it rebuilds its base
-  from the raw conversation compacted at `SHAPE_TOOL_KEEP_RETRY` (500
-  characters) and appends a corrective asking for the shortest valid
-  `PatrolReport` — `REPORT_CONTRACT` re-stated after it, the rule-29a size note
-  last. Non-gateway failures keep the append-only retry and the 1500-character
-  cap.
+  rule 7g): it discards the attempt-1 message list, rebuilds its base from the
+  raw conversation at the single `SHAPE_TOOL_KEEP` compaction cap, and appends
+  a corrective asking for the same `PatrolReport` stated without padding — the
+  FULL `updated_wiki`, findings at one line each, no prose around the report —
+  `REPORT_CONTRACT` re-stated after it, the rule-29a size note last. Since #97
+  the first attempt already carries that cheap shape (500-character tool
+  results plus the contract's concision ask), so the retry rebuilds rather than
+  shrinks, and its corrective asks for the FULL `updated_wiki` *without
+  padding* — never a shorter wiki (rule 5's completeness clause). Non-gateway
+  failures keep the append-only retry.
+- **First-attempt-cheap shape** (#97, ADR 0034) — the reporting pass's default
+  request, not just its recovery: one `SHAPE_TOOL_KEEP` cap (500 characters)
+  for every attempt, the `REPORT_CONTRACT` concision ask, and
+  `REPORT_MAX_TOKENS` 24000 (≈600–685 s of generation at the observed
+  throughput, still above #63's ~20k observed completion).
 - **Budget cut** — a patrol ended by exhausting `max_steps` LLM turns instead of
   self-terminating; the report then covers only what was observed.
 - **Token cut** — the cumulative input-token soft-stop (#10,
@@ -238,7 +247,10 @@ redefined here.
   visible empty-result reasons — was filed here but pulled forward and
   closed after the frozen-wiki diagnosis), v0.3.1 reporting reliability
   (#88: the shape pass inside the model gateway's ~900 s ceiling; #85: the
-  wiki prose/history payload the pass reads and re-emits), v0.4.0 fleet
+  wiki prose/history payload the pass reads and re-emits), v0.3.2 patch
+  (#93: the process-owned notify clock carried across rewrites, so the
+  digest cadence holds; #97: the first reporting attempt takes the #88
+  retry's cheap shape and `REPORT_MAX_TOKENS` drops to 24000), v0.4.0 fleet
   memory & wiki usability (#89: one repo, one branch per cluster; #13: fleet
   spoke push/hub read; #26: wiki viewer; #86: anomaly-log byte bound; #87:
   process-generated topology diagram), future (#12, #14–#16, #31, #41). Plans live

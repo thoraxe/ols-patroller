@@ -55,6 +55,7 @@ Date: YYYY-MM-DD · Status: proposed | accepted | superseded by NNNN
 | [0028](0028-secret-access-banned-in-full.md) | Secret access is banned in full: any command containing `secret` is refused, names/metadata included; local-file/credential flags are refused too |
 | [0029](0029-host-portable-text-io.md) | Host-portable text I/O: UTF-8 and LF are pinned, not inherited from the locale |
 | [0030](0030-derived-network-egress-allowlist.md) | Derived network egress allowlist: default-deny rendered from the process's own egress config, not a hand-kept CIDR list |
-| [0031](0031-bound-the-shape-pass-with-a-ceiling-aware-retry.md) | Bound the shape pass with a ceiling-aware retry: reporting `max_tokens` 32k, gateway-failure retry compacts smaller and asks for brevity |
+| [0031](0031-bound-the-shape-pass-with-a-ceiling-aware-retry.md) | Bound the shape pass with a ceiling-aware retry: reporting `max_tokens` 32k, gateway-failure retry compacts smaller and asks for brevity (values amended by [0034](0034-first-attempt-cheap-and-a-24k-report-bound.md)) |
 | [0032](0032-no-patrol-history-prose.md) | No patrol-history prose in the wiki: taught by contract and prompt, never stripped or validated |
 | [0033](0033-process-owned-carry-of-the-notify-clock.md) | Process-owned carry of the notify clock: `carry_last_notified` restores the old on-disk `last_notified` on every shared entry, so a rewrite that drops the pair cannot reset the digest cadence |
+| [0034](0034-first-attempt-cheap-and-a-24k-report-bound.md) | Make the first reporting attempt the cheap one: one 500-char compaction cap (retry constant retired), a contract concision ask, and `REPORT_MAX_TOKENS` 24000 |
