@@ -108,7 +108,12 @@ under current policy (clean implementation review + `implementation-complete`):
   the on-disk wiki's deterministic size note after `REPORT_CONTRACT` — and the
   notification-dedup wiring of #35: the four-patrol lifecycle (new → quiet
   standing → escalation → resolution), the digest delivery + `last_notified`
-  stamp, and fail-open delivery on the minimal-write leg — and the cost-control
+  stamp, and fail-open delivery on the minimal-write leg — and the
+  notify-clock carry wiring of #93: the write path restoring the old on-disk
+  `last_notified` onto every entry present in both wikis before the stamp (a
+  quiet patrol's rewrite carries the OLD date forward, never a fresh stamp),
+  and three patrols over dropping rewrites digesting once instead of on every
+  other patrol — and the cost-control
   wiring of #10: the user prompt's decoupled soft turn target alongside the
   hard budget, the token soft-stop ending exploration through the budget-cut
   path (report still lands, early stop, dangling-tool-call salvage), and
@@ -167,7 +172,11 @@ under current policy (clean implementation review + `implementation-complete`):
   untagged/unattributable fail-open, order and `notified_ids`), the
   `digest_notifications` matrix (disabled, age/cadence boundaries,
   resolved/excluded/soon-to-expire, ordering, singular/plural),
-  the `stamp_last_notified` matrix, the `NOTIFY_DIGEST_AFTER` config
+  the `stamp_last_notified` matrix, the `carry_last_notified` matrix of #93
+  (old clock restored over a dropped or model-invented value, pairs dropped
+  where the old wiki carries no clock, present/new/removed/unparseable,
+  section move keyed by id, fence awareness, first-occurrence-only, byte
+  preservation, idempotence), the `NOTIFY_DIGEST_AFTER` config
   surface, `validate_wiki`'s severity-pair matrix, and the `REPORT_CONTRACT`
   dedup pins); and `tests/test_empty_report.py` covers the empty-report
   contract (#51: the report contract's wiki-required pins and the

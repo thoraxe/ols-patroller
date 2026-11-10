@@ -2360,6 +2360,72 @@ def stamp_last_notified(content: str, ids, day: str) -> str:
     return "\n".join(replacements.get(i, line) for i, line in enumerate(lines))
 
 
+def _carry_last_notified_line(line: str, day: str | None) -> str:
+    """Rule 4d (#93): carry (or drop) the notify clock on one metadata line.
+
+    A carried `day` replaces the line's first `last_notified` pair and drops
+    any duplicates; an absent pair is appended as the line's final pair. When
+    `day` is None every model-written pair is removed — the model's copy is
+    never durable."""
+    prefix = f"{WIKI_ENTRY_LAST_NOTIFIED}: "
+    parts = line[2:].split(" · ")
+    out: list[str] = []
+    carried = False
+    for part in parts:
+        if part.startswith(prefix):
+            if not carried and day is not None:
+                out.append(prefix + day)
+                carried = True
+            # a model-written pair never survives: duplicates drop, and an
+            # old wiki with no parseable clock drops the pair entirely
+        else:
+            out.append(part)
+    if day is not None and not carried:
+        out.append(prefix + day)
+    return line[:2] + " · ".join(out)
+
+
+def carry_last_notified(new_wiki: str, old_wiki: str) -> str:
+    """Rule 4d (#93): carry the process-owned notify clock across a rewrite.
+
+    The digest cadence's state is `last_notified`, an optional pair the model
+    is never taught and drops on every rewrite; stamping only the entries
+    notified *this* patrol would reset the cadence each time. So every
+    metadata-section entry of `new_wiki` (first occurrence per id, fence-aware,
+    both metadata sections) takes the old on-disk wiki's value when it parses
+    as a YYYY-MM-DD calendar date — an existing pair replaced in place, an
+    absent one appended as the line's final pair — and has any model-written
+    pair removed when the old wiki carries no parseable clock for that id (or
+    does not carry the id at all). Duplicate ids' later lines and ids absent
+    from `new_wiki` are no-ops; everything else is byte-for-byte preserved
+    (frontmatter and prose included). Pure, fence-aware, no I/O."""
+    old_clocks = {entry_id: state.get(WIKI_ENTRY_LAST_NOTIFIED)
+                  for entry_id, state in wiki_entry_states(old_wiki).items()}
+    lines = new_wiki.split("\n")
+    carried_ids: set[str] = set()
+    replacements: dict[int, str] = {}
+    for name, start, end in _scan_sections(lines):
+        if name not in WIKI_METADATA_SECTIONS:
+            continue
+        for idx in _scan_section_entries(lines, start, end):
+            entry_id = _metadata_pairs(lines[idx]).get("id")
+            if not entry_id or entry_id in carried_ids:
+                continue
+            carried_ids.add(entry_id)
+            day = old_clocks.get(entry_id)
+            line = lines[idx]
+            has_pair = any(part.startswith(f"{WIKI_ENTRY_LAST_NOTIFIED}: ")
+                           for part in line[2:].split(" · "))
+            if day is None and not has_pair:
+                continue  # nothing to carry, nothing to drop
+            carried = _carry_last_notified_line(line, day)
+            if carried != line:
+                replacements[idx] = carried
+    if not replacements:
+        return new_wiki
+    return "\n".join(replacements.get(i, line) for i, line in enumerate(lines))
+
+
 def wiki_size_note(content: str, *, budget: int | None = None) -> str:
     """Rule 29a (#67): the model-facing size feedback — pure.
 
@@ -2950,7 +3016,16 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
             print(f"[patrol] wiki: entry '{entry_id}' pruned from the Anomaly log "
                   f"(beyond the keep budget {WIKI_ANOMALY_KEEP}; "
                   "git history retains it)")
-        # Rule 4d (#35): the notification stamp joins after compaction and
+        # Rule 4d (#93): the notify clock is carried, not merely stamped —
+        # the model drops the optional process-owned pair on every rewrite, so
+        # the old on-disk value is restored onto every shared entry before the
+        # stamp. Unlike the stamp it is not gated by a non-empty notified-id
+        # set: a quiet patrol's rewrite still keeps its clocks. The
+        # keep-old-wiki, empty-wiki, and minimal-write legs run no carry —
+        # they write no model-authored content.
+        if not minimal_write:
+            new_wiki = carry_last_notified(new_wiki, wiki)
+        # Rule 4d (#35): the notification stamp joins after the carry and
         # before the frontmatter stamp, only on a model-authored accepted
         # write — no accepted write, no clock advance.
         if notify_stamp_ids and not minimal_write:
