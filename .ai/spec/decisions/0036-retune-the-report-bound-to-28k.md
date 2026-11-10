@@ -2,6 +2,13 @@
 
 Date: 2026-11-10 · Status: proposed
 
+> **Deferral resolved (#106).** Design-space option 4 — the empty-wiki reason
+> naming bound truncation — is specced on its own as
+> `what/reporting-notifications.md` rule 7h. Nothing in this record's decision
+> changes: the option stays rejected *for this change*, for the reason given
+> below (a value change must not carry a classification change through one gate),
+> and this record's bound (28000) and its acceptance soak stand as written.
+
 ## Context
 
 ADR 0034 set `REPORT_MAX_TOKENS` to 24000 and made the first reporting attempt

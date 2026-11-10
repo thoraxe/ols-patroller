@@ -265,7 +265,8 @@ redefined here.
   binding), v0.4.0 fleet
   memory & wiki usability (#89: one repo, one branch per cluster; #13: fleet
   spoke push/hub read; #26: wiki viewer; #86: anomaly-log byte bound; #87:
-  process-generated topology diagram), future (#12, #14–#16, #31, #41). Plans live
+  process-generated topology diagram; #106: the empty-wiki reason names bound
+  truncation), future (#12, #14–#16, #31, #41). Plans live
   in GitHub issues; #9/#11 were promoted into v0.1 (#9's original dedup scope
   later moved to #35) and #20 slotted into v0.2
   after the first in-cluster acceptance run (PR #29 discussion); #39–#41
