@@ -1093,22 +1093,47 @@ load-bearing, drop what is not.
 """
 
 
-def classify_empty_result(raw, *, max_tokens: int = REPORT_MAX_TOKENS) -> str:
-    """Rule 7c (#63): classify a None/unparsed structured result's failure
-    cause from its raw model response. Pure (no I/O, no model calls) and
-    duck-typed over the langchain message shape: the finish reason lives in
-    response_metadata, the completion-token count (reasoning included) in
-    usage_metadata's output_tokens. Returns the reason string for the
-    attempt-failure log line — never raises; missing/garbled metadata
-    defaults to no-tool-call."""
+def hit_completion_bound(raw, *, max_tokens: int = REPORT_MAX_TOKENS) -> bool:
+    """Rule 7h (#106): the ONE definition of "reached its completion bound",
+    shared by both reason paths (rule 7c's unparsed-result reason and rule 7h's
+    empty-wiki reason) so the two can never disagree about what truncation is.
+    Pure (no I/O, no model calls) and duck-typed over the langchain message
+    shape: the finish reason lives in response_metadata, the completion-token
+    count (reasoning included) in usage_metadata's output_tokens. Each signal
+    stands alone — a "length" finish reason fires without any usage metadata.
+    Never raises; no raw response (a directly-parsed result) or no usable
+    signal in it means no truncation was observed, never a guess."""
     metadata = getattr(raw, "response_metadata", None) or {}
     usage = getattr(raw, "usage_metadata", None) or {}
-    finish_reason = metadata.get("finish_reason")
+    if metadata.get("finish_reason") == "length":
+        return True
     output_tokens = usage.get("output_tokens")
-    if finish_reason == "length" or (
-            isinstance(output_tokens, int) and output_tokens >= max_tokens):
+    return isinstance(output_tokens, int) and output_tokens >= max_tokens
+
+
+def classify_empty_result(raw, *, max_tokens: int = REPORT_MAX_TOKENS) -> str:
+    """Rule 7c (#63): classify a None/unparsed structured result's failure
+    cause from its raw model response, through the `hit_completion_bound`
+    predicate rule 7h (#106) shares with the empty-wiki reason. Returns the
+    reason string for the attempt-failure log line — never raises;
+    missing/garbled metadata defaults to no-tool-call."""
+    if hit_completion_bound(raw, max_tokens=max_tokens):
         return "empty result (truncated at max_tokens)"
     return "empty result (no tool call)"
+
+
+def empty_wiki_reason(raw, *, max_tokens: int = REPORT_MAX_TOKENS) -> str:
+    """Rule 7h (#106): the reason a *parsed* report's empty `updated_wiki`
+    (rule 7b) logs. Observability only — it names the cause, it never changes
+    an outcome: `empty wiki (truncated at max_tokens)` when the attempt reached
+    its completion bound (the same predicate rule 7c's classifier reads), plain
+    `empty wiki` otherwise, so the v0.3.2 soak's `out 24000`/`bound 24000` tail
+    is self-diagnosing from pod logs. Pure, duck-typed over the raw message like
+    `classify_empty_result`, and never raises: no raw response or no usable
+    truncation signal keeps the unqualified wording."""
+    if hit_completion_bound(raw, max_tokens=max_tokens):
+        return "empty wiki (truncated at max_tokens)"
+    return "empty wiki"
 
 
 def _render_observed(items: list) -> str:
@@ -1216,6 +1241,12 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
     classification. Across failure compositions the pass returns the LAST
     result that parsed — a wiki-less report included, so its findings still
     deliver — and None only when no attempt parsed (rule 7's total failure).
+    Its reason names bound truncation when the attempt reached its completion
+    bound (reporting-notifications.md rule 7h, #106): `empty wiki (truncated at
+    max_tokens)` instead of plain `empty wiki`, built by the pure
+    `empty_wiki_reason` over the shared `hit_completion_bound` predicate —
+    observation only, so the retry, the corrective, and the return above are
+    untouched.
 
     A None/unparsed result's failure reason is classified from the raw model
     response (reporting-notifications.md rule 7c, #63): the structured output
@@ -1327,6 +1358,7 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
             PatrolReport, method="function_calling", include_raw=True)
         started = time.monotonic()  # rule 7f (#66): the ceiling is measurable
         usage = None
+        raw = None  # rule 7h (#106): the truncation signal, when there is one
         try:
             result = await structured.ainvoke(msgs)
             # include_raw envelope (rule 7c, #63): a dict carrying a 'parsed'
@@ -1347,7 +1379,9 @@ async def shape_report(model: ChatOpenAI, messages: list, budget_cut: bool,
                 if report_fields(result)[2]:
                     return result
                 last_parsed = result
-                reason = "empty wiki"
+                # Rule 7h (#106): one construction site for all three modes —
+                # the reason names bound truncation, no outcome moves.
+                reason = empty_wiki_reason(raw)
                 corrective = ("Your report parsed, but its updated_wiki was empty. "
                               "updated_wiki is required on every report: return the "
                               "FULL wiki content even when nothing needs changing — "

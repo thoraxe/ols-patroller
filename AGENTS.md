@@ -202,7 +202,10 @@ under current policy (clean implementation review + `implementation-complete`):
   include_raw envelope, with the envelope parsing-error path, plus #101's
   28000 default — retuned from #97's 24000 (and the 20k-floor regression
   guard) — and the `bound 28000 tokens` field on every attempt-failure
-  line); and
+  line — and the #106 bound-truncation qualifier of rule 7h: the
+  `hit_completion_bound` and `empty_wiki_reason` matrices, the rule-7c
+  agreement pin, and the qualified attempt-failure lines across the report,
+  validation-repair, and wiki-repair modes); and
   `tests/test_shape_input.py` covers the shape-pass input-compaction and
   failure-visibility contract (#66: the `compact_messages` matrix — tool-result
   truncation with marker over langchain and dict forms, order/roles/non-tool

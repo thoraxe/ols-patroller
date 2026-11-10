@@ -27,6 +27,13 @@ log lines carrying the classified reason plus (#88, rule 7f) the
 attempt's token counts and (#97) the completion bound it ran under —
 flipped to 28000 by #101.
 
+The bound-truncation qualifier (#106, rule 7h) is driven here too: the
+parsed-empty-wiki reason names the truncation (`empty wiki (truncated at
+max_tokens)`) when the attempt reached its completion bound on rule 7c's
+owned predicate, in every mode of the pass — with the retry, corrective,
+last-parsed return, and unqualified under-bound wording pinned as
+unchanged.
+
 Run: uv run --group dev pytest tests/ -q
 """
 import asyncio
@@ -327,3 +334,179 @@ def test_wiki_repair_mode_empty_wiki_is_retried():
     corrective = stub.prompts[1][-1]["content"]
     assert "updated_wiki" in corrective
     assert "empty" in corrective.lower()
+
+
+# ------------------- bound-truncation qualifier on the empty-wiki reason
+# ------------------------------------------------- (rule 7h, #106, ADR 0036)
+
+def test_hit_completion_bound_matrix():
+    """Rule 7h: one pure predicate decides "reached its completion bound"
+    for both reason paths — rule 7c's two signals, no stricter and no
+    looser: finish_reason 'length', or the completion count at the bound.
+    The bound is a parameter, defaulting to the reporting one (28000,
+    #101). A missing raw response is never a truncation."""
+    hit = patrol.hit_completion_bound
+    assert hit(_raw("length", 100)) is True
+    assert hit(_raw("stop", 28_000)) is True
+    assert hit(_raw("stop", 27_999)) is False
+    # the parameter, not the default, decides
+    assert hit(_raw("stop", 16_000), max_tokens=16_000) is True
+    assert hit(_raw("stop", 16_000)) is False
+    # no raw response / no signal in it: nothing fired, nothing guessed
+    assert hit(None) is False
+    assert hit(AIMessage(content="")) is False
+    # each signal stands alone: 'length' fires with no usage metadata at all
+    assert hit(AIMessage(content="",
+                         response_metadata={"finish_reason": "length"})) is True
+
+
+def test_empty_wiki_reason_matrix():
+    """Rule 7h: the parsed-empty-wiki reason carries the truncation
+    qualifier exactly when the predicate fires, and keeps rule 7b's
+    existing wording otherwise — the v0.3.2 soak's attempt 1 (out ==
+    bound, reason `empty wiki`) is the shape the qualifier names."""
+    reason = patrol.empty_wiki_reason
+    truncated = "empty wiki (truncated at max_tokens)"
+    # the soak shape: completion count at the bound, finish reason 'stop'
+    assert reason(_raw("stop", 28_000)) == truncated
+    # rule 7c's other signal, well under the count
+    assert reason(_raw("length", 12_000)) == truncated
+    # under the bound: the existing unqualified wording, unchanged
+    assert reason(_raw("stop", 9_000)) == "empty wiki"
+    # just under the retuned default is a completed attempt — the pin that
+    # makes the default bound discriminating (27000 sits above the old
+    # 24000 and below the 28000 the #101 retune sets)
+    assert reason(_raw("stop", 27_000)) == "empty wiki"
+    # the bound is a parameter, and it is the caller's
+    assert reason(_raw("stop", 16_000), max_tokens=16_000) == truncated
+    # no raw response to read (directly-parsed result) or no signal in it
+    # (no 'length' finish reason, no usable count): the unqualified reason,
+    # never a guess — and 'length' alone is enough, usage metadata or not
+    assert reason(None) == "empty wiki"
+    assert reason(AIMessage(content="")) == "empty wiki"
+    assert reason(AIMessage(content="",
+                           response_metadata={"finish_reason": "length"})) == \
+        truncated
+
+
+def test_empty_wiki_reason_agrees_with_the_empty_result_reason():
+    """Rule 7h: the two reason paths share one predicate, so they can
+    never disagree about what truncation is — the empty-wiki reason is
+    qualified exactly when rule 7c's classifier calls the same raw
+    response truncated."""
+    truncated_result = "empty result (truncated at max_tokens)"
+    for raw in (_raw("length", 100), _raw("stop", 28_000), _raw("stop", 27_999),
+                _raw("stop", 9_000), _raw("length", 40_000), None,
+                AIMessage(content=""),
+                AIMessage(content="",
+                          response_metadata={"finish_reason": "length"})):
+        classified = patrol.classify_empty_result(raw) == truncated_result
+        qualified = patrol.empty_wiki_reason(raw) == \
+            "empty wiki (truncated at max_tokens)"
+        assert classified is qualified, (
+            "rule 7c and rule 7h must read one definition of truncation")
+
+
+def test_truncated_empty_wiki_attempt_line_names_the_truncation(capsys):
+    """Rule 7h: a parsed report with an empty updated_wiki whose attempt
+    reached the completion bound logs `empty wiki (truncated at max_tokens)`
+    — the reason is self-diagnosing from pod logs, with rule 7f's elapsed,
+    token, and bound fields unchanged."""
+    stub = _StubShapeModel([_envelope(_raw("stop", 28_000), parsed=_report("")),
+                            _report("full wiki")])
+    result = _shape(stub)
+    assert result.updated_wiki == "full wiki"
+    assert len(stub.prompts) == 2             # rule 7b's one-retry bound
+    err = capsys.readouterr().err
+    assert re.search(r"attempt 1 failed \(empty wiki \(truncated at max_tokens\)"
+                     r", took \d+ s, in 43500 out 28000 tokens, "
+                     r"bound 28000 tokens\)", err)
+    # the retry corrective is rule 7b's, not rule 7g's ceiling rebuild
+    corrective = stub.prompts[1][-1]["content"]
+    assert "gateway" not in corrective.lower()
+    assert NO_HISTORY_COPY_CLAUSE in " ".join(corrective.split())
+
+
+def test_under_bound_empty_wiki_line_stays_unqualified(capsys):
+    """Rule 7h: an empty wiki whose attempt finished under the bound keeps
+    rule 7b's plain `empty wiki` reason — the qualifier is a signal, not
+    decoration."""
+    stub = _StubShapeModel([_envelope(_raw("stop", 9_000), parsed=_report("")),
+                            _report("full wiki")])
+    result = _shape(stub)
+    assert result.updated_wiki == "full wiki"
+    err = capsys.readouterr().err
+    assert re.search(r"attempt 1 failed \(empty wiki, took \d+ s, "
+                     r"in 43500 out 9000 tokens, bound 28000 tokens\)", err)
+
+
+def test_truncated_empty_wiki_keeps_the_retry_and_returns_the_report(capsys):
+    """Rule 7h: the qualifier is observability only. A twice-truncated
+    empty wiki still returns the last result that parsed (so rule 33's
+    total-failure leg cannot fire on this reason), still retries once,
+    still appends rule 7b's corrective to the attempt-1 list (append-only,
+    rule 7g keys on gateway failures alone), and qualifies both attempt
+    lines — the second through finish_reason 'length' rather than the
+    count."""
+    first, second = _report(""), _report("")
+    stub = _StubShapeModel([_envelope(_raw("stop", 28_000), parsed=first),
+                            _envelope(_raw("length", 12_000), parsed=second)])
+    result = _shape(stub)
+    assert result is second, "a parsed wiki-less report is never discarded"
+    assert len(stub.prompts) == 2
+    assert stub.prompts[1][0] == {"role": "user", "content": "patrol transcript"}
+    assert NO_HISTORY_COPY_CLAUSE in " ".join(stub.prompts[1][1]["content"].split())
+    err = capsys.readouterr().err
+    assert re.search(r"attempt 1 failed \(empty wiki \(truncated at max_tokens\)"
+                     r", took \d+ s, in 43500 out 28000 tokens, "
+                     r"bound 28000 tokens\)", err)
+    assert re.search(r"attempt 2 failed \(empty wiki \(truncated at max_tokens\)"
+                     r", took \d+ s, in 43500 out 12000 tokens, "
+                     r"bound 28000 tokens\)", err)
+
+
+def test_validation_repair_mode_qualifies_a_truncated_empty_wiki(capsys):
+    """Rule 7h: the reason is built once for every mode of the pass — the
+    rule-7a validation repair qualifies a truncated empty wiki under the
+    same rule 7b empty-wiki classification."""
+    stub = _StubShapeModel([_envelope(_raw("stop", 28_000), parsed=_report("")),
+                            _report("fixed wiki")])
+    result = asyncio.run(patrol.shape_report(
+        stub, [{"role": "user", "content": "patrol transcript"}],
+        budget_cut=False, repair=("rejected wiki", ["error one"])))
+    assert result.updated_wiki == "fixed wiki"
+    err = capsys.readouterr().err
+    assert "empty wiki (truncated at max_tokens)" in err
+
+
+def test_wiki_repair_mode_qualifies_a_truncated_empty_wiki(capsys):
+    """Rule 7h: the rule-7d wiki-repair mode qualifies it too — same
+    construction site, no per-mode wording."""
+    stub = _StubShapeModel([_envelope(_raw("stop", 28_000), parsed=_report("")),
+                            _report("merged wiki")])
+    result = asyncio.run(patrol.shape_report(
+        stub, [{"role": "user", "content": "patrol transcript"}], budget_cut=False,
+        wiki_repair=("OLD WIKI BODY", [], [])))
+    assert result.updated_wiki == "merged wiki"
+    err = capsys.readouterr().err
+    assert "empty wiki (truncated at max_tokens)" in err
+
+
+def test_truncated_empty_wiki_then_exception_qualifies_and_returns(capsys):
+    """Rule 7h's composition leg (rule 7b unchanged): a bound-truncated
+    empty-wiki attempt followed by an exception still qualifies its own
+    line, still returns the parsed report — findings deliver — and the
+    exception's reason keeps rule 7f's untouched shape, `?` token counts
+    included."""
+    parsed = _report("")
+    stub = _StubShapeModel([_envelope(_raw("stop", 28_000), parsed=parsed),
+                            RuntimeError("endpoint hung")])
+    result = _shape(stub)
+    assert result is parsed
+    assert len(stub.prompts) == 2
+    err = capsys.readouterr().err
+    assert re.search(r"attempt 1 failed \(empty wiki \(truncated at max_tokens\)"
+                     r", took \d+ s, in 43500 out 28000 tokens, "
+                     r"bound 28000 tokens\)", err)
+    assert re.search(r"attempt 2 failed \(endpoint hung, took \d+ s, "
+                     r"in \? out \? tokens, bound 28000 tokens\)", err)
