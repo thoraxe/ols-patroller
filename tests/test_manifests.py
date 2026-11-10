@@ -35,7 +35,7 @@ PVC_NAME = "ols-patroller-wiki"
 IMAGE_KEY = "ols-patroller"
 # The release the committed manifests ship (rule 8, #102). A release pin
 # commit updates this expectation together with the kustomization.
-CURRENT_RELEASE_TAG = "v0.3.2"
+CURRENT_RELEASE_TAG = "v0.3.3"
 DEPLOY_KEY_SECRET = "ols-patroller-deploy-key"
 DEPLOY_KEY_PATCH_EXAMPLE = MANIFESTS / "deploy-key-patch.yaml.example"
 
