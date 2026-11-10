@@ -25,4 +25,4 @@ resources:
 images:
   - name: ols-patroller
     newName: ghcr.io/thoraxe/ols-patroller
-    newTag: v0.3.3
+    newTag: v0.3.4
