@@ -158,9 +158,10 @@ under current policy (clean implementation review + `implementation-complete`):
   `REPORT_CONTRACT`'s three pinned clauses and the `SYSTEM_PROMPT` clause
   with its placement before the closing summary guidance); and
   `tests/test_request_bounds.py` covers the per-call-shape request-bound
-  contract (#49 and #63, plus #88's lowered reporting bound and #97's
-  24000 bound: the two timeout
-  constants, the two completion-token bound constants,
+  contract (#49 and #63, plus #88's lowered reporting bound and #101's
+  28000 bound — retuned from #97's 24000: the two timeout
+  constants, the two completion-token bound constants, the #101
+  headroom/gateway-window inequality guard,
   and the `make_model` timeout + `max_tokens` passthrough);
   `tests/test_notifications.py` covers the apprise multi-sink notification
   contract (#9: the `parse_notify_urls` and `report_notify_type` matrices,
@@ -198,9 +199,10 @@ under current policy (clean implementation review + `implementation-complete`):
   `classify_empty_result` matrix over fake raw responses and the shape
   pass's attempt-failure log lines carrying the classified reasons and
   (#88) the attempt's token counts via the
-  include_raw envelope, with the envelope parsing-error path, plus #97's
-  24000 default (and the 20k-floor regression guard) and the `bound 24000
-  tokens` field on every attempt-failure line); and
+  include_raw envelope, with the envelope parsing-error path, plus #101's
+  28000 default — retuned from #97's 24000 (and the 20k-floor regression
+  guard) — and the `bound 28000 tokens` field on every attempt-failure
+  line); and
   `tests/test_shape_input.py` covers the shape-pass input-compaction and
   failure-visibility contract (#66: the `compact_messages` matrix — tool-result
   truncation with marker over langchain and dict forms, order/roles/non-tool
@@ -219,7 +221,7 @@ under current policy (clean implementation review + `implementation-complete`):
   pinned ceiling corrective before the contract with the size note last — across
   the report, validation-repair, and wiki-repair modes — while the non-gateway
   retry stays append-only at the same 500-char base; the contract's pinned
-  concision ask on every attempt; and the `?` token counts + `bound 24000
+  concision ask on every attempt; and the `?` token counts + `bound 28000
   tokens` field of the exception leg); and
   `tests/test_cost_control.py` covers the cost-control contract (#10:
   the `SOFT_TARGET_TURNS`, `TOKEN_BUDGET`, and `OUT_HEAD`/`OUT_TAIL`

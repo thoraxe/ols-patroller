@@ -1,6 +1,17 @@
 # 0034. Make the first reporting attempt the cheap one; report bound 24000
 
-Date: 2026-11-09 · Status: proposed
+Date: 2026-11-09 · Status: proposed; bound retuned by 0036 (#101), cheap-shape values carried forward
+
+> **Bound retuned.** The 24000 completion bound decided below is retuned to
+> 28000 by ADR 0036 (#101), on this record's own condition — "If a 24k bound
+> still measures tight after #86's anomaly-log byte bound lands, retuning it is
+> another spec change with a fresh soak". The #86 half of that condition does
+> not gate this change: #86 bounds the wiki's Anomaly-log **input** bytes, while
+> #101's truncation is completion-side (`out` equal to the bound on a wiki under
+> the 20,000-char budget), so #86 stays open and remains the wiki-size lever.
+> Everything else this record decided (the single 500-character
+> `SHAPE_TOOL_KEEP` cap, the retired retry constant, the `REPORT_CONTRACT`
+> concision ask, the `bound B tokens` log field) is unchanged.
 
 ## Context
 

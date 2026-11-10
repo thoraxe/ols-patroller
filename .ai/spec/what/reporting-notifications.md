@@ -647,9 +647,9 @@ entry whose status and severity are unchanged is wiki-only.
     while this pass and its repair pass (rule 7a) are bounded at
     `REPORT_TIMEOUT` (900 s) — the single tool-free structured call
     carries the entire patrol conversation (real-run evidence: ~100k
-    tokens in, up to 16k out at the time; the bound is 24k since #97 —
-    32k from #88 and 64k from #63 until then — rule 8b [DONE: #88]
-    [DONE: #97]) and
+    tokens in, up to 16k out at the time; the bound was 24k from #97
+    (32k from #88 and 64k from #63 before that) and retunes to 28k
+    [DONE: #101] — rule 8b [DONE: #88] [DONE: #97]) and
     legitimately runs minutes on
     reasoning-capable models. A reporting pass that cannot finish under
     the bound never writes the wiki, so the next patrol re-explores just
@@ -662,7 +662,8 @@ entry whose status and severity are unchanged is wiki-only.
     constants (not env-configurable): exploration turns keep
     `REQUEST_MAX_TOKENS` (16000 — turns are small), while this pass and
     its repair pass (rule 7a) are bounded at `REPORT_MAX_TOKENS`
-    (24000). The shape pass must emit the entire wiki — ~15 KB of
+    (28000; 24000 until #101 [DONE: #101]). The shape pass must emit
+    the entire wiki — ~15 KB of
     markdown — in one structured response, and on a reasoning model the
     reasoning tokens come out of the same `max_tokens` allowance
     (real-run evidence, the frozen-wiki root cause: a 43.5k-token report
@@ -713,6 +714,61 @@ entry whose status and severity are unchanged is wiki-only.
     the rule 8b reasoning rationale in force. If a 24k bound still measures
     tight after #86's anomaly-log byte bound lands, retuning it is another
     spec change with a fresh soak.]
+    [DONE: #101 — the reporting bound retunes 24000 → **28000**, keeping
+    every word of the reasoning-exhaustion rationale above and #97's cheap
+    first-attempt shape: rule 7e's single `SHAPE_TOOL_KEEP` cap (500
+    characters) and the rule-5 concision ask are unchanged, and so is rule
+    8a's `REPORT_TIMEOUT` (900 s). The #101 evidence is the "24k still
+    measures tight" case ADR 0034 anticipated, one bound later: on the v0.3.2
+    image (ols-demo-2, a 19,215-char wiki) attempt 1's rule-7f line read
+    `in 16435 out 24000 tokens, bound 24000 tokens` — `out` equal to the
+    bound exactly, at 289 s, i.e. the completion budget exhausted and not
+    the gateway clock — and its `updated_wiki` came back empty; the rule-7b
+    retry recovered a 6-finding report in ~230 s on the same bound. 28000 is
+    set by the two constraints the value must satisfy:
+    - **above the observed truncation.** A valid report fits *under* 24000
+      (the retry produced one there), so the truncating attempt's overshoot
+      is reasoning variance, and 28000 adds 4000 tokens (17%) of headroom
+      over the bound that was actually exhausted.
+    - **inside the gateway's ~900 s window at the slowest observed
+      throughput.** The #97 retry — the same cheap shape — wrote a full
+      report of ~10k completion tokens in ~260 s, i.e. ~35–40 output tok/s,
+      at which 28000 needs ~700–800 s. 32000 needs ~800–914 s at that rate —
+      the window itself, which is the #88/#97 failure mode returning. The
+      #101 soak's ~83 output tok/s (24000 tokens in 289 s) would make 32000
+      comfortable (~385 s), but the two measured rates disagree by more than
+      2×, and a hard gateway wall clock is the more expensive failure: a 504
+      burns the whole window *and* the retry, while a token truncation is
+      recovered by rule 7b in ~230 s. The value is therefore set by the
+      slowest rate measured on this payload shape, and 32000 is rejected for
+      this release — it stays the next rung if the soak shows attempt-1
+      truncations persisting.
+    ADR 0034's trigger is fulfilled by this retune while #86 stays open, and
+    deliberately so: the trigger's `after #86's anomaly-log byte bound lands`
+    clause attaches to the wiki's **input**-size lever (#86 bounds Anomaly-log
+    bytes — ADR 0034's other half of the cost), while #101's failure is
+    completion-side: `out` equal to the bound with a 19,215-char wiki (under
+    the rule-29 20,000-char soft budget) and a valid report that the retry
+    proved fits under that same bound. Nothing here bounds the wiki, prunes
+    it, or changes rules 28–29; #86 remains the wiki-size lever it always was.
+    What ADR 0034 requires of a retune — a fresh spec change with a fresh soak
+    — is exactly what this rule and its acceptance soak are, so the #86 clause
+    is not overridden; it does not gate a completion-side retune.
+    The value is a hypothesis with a required acceptance soak (3–5 real
+    patrols recording the existing rule-7f fields: the attempt-1 outcome, its
+    `in`/`out` token counts, and the `bound` line), exactly as ADR 0034
+    requires of any retune — a retune is a spec change with a fresh soak,
+    never a hotfix. Nothing else moves: rule 7f's `B` field follows the
+    constant, so the failure line reads `bound 28000 tokens` after
+    implementation, and the #63 floor (20k — the observed completion #63's
+    successful run produced, pinned as the regression guard in
+    `tests/test_empty_report.py`) is still 8k below the bound.
+    The optional #101 observability narrowing — naming truncation when a
+    *parsed* report carries an empty `updated_wiki` **and** the completion
+    count reached the bound, i.e. giving rule 7b's `empty wiki` reason a
+    truncation qualifier — is **deferred** to its own spec item and is not
+    part of this retune: it changes rule 7b/7c classification, and a value
+    change must not carry a classification change through the same gate.]
 
 ### Delivery
 
@@ -816,6 +872,7 @@ entry whose status and severity are unchanged is wiki-only.
 
 | Ticket | Summary |
 |---|---|
+| ~~#101~~ | ~~The reporting pass's completion bound retunes `REPORT_MAX_TOKENS` 24000 → **28000** (rule 8b's `[DONE: #101]` block, ADR 0036; the value also lands in `patrol-engine.md`, `system-overview.md`, `wiki-memory.md` rule 29, `how/agent-engine.md`, `how/reporting-pipeline.md`, and the glossary): the v0.3.2 soak's first attempt exhausted the 24000 completion budget (`out 24000`, 289 s — the token bound, not the gateway clock) and returned an empty wiki, so the goal is headroom over the bound that was actually exhausted while staying inside the gateway's ~900 s window at the slowest observed throughput (~35–40 output tok/s, where 28000 is ~700–800 s and 32000 would be ~800–914 s). #97's cheap shape is unchanged — one `SHAPE_TOOL_KEEP` cap of 500 characters, the rule-5 concision ask, rule 7g's same-cap rebuild — as are rule 8a's `REPORT_TIMEOUT` 900 s, rule 7f's `bound B tokens` field (which follows the constant), and rule 33's total-failure net. The optional #101 observability narrowing (a truncation qualifier on rule 7b's `empty wiki` reason) is deferred to its own spec item, named in rule 8b. A 3–5 patrol real-cluster soak recording attempt-1 outcomes with the existing failure line is the issue's acceptance evidence, and it is not a test. Impl commit also syncs `AGENTS.md`'s test list and rewrites the stale `patrol.py` comment above `REPORT_MAX_TOKENS` (its “at that honest rate 24000 is ~600–685 s” arithmetic and its ADR list carry the pre-#101 value; they must state 28000's ~700–800 s at the slow rate and cite ADR 0036)~~ |
 | ~~#93~~ | ~~The notify clock is carried, not just stamped (rule 4d's new carry paragraph, plus rule 4c's durability note; the wiki half is `wiki-memory.md` rules 12c/16; ADR 0033): the digest cadence collapsed to every other patrol because the model drops the optional process-owned `last_notified` pair on every rewrite and rule 4d only stamped the ids notified *this* patrol. A new pure `carry_last_notified(new_wiki, old_wiki)` restores the old on-disk value onto every entry present in both wikis and drops any model-written pair for an entry the old wiki has no clock for, running on the same accepted-write leg as the stamp — after compaction, before `stamp_last_notified`. The model's copy is never trusted, `REPORT_CONTRACT` is unchanged (teaching is not the fix), and the keep-old-wiki/empty-wiki/minimal-write legs run no carry. No schema change (`wiki_version` stays 1), no configuration surface change. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#97~~ | ~~The reporting pass's **first** attempt becomes the cheap one (rules 5's concision ask, 7e's cap, 7f's bound field, 7g's narrowed retry, 8a parenthetical, 8b value here; the bound also lands in `wiki-memory.md`, `patrol-engine.md`, `system-overview.md`, `how/agent-engine.md`, `how/reporting-pipeline.md`, `how/project-structure.md`, and the glossary; ADR 0034 amends ADR 0031): after #88 the first attempt still 504ed at ~900 s on 3 of 5 patrols while the retry — 500-character tool results plus the brevity corrective — finished the full report in ~260 s every time, so the retry's shape becomes the default. `SHAPE_TOOL_KEEP` drops 1500 → 500 and becomes the only compaction cap (`SHAPE_TOOL_KEEP_RETRY` retired: there is nothing left for a retry to shrink, so rule 7g keeps its rebuild and corrective but no longer claims a smaller payload); one pinned concision ask (two sentences) joins `REPORT_CONTRACT`, so every attempt of every mode carries it; `REPORT_MAX_TOKENS` drops 32000 → 24000 (≈600–685 s of generation at the observed throughput, still ~4k above #63's observed ~20k completion — the starvation floor is untouched); and the attempt-failure log line gains `bound B tokens` so a tail is comparable across image versions. The rule-7g retry, rule 7b's empty-wiki corrective, and rule 33's total-failure net are unchanged in reach. A real-cluster soak showing zero attempt-1 504s (or a recorded decision that the retry remains the intended path) is the issue's acceptance evidence, and it is not a test. Impl commit also syncs `AGENTS.md`'s test list — which includes **rewriting** its #88 retry paragraph (it still describes the retry as shrinking its base to a `SHAPE_TOOL_KEEP_RETRY` cap and the non-gateway retry as append-only at a 1500-char base), not merely appending a #97 bullet. The impl commit also rewrites the stale `patrol.py` comments: the `SHAPE_TOOL_KEEP_RETRY` constant and its comment go, `shape_report`'s docstring stops describing a smaller retry cap, and the `SHAPE_TOOL_KEEP`/`REPORT_MAX_TOKENS` comments carry the #97 values~~ |
 | ~~#88~~ | ~~The shape pass inside the model gateway's ~900 s ceiling (rules 7f, 7g, 8a parenthetical, 8b value here; rule 8b's `REPORT_MAX_TOKENS` 64000 → 32000 also lands in `wiki-memory.md`, `patrol-engine.md`, `system-overview.md`, `how/agent-engine.md`, and `how/reporting-pipeline.md`; ADR 0031): the bound halves because a 64k-bounded generation hit the gateway's ~900 s wall clock at ~902 s twice (≈71 output tok/s) while #63's successful run needed only ~20k completion tokens — ~450 s at 32000, still ~12k above the observed completion. A gateway-failure retry becomes ceiling-aware (rule 7g): attempt 2 rebuilds its base from the raw conversation compacted at the new hard-coded `SHAPE_TOOL_KEEP_RETRY` (500 characters) and asks for the most concise valid report — with the contract re-stated after the corrective and the size note last — instead of repeating the identical request; non-gateway failures keep their correctives and the 1500-char cap, and the rule-7b empty-wiki corrective stays distinct. The attempt-failure log line gains the attempt's token counts (`in I out O tokens`, `?` when unknown). Total-failure behavior is unchanged (`wiki-memory.md` rule 33). Splitting the report into two calls was rejected (ADR 0031). Exploration overshoot (547,804 vs 500,000 input tokens, checked per turn) is out of scope here — the token soft-stop owns it (`patrol-engine.md` rule 8b, #10). Impl commit also syncs `AGENTS.md`'s test list~~ |

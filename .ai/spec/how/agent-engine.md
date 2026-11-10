@@ -7,7 +7,7 @@ gotchas an agent must know before touching this code.
 
 | Symbol | Responsibility |
 |---|---|
-| `make_model` | `ChatOpenAI` (any OpenAI-compatible endpoint; temp 0.3; `timeout` and `max_tokens` parametrized per call shape — `REQUEST_TIMEOUT` 300 s / `REQUEST_MAX_TOKENS` 16000 defaults, `REPORT_TIMEOUT` 900 s / `REPORT_MAX_TOKENS` 24000 for the shape pass) [DONE: #49; max_tokens split: DONE: #63 — was a flat 16000; DONE: #88 — the reporting bound drops 64000 → 32000; DONE: #97 — drops again to 24000 with the cheap first attempt] |
+| `make_model` | `ChatOpenAI` (any OpenAI-compatible endpoint; temp 0.3; `timeout` and `max_tokens` parametrized per call shape — `REQUEST_TIMEOUT` 300 s / `REQUEST_MAX_TOKENS` 16000 defaults, `REPORT_TIMEOUT` 900 s / `REPORT_MAX_TOKENS` 28000 for the shape pass) [DONE: #49; max_tokens split: DONE: #63 — was a flat 16000; DONE: #88 — the reporting bound drops 64000 → 32000; DONE: #97 — drops again to 24000 with the cheap first attempt; DONE: #101 — retunes 24000 → 28000] |
 | `_disable_default_subagent` | Registers a `HarnessProfile` disabling deepagents' general-purpose `task` subagent |
 | `make_kubectl_tool` | Wraps the guarded `kubectl_readonly` as the single langchain tool |
 | `run_patrol` | Builds the agent, streams it, accounts tokens, handles budget cut (step budget and the #10 token soft-stop), invokes the shape pass |
@@ -121,4 +121,15 @@ shape pass over the accumulated message list.
   for every attempt (the retry constant is retired), a pinned concision
   ask in `REPORT_CONTRACT`, and `REPORT_MAX_TOKENS` 32000 → 24000
   (ADR 0034, DONE: #97). The retry half (rule 7g) still rebuilds its
-  base and re-states the contract after the ceiling corrective.
+  base and re-states the contract after the ceiling corrective. Truncation
+  evidence (#101): the post-#97 first attempt then exhausted the token
+  bound instead of the clock — `out 24000 tokens, bound 24000 tokens` at
+  289 s (~83 output tok/s), empty wiki, recovered by the rule-7b retry in
+  ~230 s — so the bound retunes 24000 → 28000 (ADR 0036, DONE: #101):
+  +4000 tokens of reasoning-variance headroom over the bound that was
+  exhausted, still ~700–800 s at the ~35–40 output tok/s the #97 retry
+  measured on this payload shape, i.e. inside the gateway window. Nothing
+  else in the wiring changes — the shape pass keeps the single
+  `make_model(timeout=REPORT_TIMEOUT, max_tokens=REPORT_MAX_TOKENS)` call,
+  the repair pass keeps reusing that instance, and the bounds stay
+  constants rather than env config.

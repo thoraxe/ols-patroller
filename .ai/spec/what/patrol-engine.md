@@ -225,10 +225,11 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
   [DONE: #10]
 - Engine constants (not configurable): temperature 0.3, completion-token
   bounds — `REQUEST_MAX_TOKENS` 16000 per exploration turn,
-  `REPORT_MAX_TOKENS` 24000 per structured reporting/repair call
+  `REPORT_MAX_TOKENS` 28000 per structured reporting/repair call
   (`reporting-notifications.md` rule 8b) [DONE: #63 — was a flat
   `max_tokens` 16000 on the whole client; DONE: #88 lowers the
-  reporting bound 64000 → 32000; DONE: #97 lowers it 32000 → 24000], request
+  reporting bound 64000 → 32000; DONE: #97 lowers it 32000 → 24000;
+  DONE: #101 retunes it 24000 → 28000], request
   bounds — `REQUEST_TIMEOUT` 300 s per exploration turn, `REPORT_TIMEOUT` 900 s
   per structured reporting/repair call (`reporting-notifications.md` rule 8a)
   [DONE: #49 — was a flat 300 s on the whole client]
@@ -247,6 +248,7 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
 
 | Ticket | Summary |
 |---|---|
+| ~~#101~~ | ~~The engine-constants line above carries `REPORT_MAX_TOKENS` **28000** (`reporting-notifications.md` rule 8b's `[DONE: #101]` block, ADR 0036): the v0.3.2 soak's first reporting attempt spent the whole 24000 completion budget (`out 24000` at 289 s) and returned an empty wiki, so the bound gains 4000 tokens of reasoning-variance headroom while staying inside the gateway's ~900 s window at the slowest observed throughput. No other constant changes — `REQUEST_MAX_TOKENS` 16000, `REPORT_TIMEOUT` 900 s, and #97's `SHAPE_TOOL_KEEP` 500 are untouched — and there is no new config surface. Tracked in milestone v0.3.3 (patch). Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#97~~ | ~~The reporting/repair completion bound drops to `REPORT_MAX_TOKENS` 24000 in the engine-constants line above (behavior is `reporting-notifications.md` rule 8b, ADR 0034): the first reporting attempt takes the #88 retry's cheap shape (500-character tool results, a contract concision ask), so the bound is insurance for a slow attempt while staying above #63's observed ~20k completion. The request bound (`REPORT_TIMEOUT` 900 s) is unchanged. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#88~~ | ~~The reporting/repair completion bound drops to `REPORT_MAX_TOKENS` 32000 in the engine-constants line above (`reporting-notifications.md` rule 8b, ADR 0031): a 64k-bounded shape-pass generation hits the model gateway's ~900 s wall clock at ~902 s (≈71 output tok/s), while #63's successful run needed only ~20k completion tokens — 32000 is ~450 s of generation and still ~12k of reasoning headroom. Exploration's `REQUEST_MAX_TOKENS` 16000 and both timeouts are unchanged; no new config surface~~ |
 | ~~#85~~ | ~~Prompt teaching that the wiki records current state, not patrol history (rule 3f; the behavior is `wiki-memory.md` rule 29b, the contract text `reporting-notifications.md` rule 5, ADR 0032): the system prompt carries one clause naming git history as the record of what changed when and asking for current state only — no per-patrol headline, no `History:` list, no "as of patrol #N" chronology — plus the short-intro instruction. Teaching only: no new config surface, no guard change, rule 3's patrol-order wording unchanged. Impl commit also syncs `AGENTS.md`'s test list and `how/project-structure.md`'s `SYSTEM_PROMPT` row (its teaching list gains rule 3f)~~ |

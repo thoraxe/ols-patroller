@@ -41,7 +41,8 @@ a token bound. The contract additions (rules 7f amendment, 7g):
   rather than shrinks (there is nothing left to shrink);
 - one pinned concision ask (two sentences) joins `REPORT_CONTRACT`, so every
   attempt of every mode carries it;
-- the attempt-failure line gains `bound B tokens` (`REPORT_MAX_TOKENS`).
+- the attempt-failure line gains `bound B tokens` (`REPORT_MAX_TOKENS`;
+  28000 since #101).
 
 The pure-function matrices and the shape-pass prompt compaction are
 driven here; the total-failure tail wiring (notification + minimal
@@ -317,8 +318,8 @@ def test_failure_line_carries_elapsed_and_gateway_reason(capsys):
     seconds and the classified gateway reason — the ceiling is measurable
     from pod logs. Rule 7f's #88 amendment: it also carries the attempt's
     token counts, `?` on the exception leg (there is no raw response); #97
-    adds the completion bound the attempt ran under, so a tail is comparable
-    across image versions."""
+    adds the completion bound the attempt ran under (28000 since #101), so a
+    tail is comparable across image versions."""
     stub = _StubShapeModel([RuntimeError("Error code: 504 - upstream timed out"),
                             RuntimeError("Error code: 504 - upstream timed out")])
     result = asyncio.run(patrol.shape_report(
@@ -327,10 +328,10 @@ def test_failure_line_carries_elapsed_and_gateway_reason(capsys):
     err = capsys.readouterr().err
     assert re.search(r"attempt 1 failed \(gateway failure "
                      r"\(Error code: 504 - upstream timed out\), took \d+ s, "
-                     r"in \? out \? tokens, bound 24000 tokens\)", err)
+                     r"in \? out \? tokens, bound 28000 tokens\)", err)
     assert re.search(r"attempt 2 failed \(gateway failure "
                      r"\(Error code: 504 - upstream timed out\), took \d+ s, "
-                     r"in \? out \? tokens, bound 24000 tokens\)", err)
+                     r"in \? out \? tokens, bound 28000 tokens\)", err)
 
 
 # ------------------------------------------ the cheap first attempt (#97)
