@@ -1,12 +1,17 @@
 # 0031. Bound the shape pass with a ceiling-aware retry
 
-Date: 2026-11-06 · Status: accepted; values amended by proposed ADR 0034 (#97)
+Date: 2026-11-06 · Status: accepted; values amended by proposed ADR 0034 (#97) and 0036 (#101)
 
 > **Amended by ADR 0034 (#97).** `REPORT_MAX_TOKENS` is 24000 (not 32000),
 > `SHAPE_TOOL_KEEP` is 500 (not 1500) for every attempt, and
 > `SHAPE_TOOL_KEEP_RETRY` is retired — the first attempt now carries the
 > retry's cheap shape. The decision structure below (bound the pass,
 > ceiling-aware retry, token counts in the failure line) stands.
+>
+> **Value amended again by ADR 0036 (#101).** `REPORT_MAX_TOKENS` retunes to
+> 28000 (from 24000) after the v0.3.2 soak exhausted the 24000 completion
+> budget on attempt 1 with the gateway window nowhere near binding. Nothing
+> else in this record's decision structure or in 0034's cheap shape changes.
 
 ## Context
 

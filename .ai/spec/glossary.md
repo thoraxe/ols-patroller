@@ -148,11 +148,14 @@ redefined here.
   shrinks, and its corrective asks for the FULL `updated_wiki` *without
   padding* — never a shorter wiki (rule 5's completeness clause). Non-gateway
   failures keep the append-only retry.
-- **First-attempt-cheap shape** (#97, ADR 0034) — the reporting pass's default
+- **First-attempt-cheap shape** (#97, ADR 0034; bound retuned by #101, ADR 0036) —
+  the reporting pass's default
   request, not just its recovery: one `SHAPE_TOOL_KEEP` cap (500 characters)
   for every attempt, the `REPORT_CONTRACT` concision ask, and
-  `REPORT_MAX_TOKENS` 24000 (≈600–685 s of generation at the observed
-  throughput, still above #63's ~20k observed completion).
+  `REPORT_MAX_TOKENS` 28000 (4000 above the 24000 bound the v0.3.2 soak
+  exhausted, and ~700–800 s of generation at the ~35–40 output tok/s the
+  #97 retry measured — inside the gateway's ~900 s window; still above
+  #63's ~20k observed completion).
 - **Budget cut** — a patrol ended by exhausting `max_steps` LLM turns instead of
   self-terminating; the report then covers only what was observed.
 - **Token cut** — the cumulative input-token soft-stop (#10,
@@ -256,7 +259,10 @@ redefined here.
   wiki prose/history payload the pass reads and re-emits), v0.3.2 patch
   (#93: the process-owned notify clock carried across rewrites, so the
   digest cadence holds; #97: the first reporting attempt takes the #88
-  retry's cheap shape and `REPORT_MAX_TOKENS` drops to 24000), v0.4.0 fleet
+  retry's cheap shape and `REPORT_MAX_TOKENS` drops to 24000), v0.3.3 patch
+  (#101: `REPORT_MAX_TOKENS` retunes to 28000 after the first attempt
+  exhausted 24000 completion tokens while the gateway window was not
+  binding), v0.4.0 fleet
   memory & wiki usability (#89: one repo, one branch per cluster; #13: fleet
   spoke push/hub read; #26: wiki viewer; #86: anomaly-log byte bound; #87:
   process-generated topology diagram), future (#12, #14–#16, #31, #41). Plans live

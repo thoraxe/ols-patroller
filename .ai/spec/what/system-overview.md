@@ -185,11 +185,12 @@ fed back to the model (the cap envelope; the truncated view itself is head+tail 
 `OUT_HEAD` 9,000 / `OUT_TAIL` 5,000, `kubectl-guard.md` rule 11 [DONE: #10]);
 the prompt's soft turn target `SOFT_TARGET_TURNS` = 20, decoupled from the hard
 `max_steps` budget (`patrol-engine.md` rule 8a) [DONE: #10]; model temperature 0.3, completion-token bounds —
-`REQUEST_MAX_TOKENS` 16000 per exploration turn, `REPORT_MAX_TOKENS` 24000
+`REQUEST_MAX_TOKENS` 16000 per exploration turn, `REPORT_MAX_TOKENS` 28000
 per structured reporting/repair call
 (`reporting-notifications.md` rule 8b) [DONE: #63 — was a flat
 `max_tokens` 16000; DONE: #88 lowers the reporting bound
-64000 → 32000; DONE: #97 lowers it 32000 → 24000], request
+64000 → 32000; DONE: #97 lowers it 32000 → 24000; PLANNED: #101 retunes it
+24000 → 28000], request
 timeout — `REQUEST_TIMEOUT` 300 s per exploration turn, `REPORT_TIMEOUT`
 900 s per structured reporting/repair call
 (`reporting-notifications.md` rule 8a) [DONE: #49 — was a flat 300 s on
@@ -221,6 +222,7 @@ documents). Milestone shape:
 
 | Ticket | Summary |
 |---|---|
+| #101 | The hard-coded constant line's `REPORT_MAX_TOKENS` retunes 24000 → 28000 (`reporting-notifications.md` rule 8b, ADR 0036), after the v0.3.2 soak's first attempt exhausted the 24000 completion budget and returned an empty wiki. No other constant changes; `REPORT_TIMEOUT` stays 900 s and #97's cheap first-attempt shape is untouched. Tracked in milestone v0.3.3 (patch) |
 | ~~#97~~ | ~~The hard-coded constant line's `REPORT_MAX_TOKENS` drops 32000 → 24000 (`reporting-notifications.md` rule 8b, ADR 0034), alongside the first attempt taking the #88 retry's cheap shape. No other constant changes; `REPORT_TIMEOUT` stays 900 s. Tracked in milestone v0.3.2 (patch), not v0.3.1's reliability gate~~ |
 | v0.1 (#1–#4, #9, #11, #24, #25, #27, #28) | In-cluster: Containerfile, manifests (SA + cluster-reader + PVC + Deployment), git-backed wiki, e2e tests in-repo, deployment defaults & observability (6 h cadence, unbuffered + verbose logs, git-safe `/wiki`), guard `--raw` refusal [#9 was later re-scoped to apprise multi-sink (v0.3) with its original dedup scope moved to #35] |
 | v0.2 (#5–#8, #20, #39, #40) | Compounding wiki: skeleton schema + validation-on-write, per-entry recheck commands, `stale_after` expiry, `--wiki-stats`, efficient-sweep guidance, deploy-key remote-push wiring, wiki length budget |
@@ -228,5 +230,6 @@ documents). Milestone shape:
 | v0.3 (#10, #33, #34, #35, #63, #67) | Operational hardening: cost control (token soft-stop, soft turn target decoupled from the hard budget, head+tail truncation; scoping settled whole-cluster by ADR 0027), secret hardening — all Kubernetes Secret access and the local-file/credential-flag bypass banned in the guard + taught in the prompt/report contract (#33, ADR 0028), data-exfiltration prevention — the derived default-deny egress allowlist plus the guard's endpoint-override refusal (#34, ADR 0030), state-change notification dedup + periodic digest reminder for long-unfixed entries (#35), per-call-shape completion-token bounds + visible empty-result reasons (rules 7c + 8b), model-facing wiki size feedback so the model prunes the over-budget wiki (rule 29a) |
 | v0.3.1 (#88, #85) | Reporting reliability patch: the shape pass must complete inside the model gateway's ~900 s ceiling (#88 — 4 of the last 5 v0.3.0 patrols produced no report; the release gate), with the wiki prose/history payload reduced so the pass reads and re-emits less (#85); the rule-33 total-failure net stays as the last resort |
 | v0.3.2 (#93, #97) | Reporting-cost + digest-cadence patch: the digest cadence's process-owned clock is carried across rewrites (#93), and the reporting pass's first attempt takes the #88 retry's cheap shape with `REPORT_MAX_TOKENS` 32000 → 24000 (#97) |
+| v0.3.3 (#101) | Reporting-bound patch: `REPORT_MAX_TOKENS` 24000 → 28000 — the first attempt exhausted 24000 completion tokens on the v0.3.2 soak while the gateway window was nowhere near binding, so the bound gains reasoning-variance headroom; #97's cheap shape, the 900 s request bound, and the `bound B tokens` diagnostic are unchanged (rule 8b, ADR 0036) |
 | v0.4.0 (#13, #26, #86, #87, #89) | Fleet memory & wiki usability: one remote repo holds many cluster wikis via per-cluster branches (#89, blocking #13's spoke-push/hub-read leg), wiki viewer (#26), anomaly-log byte bound (#86), process-generated topology diagram (#87); #41 (runbooks) is a capacity-permitting candidate |
 | future (#12, #14–#16, #31, #41) | Remediation handoff to AgenticRuns (+ its optional-module shape, #31), CRD dispatcher, pluggable investigation engine, MCP-memory decision record, external runbook referencing |

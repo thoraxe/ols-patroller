@@ -743,9 +743,10 @@ shape.
 The wiki is a **working set**, not a log [DONE: #40]: growth taxes every
 patrol — the wiki is injected whole into the prompt (rule 3) and re-emitted
 whole by the shape pass under its completion-token bound
-(`REPORT_MAX_TOKENS` 24000, `reporting-notifications.md` rule 8b
+(`REPORT_MAX_TOKENS` 28000, `reporting-notifications.md` rule 8b
 [DONE: #63; lowered 64000 → 32000 by #88 — DONE: #88; lowered
-32000 → 24000 by #97 — DONE: #97]; before it, the
+32000 → 24000 by #97 — DONE: #97; retuned to 28000 by #101 —
+PLANNED: #101]; before it, the
 flat 16000 was the de-facto ceiling) — an
 over-long wiki fails the reporting pass rather than being trimmed — while
 the wiki repo already retains every accepted write (rule 4d). The stance:
@@ -813,11 +814,13 @@ load-bearing constraint of #5).
 29. **Soft length budget.** A whole-wiki character budget `WIKI_CHAR_BUDGET`
     (20,000 — roughly a third of the shape pass's completion-token output
     ceiling as it stood at #40's writing; the ceiling has since been
-    re-based to `REPORT_MAX_TOKENS` 24,000 for the shape pass
+    re-based to `REPORT_MAX_TOKENS` 28,000 for the shape pass
     (`reporting-notifications.md` rule 8b) [DONE: #63 raised it to 64,000;
     DONE: #88 lowers it to 32,000 — the gateway ceiling, not the output
     ceiling, binds now; DONE: #97 lowers it again to 24,000 now that the
-    first attempt carries the cheap shape], so the budget is
+    first attempt carries the cheap shape; PLANNED: #101 retunes it to
+    28,000 — 24,000 was exhausted on the v0.3.2 soak while the gateway
+    window was not binding], so the budget is
     now set by drift-alarm judgment, not output-ceiling arithmetic — leaving
     room for findings and notifications in the same structured output
     regardless; the unit is characters, the wiki being UTF-8 text
@@ -1180,6 +1183,7 @@ write.
 
 | Ticket | Summary |
 |---|---|
+| #101 | The Working-Set Budget intro's and rule 29's `REPORT_MAX_TOKENS` value retunes 24000 → 28000 (behavior is `reporting-notifications.md` rule 8b's `[PLANNED: #101]` block, ADR 0036): the reporting pass's completion bound gains reasoning-variance headroom after the v0.3.2 soak exhausted 24000. The wiki half is the rationale number only — the soft character budget `WIKI_CHAR_BUDGET`, the anomaly-log keep budget, the size note (rule 29a), and `validate_wiki`'s never-judges-length stance are unchanged. Impl commit also syncs `AGENTS.md`'s test list |
 | ~~#93~~ | ~~The notify clock is carried across rewrites (rule 12c's new carry paragraph + the rule-16 write-path ordering; the behavior contract is `reporting-notifications.md` rules 4c/4d, ADR 0033): `carry_last_notified(new_wiki, old_wiki)` restores the old on-disk `last_notified` onto every entry present in both wikis and drops model-written pairs the old wiki has no clock for, between the anomaly-log compaction and the notify stamp — so a rewrite that omits the optional process-owned pair cannot reset the digest cadence (the #93 evidence: `last_notified` dropped on every rewrite, digest re-firing every other patrol). Byte-for-byte otherwise, no schema change (`wiki_version` stays 1), validation still does not judge the pair. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#97~~ | ~~The working-set intro's `REPORT_MAX_TOKENS` value drops 32000 → 24000 (behavior is `reporting-notifications.md` rule 8b, ADR 0034): the reporting pass's first attempt now takes the cheap shape (one 500-character compaction cap, a contract concision ask), so the completion bound is headroom rather than the fix. The wiki half is the rationale sentence only — the soft budget, the anomaly-log keep budget, and the size note are unchanged. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#88~~ | ~~The shape pass inside the model gateway's ~900 s ceiling, wiki half (`REPORT_MAX_TOKENS` 64000 → 32000 in the Working-Set Budget intro and rule 29; behavior is `reporting-notifications.md` rules 7f/7g + 8b, ADR 0031): a 64k-bounded shape-pass generation hits the gateway's ~900 s wall clock at ~902 s, so the bound halves to ~450 s of generation while staying ~12k above #63's observed 20k completion — the wiki is still re-emitted whole under this bound, so both the soft budget's arithmetic note and the ceiling argument are re-based, not restructured. Rule 33's total-failure leg is unchanged (the net stays the last resort). Impl commit also syncs `AGENTS.md`'s test list~~ |

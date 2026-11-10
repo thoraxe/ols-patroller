@@ -159,12 +159,13 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
   request timeout — exploration 300 s, structured calls 900 s
   (`reporting-notifications.md` rule 8a; see `agent-engine.md`)
   [DONE: #49 — was one shared instance] — and in completion-token bound:
-  exploration 16000, structured calls 24000
+  exploration 16000, structured calls 28000
   (`reporting-notifications.md` rule 8b) [DONE: #63 — was one flat
   16000; DONE: #88 — lowered from 64000 because a 64k-bounded
   generation hits the gateway's ~900 s wall clock at ~902 s; DONE: #97 —
   lowered again to 24000 while the first attempt takes the retry's cheap
-  shape].
+  shape; PLANNED: #101 — retuned to 28000 after the first attempt exhausted
+  24000 with the gateway window far from binding].
 
 ## Integration Points
 
