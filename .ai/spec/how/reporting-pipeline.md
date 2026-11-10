@@ -136,7 +136,7 @@ report is delivered. The behavioral contract is in `what/reporting-notifications
    notification named (state-change ids plus digest ids). It is the digest
    cadence's state and runs only on a model-authored accepted write — the
    minimal-write/keep-old-wiki legs have no new state and stamp nothing
-   [DONE: #35]. [#93 — the clock is carried first: `carry_last_notified(
+   [DONE: #35]. [DONE: #93 — the clock is carried first: `carry_last_notified(
    new_wiki, on-disk wiki)` runs immediately before the stamp, restoring the
    old on-disk `last_notified` onto every entry the two wikis share and
    dropping model-written pairs the old wiki has no clock for, so a rewrite
