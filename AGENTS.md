@@ -6,7 +6,9 @@ engine, persistent wiki memory). Hacky single-file PoC: `patrol.py`.
 ## Specs
 
 All specifications live in `.ai/spec/`. Start with `.ai/spec/README.md` for project
-overview, reading order, and structure guide.
+overview, reading order, and structure guide. New and changed spec prose follows
+the README's writing rules (plain English, ASD-STE100 where possible); when you
+touch a rule, simplify it and its immediate neighbors.
 
 ## Workflow — spec-first PRs
 

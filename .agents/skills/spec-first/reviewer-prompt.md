@@ -11,14 +11,14 @@ Inputs follow, inline and labeled by path:
 - SPEC DIFF — the proposed changes, as a unified diff
 - SPEC FILES — the complete current text of every spec file touched
 - FAILING TESTS — the test files and their captured failure output
-- CONVENTIONS — the Conventions section of `.ai/spec/README.md`
+- CONVENTIONS — the Conventions and Writing rules sections of `.ai/spec/README.md`
 - CONSTRAINTS — `.ai/spec/constraints.md`
 - GLOSSARY — `.ai/spec/glossary.md`
 
 You have read-only tools (read, grep, find, ls) to verify claims against the
 repository. Use them; do not take the diff's word for what existing rules say.
 
-Run these six passes and report each as PASS / FAIL / VIOLATION, with file and line
+Run these seven passes and report each as PASS / FAIL / VIOLATION, with file and line
 evidence:
 
 1. **Coverage** — every requirement in DESIRED BEHAVIOR is captured by a spec rule,
@@ -43,6 +43,13 @@ evidence:
    BLOCKING finding — it forces a contradictory test change into the
    implementation phase, where it gets a weaker review than spec content
    deserves.
+7. **Readability (STE)** — every new or changed rule follows the Writing rules for
+   `what/` in CONVENTIONS: sentence limits, one idea per sentence, active voice,
+   simple tenses, one word for one thing, no idioms, technical names in `code`
+   style. A rule the reviewer must read twice is a defect. A PR that touches a rule
+   also simplifies that rule and its immediate neighbors; a whole-file migration is
+   out of scope. This pass also checks that the changed rules are summarized in
+   plain words.
 
 Output format:
 
@@ -57,6 +64,7 @@ Verdict: APPROVED | CHANGES REQUESTED
 | Constraints | PASS/VIOLATION |
 | Consistency | PASS/FAIL |
 | Tests | PASS/FAIL |
+| Readability (STE) | PASS/FAIL |
 
 Findings:
 1. [BLOCKING|NON-BLOCKING] <finding with file/line evidence>

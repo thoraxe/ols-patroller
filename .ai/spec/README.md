@@ -68,6 +68,89 @@ AI agents. Content is optimized for precision and machine consumption.
 | `what/in-cluster-deployment.md` | `how/project-structure.md` (`manifests/` + `.github/workflows/` path entries) |
 | `what/egress-control.md` | `how/project-structure.md` (the egress derivation/render symbols + the `--egress-policy` mode) |
 
+## Writing rules for what/
+
+The reviewer approves behavior from the specs. Thus every `what/` file,
+`glossary.md`, `constraints.md`, the ADRs, and the Summary of every spec PR uses
+**extremely simple, plain English**. We follow **ASD-STE100 (Simplified Technical
+English)** where possible.
+
+**Sentences**
+1. Write a maximum of 20 words in a rule or an instruction. Write a maximum of 25
+   words in a description.
+2. Write only one idea in each sentence.
+3. Use the active voice. Write "The patroller writes the wiki", not "The wiki is
+   written".
+4. Use only the simple present, the simple past and the simple future ("writes",
+   "wrote", "will write").
+5. Write instructions as commands: "Read the wiki", not "The patrol should read
+   the wiki".
+6. Use "a", "an" and "the" before nouns. Do not drop them to save words.
+7. Write a maximum of 6 sentences in a paragraph. Use a list when you have 3 or
+   more items.
+
+**Words**
+8. Use one word for one thing. Use the word that `glossary.md` gives. For example,
+   always write "wiki". Do not write "memory file", "store" or "notes".
+9. Use one meaning for one word. For example, "patrol" always means one run,
+   never the schedule.
+10. Use simple, common words. Write "use", not "utilize". Write "start", not
+    "initiate". Write "about", not "approximately". Write "if", not "in the event
+    that".
+11. Do not use phrasal verbs when a simple verb exists. Write "show", not "bring
+    up". Write "find", not "figure out".
+12. Do not use "-ing" words as verbs or adjectives. Write "when the patrol ends",
+    not "after ending the patrol".
+13. Do not use idioms, jokes or slang.
+
+**Technical names**
+14. You can use technical names: field names, file names, settings, constants and
+    numbers. Put them in `code` style, for example `REPORT_MAX_TOKENS` or
+    `kubectl_readonly`.
+15. Explain each technical name in plain words the first time a file uses it, or
+    link to `glossary.md`.
+16. If a rule has a number, give an example with real values. For example: "The
+    entry expires after 5 accepted writes (patrol 41 → patrol 46)."
+
+**Structure**
+17. Put the plain rule first. Put technical detail (exact fields, exact limits)
+    after it, or in a table.
+18. Every rule must be testable. A reader must know how to see if the patroller
+    obeys it.
+19. Give 3 to 6 examples in the form "If the patrol does X, then Y" for each new
+    behavior.
+20. Write what the change will **not** do.
+
+We do not have the official ASD-STE100 dictionary in the repo. Use the rules
+above, and choose the simplest common word when you are not sure.
+
+## Writing rules for how/
+
+`how/` files are for AI agents and for human reviewers of code changes. They use
+the same short sentences, but they use the exact names from the code.
+
+1. Obey the `what/` rules 1–7 (sentences), 13 (no idioms), 17 (plain point first)
+   and 18 (testable).
+2. Do not obey the `what/` rules 8–12 (words). Use the exact names from `patrol.py`
+   in `code` style, for example `shape_report` or `carry_last_notified`.
+   `glossary.md` gives the plain word for each code name.
+3. Tables of files and symbols do not have to obey the sentence rules. Keep each
+   table cell short.
+4. Tell the reader which `what/` rules a section implements, for example
+   "(`reporting-notifications.md` rules 7b–7c)".
+
+## Adoption of the writing rules
+
+- A new rule or an edited rule must obey the writing rules above.
+- When a spec PR touches a rule, it also simplifies that rule and its immediate
+  neighbors in the same section.
+- We do not migrate whole files for this change alone. Existing text that does not
+  obey the rules stays until a change touches it.
+- The PR body lists each changed `what/` rule in plain words, by file and number.
+  For example: "reporting-notifications.md rule 7h: the empty-wiki reason now says
+  when the attempt hit its completion bound."
+- A rule that a reviewer can misread is a defect. Fix it when you find it.
+
 ## Conventions
 
 - **Rule numbering:** behavioral rules are numbered sequentially within each what/
