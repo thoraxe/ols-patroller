@@ -58,6 +58,8 @@ The argument names the work:
   relevant what/ file.
 - If the design makes an architectural decision, record an ADR in
   `.ai/spec/decisions/` (format in its README).
+- Write every new or changed rule in the README's Writing rules. When you touch a
+  rule, simplify that rule and its immediate neighbors in the same section.
 - A spec that violates `constraints.md` is wrong, not clever.
 
 ### 3. Write the failing tests

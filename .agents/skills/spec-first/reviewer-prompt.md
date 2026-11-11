@@ -11,7 +11,7 @@ Inputs follow, inline and labeled by path:
 - SPEC DIFF — the proposed changes, as a unified diff
 - SPEC FILES — the complete current text of every spec file touched
 - FAILING TESTS — the test files and their captured failure output
-- CONVENTIONS — the Conventions section of `.ai/spec/README.md`
+- CONVENTIONS — the Conventions and Writing rules sections of `.ai/spec/README.md`
 - CONSTRAINTS — `.ai/spec/constraints.md`
 - GLOSSARY — `.ai/spec/glossary.md`
 
@@ -27,10 +27,11 @@ evidence:
 2. **Testability** — every new or changed rule is a testable statement (must/never,
    not should/consider); a competent implementer could write a test from it without
    asking questions.
-3. **Conventions** — stable rule numbering (no existing rule renumbered);
-   `[PLANNED: #N]` markers on unimplemented behavior; Planned Changes tables
-   updated; cross-references and README tables valid; new-file-vs-extend convention
-   followed; new configuration surface documented.
+3. **Conventions and Writing rules** — stable rule numbering (no existing rule
+   renumbered); `[PLANNED: #N]` markers on unimplemented behavior; Planned Changes
+   tables updated; cross-references and README tables valid; new-file-vs-extend
+   convention followed; new configuration surface documented; new and changed prose
+   follows the Writing rules, and a touched rule's neighbors are simplified.
 4. **Constraints** — no violation of any rule in CONSTRAINTS.
 5. **Consistency** — no conflict with existing spec rules; glossary terms used with
    their defined meaning; contracts stay in what/, code maps stay in how/.
