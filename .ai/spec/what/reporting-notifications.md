@@ -125,6 +125,26 @@ in `how/reporting-pipeline.md`.
    — finished the full report in ~260 s every time; making that shape the
    default is the fix (rule 7e's cap, this sentence), not a per-attempt
    special case.]
+   [DONE: #111 — the contract also carries the wiki prose standard. Wiki
+   free prose uses plain English. The contract text added, verbatim (the
+   executable pin lives in `test_wiki_budget.py`):
+   "Write the wiki's free prose in plain English. Use short sentences. Use one
+   idea per sentence. Use the active voice. Use the simple present, past, or
+   future tense. Do not use idioms or slang. Use one word for one thing. Use
+   the same word on the next patrol instead of a synonym. Stable wording
+   keeps the wiki readable and reduces churn. This clause covers free prose
+   only. Frontmatter, entry metadata lines, recheck commands, code, and the
+   skeleton stay exactly as they are."
+   The behavior and the rationale live in `wiki-memory.md` rule 13a. This
+   block carries the model-facing half. The contract is the surface, not the
+   system prompt. The shape pass writes the wiki. Every attempt of every mode
+   carries `REPORT_CONTRACT`. `patrol-engine.md` rule 3f is unchanged. The
+   clause is teaching only. It adds no gate and no configuration key.
+   `validate_wiki` still judges no prose (rule 15). The clause names the
+   machine fields as out of scope. The ask therefore reaches no metadata line,
+   no `recheck` command, no frontmatter, and no `code`. Rule 5's earlier
+   blocks stay as written. Each one is the closed record of its own ticket and
+   ADR. The writing rules apply to new and changed text only (ADR 0037).]
 
 ### Notification Dedup
 
@@ -940,6 +960,7 @@ entry whose status and severity are unchanged is wiki-only.
 
 | Ticket | Summary |
 |---|---|
+| ~~#111~~ | Wiki free prose uses plain English (rule 5's `[DONE: #111]` block; the home rule is `wiki-memory.md` rule 13a). `REPORT_CONTRACT` asks for short sentences, one idea per sentence, the active voice, and simple tenses. It asks for no idioms, one word for one thing, and the same wording on the next patrol. Stable wording lowers #8's churn number. The clause names the machine fields as out of scope. Frontmatter, entry metadata lines, `recheck` commands, `code`, and the skeleton stay as specified. The change is teaching only. It adds no prose lint, no sentence counter, no schema change, and no configuration surface. `validate_wiki` is unchanged. The surface is the contract, not the system prompt (`patrol-engine.md` rule 3f is unchanged). A real-cluster soak showing shorter sentences and less paraphrase churn is the acceptance evidence. The soak is not a test. Impl commit also syncs `AGENTS.md`'s test list, `how/reporting-pipeline.md`'s `REPORT_CONTRACT` row, and `how/project-structure.md`'s `test_wiki_budget.py` inventory~~ |
 | ~~#106~~ | ~~The empty-wiki reason names bound truncation (rule 7h; rule 7c's truncation predicate shared by both reason paths, ADR 0036's design-space option 4 deferred there): a parsed report whose `updated_wiki` is empty logs `empty wiki (truncated at max_tokens)` when the attempt reached its completion bound and plain `empty wiki` otherwise, so a tail is self-diagnosing from pod logs across image versions. Observability only — classification, corrective, retry bound, last-parsed return, verbatim warning, keep-old-wiki outcome, and rule 33's total-failure leg are unchanged; no new configuration surface. Impl commit also syncs `AGENTS.md`'s test list and `how/project-structure.md`'s per-file test inventory (both enumerate `test_empty_report.py`'s coverage) and extends `shape_report`'s docstring where it states the empty-wiki classification (the reason now has two strings).~~ |
 | ~~#101~~ | ~~The reporting pass's completion bound retunes `REPORT_MAX_TOKENS` 24000 → **28000** (rule 8b's `[DONE: #101]` block, ADR 0036; the value also lands in `patrol-engine.md`, `system-overview.md`, `wiki-memory.md` rule 29, `how/agent-engine.md`, `how/reporting-pipeline.md`, and the glossary): the v0.3.2 soak's first attempt exhausted the 24000 completion budget (`out 24000`, 289 s — the token bound, not the gateway clock) and returned an empty wiki, so the goal is headroom over the bound that was actually exhausted while staying inside the gateway's ~900 s window at the slowest observed throughput (~35–40 output tok/s, where 28000 is ~700–800 s and 32000 would be ~800–914 s). #97's cheap shape is unchanged — one `SHAPE_TOOL_KEEP` cap of 500 characters, the rule-5 concision ask, rule 7g's same-cap rebuild — as are rule 8a's `REPORT_TIMEOUT` 900 s, rule 7f's `bound B tokens` field (which follows the constant), and rule 33's total-failure net. The optional #101 observability narrowing (a truncation qualifier on rule 7b's `empty wiki` reason) is deferred to its own spec item, named in rule 8b. A 3–5 patrol real-cluster soak recording attempt-1 outcomes with the existing failure line is the issue's acceptance evidence, and it is not a test. Impl commit also syncs `AGENTS.md`'s test list and rewrites the stale `patrol.py` comment above `REPORT_MAX_TOKENS` (its “at that honest rate 24000 is ~600–685 s” arithmetic and its ADR list carry the pre-#101 value; they must state 28000's ~700–800 s at the slow rate and cite ADR 0036)~~ |
 | ~~#93~~ | ~~The notify clock is carried, not just stamped (rule 4d's new carry paragraph, plus rule 4c's durability note; the wiki half is `wiki-memory.md` rules 12c/16; ADR 0033): the digest cadence collapsed to every other patrol because the model drops the optional process-owned `last_notified` pair on every rewrite and rule 4d only stamped the ids notified *this* patrol. A new pure `carry_last_notified(new_wiki, old_wiki)` restores the old on-disk value onto every entry present in both wikis and drops any model-written pair for an entry the old wiki has no clock for, running on the same accepted-write leg as the stamp — after compaction, before `stamp_last_notified`. The model's copy is never trusted, `REPORT_CONTRACT` is unchanged (teaching is not the fix), and the keep-old-wiki/empty-wiki/minimal-write legs run no carry. No schema change (`wiki_version` stays 1), no configuration surface change. Impl commit also syncs `AGENTS.md`'s test list~~ |

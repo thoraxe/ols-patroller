@@ -346,11 +346,39 @@ the history #7 expires into) carry per-entry structure; everything else is prose
     write-path position is rule 16's (`reporting-notifications.md` rule
     4d).]
 13. **Prose sections.** Topology, Baselines, and Open questions carry no entry
-    metadata: list items there are free prose (rule 6's inline
-    `(source, timestamp, confidence)` tag remains the convention, unvalidated).
-    This split is the document constraint made concrete: structure exists only
-    where a consumer needs it (#7 expiry, #8 stats read the metadata sections);
-    everywhere else the wiki stays prose.
+    metadata. List items there are free prose. Rule 6's inline
+    `(source, timestamp, confidence)` tag remains the convention, unvalidated.
+    Structure exists only where a consumer needs it: #7's expiry and #8's
+    stats read the metadata sections. Everywhere else the wiki stays prose.
+13a. **Free prose is plain English** [DONE: #111]. Wiki free prose uses plain
+    English. The standard is `.ai/spec/README.md`'s writing rules, the same
+    standard the specs use. ADR 0037 set that standard for the specs, and it
+    does not govern the wiki. Prose uses short sentences. Each sentence
+    carries one idea. Prose uses the active voice. Prose uses the simple
+    present, past, or future tense. It uses no idioms and no slang. One word
+    names one thing, and the next patrol uses the same word.
+    - **Scope: free prose only.** Frontmatter (rule 10), entry metadata lines
+      (rule 12), `recheck` commands (rule 12a), `code`, and the skeleton
+      (rule 11) are machine text. They stay exactly as specified.
+    - **Taught, never validated.** `validate_wiki` judges no prose (rule 15).
+      The clause states no word limit and no sentence limit, so the ask stays
+      qualitative on purpose. There is no sentence counter, no prose lint, no
+      configuration key, and no schema change. The wiki stays a document
+      (Constraints).
+    - **Surface: the report contract.** The shape pass writes the wiki, so
+      `REPORT_CONTRACT` carries the ask (`reporting-notifications.md` rule 5).
+      The patrol system prompt does not repeat it. Every attempt of every mode
+      carries the contract.
+    - **Stable wording lowers churn.** The same words across patrols keep the
+      wiki readable and lower rule 26's churn number. Rule 26's stat shows the
+      effect, and this rule adds no new measurement.
+    - **The glossary is the vocabulary of record.** `glossary.md` gives the one
+      word for each domain term. No new glossary term is needed: the existing
+      entries are the canonical words. The issue asks the contract to point
+      the model at that file. This rule does not do that. The model never
+      reads the repo. Its `read_file` tool reads only the in-memory wiki. So
+      the clause states the asks itself and names no file. The glossary still
+      binds this spec text.
 14. **Seed.** `WIKI_SEED` demonstrates the skeleton: frontmatter with the four
     keys — `patrol_count: 0` and `last_patrol: null` as pre-first-patrol
     placeholders, `cluster_id: local` (the configured default; the stamp makes
@@ -1183,6 +1211,7 @@ write.
 
 | Ticket | Summary |
 |---|---|
+| ~~#111~~ | Wiki free prose uses plain English (rule 13a; the model-facing half is `reporting-notifications.md` rule 5). The shape pass writes the wiki, so `REPORT_CONTRACT` carries the ask. The ask is short sentences, one idea per sentence, the active voice, simple tenses, no idioms, and one word for one thing. It asks for the same word on the next patrol, which lowers rule 26's churn number. The rule covers free prose only. Frontmatter (rule 10), entry metadata lines (rule 12), `recheck` commands (rule 12a), `code`, and the skeleton (rule 11) are machine text and do not change. The rule is taught, never validated. No sentence counter, no prose lint, no schema change, no configuration key, and `validate_wiki` (rule 15) still judges no prose. The patrol system prompt does not repeat the ask (`patrol-engine.md` rule 3f is unchanged). Impl commit also syncs `AGENTS.md`'s test list, `how/reporting-pipeline.md`'s `REPORT_CONTRACT` row, and `how/project-structure.md`'s `test_wiki_budget.py` inventory~~ |
 | ~~#101~~ | ~~The Working-Set Budget intro's and rule 29's `REPORT_MAX_TOKENS` value retunes 24000 → 28000 (behavior is `reporting-notifications.md` rule 8b's `[DONE: #101]` block, ADR 0036): the reporting pass's completion bound gains reasoning-variance headroom after the v0.3.2 soak exhausted 24000. The wiki half is the rationale number only — the soft character budget `WIKI_CHAR_BUDGET`, the anomaly-log keep budget, the size note (rule 29a), and `validate_wiki`'s never-judges-length stance are unchanged. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#93~~ | ~~The notify clock is carried across rewrites (rule 12c's new carry paragraph + the rule-16 write-path ordering; the behavior contract is `reporting-notifications.md` rules 4c/4d, ADR 0033): `carry_last_notified(new_wiki, old_wiki)` restores the old on-disk `last_notified` onto every entry present in both wikis and drops model-written pairs the old wiki has no clock for, between the anomaly-log compaction and the notify stamp — so a rewrite that omits the optional process-owned pair cannot reset the digest cadence (the #93 evidence: `last_notified` dropped on every rewrite, digest re-firing every other patrol). Byte-for-byte otherwise, no schema change (`wiki_version` stays 1), validation still does not judge the pair. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#97~~ | ~~The working-set intro's `REPORT_MAX_TOKENS` value drops 32000 → 24000 (behavior is `reporting-notifications.md` rule 8b, ADR 0034): the reporting pass's first attempt now takes the cheap shape (one 500-character compaction cap, a contract concision ask), so the completion bound is headroom rather than the fix. The wiki half is the rationale sentence only — the soft budget, the anomaly-log keep budget, and the size note are unchanged. Impl commit also syncs `AGENTS.md`'s test list~~ |
