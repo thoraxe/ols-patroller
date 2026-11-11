@@ -46,6 +46,13 @@ Covers (safety-model.md rules 6b-6c, wiki-memory.md rules 4f and 15-19):
   with one stderr warning (the budget never gates), and a repair pass
   carries the rejected wiki's budget warning alongside the structural
   errors
+- closed-entry character-cap wiring of #86 (rule 28a): an over-cap closed
+  Anomaly-log entry is written truncated on whole lines with a
+  `_truncated:` marker, one console line per truncated entry names the
+  cap, a watching entry in the same section keeps its prose, and the
+  written wiki still validates; a minimal-write patrol over an over-cap
+  entry truncates nothing (no model-authored content); and two patrols
+  prove the dropped prose stays recoverable from the wiki repo's history
 - one-event-loop loop mode of #50 (system-overview rule 5): two patrols
   through main() --loop on a single event loop, both writing, clean
   ctrl-c exit; a failed patrol is logged and the loop continues on the
@@ -620,6 +627,37 @@ def test_failed_reporting_pass_advances_the_clock_on_disk(tmp_path, monkeypatch,
     assert commit_count(wiki.parent) == 1
 
 
+def test_minimal_write_leaves_over_cap_closed_entries_whole(
+        tmp_path, monkeypatch, capsys):
+    """#86 rule 28a's scope: the minimal-write legs run no truncation. They
+    write no model-authored content, and rule 32 says memory content stays
+    unchanged. An on-disk wiki carrying an over-cap closed entry comes back
+    with its whole prose, one `_truncated:`-free Anomaly log, and the clock
+    advanced."""
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    (tmp_path / "wiki").mkdir()
+    long_prose = "\n".join(f"  prose line {n} " + "x" * 100
+                           for n in range(1, 9))
+    assert len(long_prose) > patrol.WIKI_ANOMALY_ENTRY_CHARS
+    anomaly = (
+        "- id: A-1 · status: expired · first_seen: 2026-10-01"
+        " · last_verified: 2026-10-16 · source: kubectl get pods -A"
+        " · confidence: low\n" + long_prose)
+    wiki.write_text(expiry_wiki_text(WATCH_V1, anomaly, patrol_count=9),
+                    encoding="utf-8", newline="\n")
+    endpoint = ScriptedEndpoint(turns=NATURAL_TURNS[:1], report=REPORT,
+                                report_mode="fail")
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
+
+    captured = capsys.readouterr()
+    assert "minimal write" in captured.out
+    final = wiki.read_text(encoding="utf-8")
+    assert "_truncated:" not in final        # no model-authored write, no cut
+    assert "prose line 5 " in final           # the over-cap prose stands whole
+    assert frontmatter(final)["patrol_count"] == 10
+    assert commit_count(wiki.parent) == 1
+
+
 # --------------------------------------------------------------- wiki wiring (#3)
 
 def test_wiki_git_wiring_end_to_end(tmp_path, monkeypatch, capsys):
@@ -933,6 +971,7 @@ def test_anomaly_log_compaction_wiring(tmp_path, monkeypatch, capsys):
     assert len(prune_lines) == 2, out
     assert "A-1" in prune_lines[0] and "A-2" in prune_lines[1]
     assert "keep budget 2" in prune_lines[0]
+    assert "git history retains it" in prune_lines[0]   # the retention phrase
     # pruning is wiki housekeeping, never a finding or notification (rule 28)
     assert "findings (2):" in out
     assert not any("NOTIFY" in l and "A-1" in l for l in out.splitlines())
@@ -972,6 +1011,88 @@ def test_pruned_entries_recoverable_from_git_history(tmp_path, monkeypatch, caps
     assert len(history) == 2
     assert "id: A-1" in history[0] and "id: A-2" in history[0]
     assert "id: A-1" not in history[1]
+
+
+def test_closed_entry_truncation_wiring(tmp_path, monkeypatch, capsys):
+    """#86 rule 28a wired through main(): a report whose Anomaly log carries a
+    closed entry far over WIKI_ANOMALY_ENTRY_CHARS is written truncated — the
+    metadata line survives whole, a marker line names git retention, one
+    console line per truncated entry names the id and the cap, a watching
+    entry in the same section keeps its prose untouched, and the written wiki
+    still validates."""
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    monkeypatch.setattr(patrol, "WIKI_ANOMALY_ENTRY_CHARS", 200)
+    long_prose = "\n".join(f"  prose line {n} " + "x" * 60
+                           for n in range(1, 9))
+    anomaly_body = (
+        "- id: A-1 · status: expired · first_seen: 2026-10-01"
+        " · last_verified: 2026-10-16 · source: kubectl get pods -A"
+        f" · confidence: low\n{long_prose}\n"
+        "- id: A-2 · status: watching · first_seen: 2026-10-01"
+        " · last_verified: 2026-10-16 · source: kubectl get pods -A"
+        f" · confidence: low\n{long_prose}")
+    report = dict(REPORT, updated_wiki=expiry_wiki_text(WATCH_V1, anomaly_body))
+    run_patrol_cli(monkeypatch, ScriptedEndpoint(turns=NATURAL_TURNS[:1],
+                                                 report=report), wiki,
+                   "--max-steps", "8")
+
+    final = wiki.read_text(encoding="utf-8")
+    assert patrol.validate_wiki(final) == []
+    al = final.split("## Anomaly log", 1)[1]
+    assert "id: A-1" in al and "id: A-2" in al   # both entries survive
+    assert "_truncated:" in al and "git history has the full entry" in al
+    # the watching entry keeps every line; the closed one lost its middle
+    assert al.count("prose line 4 ") == 1, al
+    assert al.count("prose line 8 ") == 2, al
+    assert commit_count(wiki.parent) == 1        # the accepted (truncated) write committed
+    out = capsys.readouterr().out
+    trunc_lines = [line for line in out.splitlines()
+                   if "truncated in the Anomaly log" in line]
+    assert len(trunc_lines) == 1, out
+    assert "A-1" in trunc_lines[0]
+    assert "closed-entry cap 200" in trunc_lines[0]
+    # truncation is wiki housekeeping, never a finding or notification
+    assert "findings (2):" in out
+    assert not any("NOTIFY" in line and "A-1" in line
+                   for line in out.splitlines())
+
+
+def test_truncated_prose_recoverable_from_git_history(tmp_path, monkeypatch, capsys):
+    """#86 rule 28a's archive half, two patrols: patrol 1 (cap large) writes
+    the over-cap closed entry whole; patrol 2 (cap 200) truncates it — and the
+    dropped prose stays readable in the wiki repo's previous commit. The
+    marker's retention phrase is then true: the entry was accepted memory
+    before the cut. An entry introduced in the same write is rule 28's
+    caveat instead."""
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    monkeypatch.setattr(patrol, "STALE_AFTER", 5)     # determinism: no flips
+    long_prose = "\n".join(f"  prose line {n} " + "x" * 60
+                           for n in range(1, 9))
+    anomaly_body = (
+        "- id: A-1 · status: expired · first_seen: 2026-10-01"
+        " · last_verified: 2026-10-16 · source: kubectl get pods -A"
+        f" · confidence: low\n{long_prose}")
+    report = dict(REPORT, updated_wiki=expiry_wiki_text(WATCH_V1, anomaly_body))
+
+    monkeypatch.setattr(patrol, "WIKI_ANOMALY_ENTRY_CHARS", 100_000)
+    run_patrol_cli(monkeypatch, ScriptedEndpoint(turns=NATURAL_TURNS[:1],
+                                                 report=report), wiki,
+                   "--max-steps", "8")
+    assert "prose line 5 " in wiki.read_text(encoding="utf-8")
+
+    monkeypatch.setattr(patrol, "WIKI_ANOMALY_ENTRY_CHARS", 200)
+    run_patrol_cli(monkeypatch, ScriptedEndpoint(turns=NATURAL_TURNS[:1],
+                                                 report=report), wiki,
+                   "--max-steps", "8")
+    final = wiki.read_text(encoding="utf-8")
+    assert "_truncated:" in final and "prose line 5 " not in final
+    assert commit_count(wiki.parent) == 2
+
+    # the dropped prose stays recoverable from the wiki repo's history
+    history = patrol.wiki_history(wiki, 2)
+    assert len(history) == 2
+    assert "prose line 5 " in history[0]
+    assert "prose line 5 " not in history[1]
 
 
 def test_over_budget_wiki_writes_with_stderr_warning(tmp_path, monkeypatch, capsys):

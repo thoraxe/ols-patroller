@@ -88,6 +88,6 @@ A model that needs more than 32000 completion tokens for a valid report now
 truncates at a bound it would previously have cleared — visible as
 `empty result (truncated at max_tokens)` (rule 7c) with the new token counts
 beside it, and answered by the ceiling-aware retry. The remaining lever is the
-wiki's size, which #85 (prose/history payload) and #86 (anomaly-log bytes)
+wiki's size, which #85 (prose/history payload) and #86 (anomaly-log size)
 own; if a 32k bound still measures tight after those land, retuning it is
 another spec change with a fresh soak, per ADR 0021's convention.

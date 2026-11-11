@@ -93,7 +93,7 @@ reporting-pass payload work, which the release milestone gates on — a
 smaller wiki reduces the payload the pass reads and re-emits, but it is a
 contributing fix, not a substitute. The Anomaly log's 16,402 characters
 are the single largest section and are not this decision's class of prose:
-its byte bound is #86's.
+its size bound is #86's.
 
 Sequence note: this record is 0032 because 0031 belongs to the spec PR
 for #88, drafted in parallel from the same `main`; the decision index's

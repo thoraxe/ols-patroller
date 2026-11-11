@@ -49,6 +49,18 @@ in `how/reporting-pipeline.md`.
    stale entries rather than deleting history” sentence is reworded
    accordingly: prose-section entries are still expired, never deleted, by
    the model — pruning closed Anomaly-log history is the patroller's job.]
+   [PLANNED: #86 — the contract also states the closed-entry character bound
+   (`wiki-memory.md` rule 28a), in the same working-set paragraph, so the
+   model writes a closed entry tight instead of delegating the cut to the
+   process: a `resolved`/`expired` Anomaly-log entry keeps at most
+   `WIKI_ANOMALY_ENTRY_CHARS` (stated as the number, 400, like the keep
+   budget) characters of prose, and the patroller truncates a longer entry
+   on whole lines, leaving a marker line that names git history. The clause
+   says what the process does, never that the model may pad. The verbatim
+   clause (three sentences; pins live in `tests/test_wiki_budget.py`):
+   "An Anomaly-log entry with status resolved or expired keeps at most 400
+   characters of prose. The patroller truncates a longer entry on whole
+   lines and leaves a marker line. Git history has the full entry."]
    [DONE: #51 — the contract also requires the wiki on every report.
    The contract sentence, verbatim (the executable pins live in
    `test_empty_report.py`):
@@ -798,7 +810,7 @@ entry whose status and severity are unchanged is wiki-only.
     `decisions/0034-first-attempt-cheap-and-a-24k-report-bound.md`, which
     amends ADR 0031's values and leaves ADR 0021's per-call-shape split and
     the rule 8b reasoning rationale in force. If a 24k bound still measures
-    tight after #86's anomaly-log byte bound lands, retuning it is another
+    tight after #86's anomaly-log size bound lands, retuning it is another
     spec change with a fresh soak.]
     [DONE: #101 — the reporting bound retunes 24000 → **28000**, keeping
     every word of the reasoning-exhaustion rationale above and #97's cheap
@@ -830,9 +842,9 @@ entry whose status and severity are unchanged is wiki-only.
       this release — it stays the next rung if the soak shows attempt-1
       truncations persisting.
     ADR 0034's trigger is fulfilled by this retune while #86 stays open, and
-    deliberately so: the trigger's `after #86's anomaly-log byte bound lands`
+    deliberately so: the trigger's `after #86's anomaly-log size bound lands`
     clause attaches to the wiki's **input**-size lever (#86 bounds Anomaly-log
-    bytes — ADR 0034's other half of the cost), while #101's failure is
+    size — ADR 0034's other half of the cost), while #101's failure is
     completion-side: `out` equal to the bound with a 19,215-char wiki (under
     the rule-29 20,000-char soft budget) and a valid report that the retry
     proved fits under that same bound. Nothing here bounds the wiki, prunes
@@ -960,6 +972,7 @@ entry whose status and severity are unchanged is wiki-only.
 
 | Ticket | Summary |
 |---|---|
+| #86 | The contract states the closed-entry character bound (rule 5's `[PLANNED: #86]` block; the home rule is `wiki-memory.md` rule 28a): a `resolved`/`expired` Anomaly-log entry keeps at most `WIKI_ANOMALY_ENTRY_CHARS` (400) characters of prose, and the patroller truncates a longer one on whole lines with a marker line. Taught so the model writes closed entries tight; the process cut is the net. Impl commit also syncs `AGENTS.md`'s test list and `how/reporting-pipeline.md` (the `REPORT_CONTRACT` row) |
 | ~~#111~~ | Wiki free prose uses plain English (rule 5's `[DONE: #111]` block; the home rule is `wiki-memory.md` rule 13a). `REPORT_CONTRACT` asks for short sentences, one idea per sentence, the active voice, and simple tenses. It asks for no idioms, one word for one thing, and the same wording on the next patrol. Stable wording lowers #8's churn number. The clause names the machine fields as out of scope. Frontmatter, entry metadata lines, `recheck` commands, `code`, and the skeleton stay as specified. The change is teaching only. It adds no prose lint, no sentence counter, no schema change, and no configuration surface. `validate_wiki` is unchanged. The surface is the contract, not the system prompt (`patrol-engine.md` rule 3f is unchanged). A real-cluster soak showing shorter sentences and less paraphrase churn is the acceptance evidence. The soak is not a test. Impl commit also syncs `AGENTS.md`'s test list, `how/reporting-pipeline.md`'s `REPORT_CONTRACT` row, and `how/project-structure.md`'s `test_wiki_budget.py` inventory~~ |
 | ~~#106~~ | ~~The empty-wiki reason names bound truncation (rule 7h; rule 7c's truncation predicate shared by both reason paths, ADR 0036's design-space option 4 deferred there): a parsed report whose `updated_wiki` is empty logs `empty wiki (truncated at max_tokens)` when the attempt reached its completion bound and plain `empty wiki` otherwise, so a tail is self-diagnosing from pod logs across image versions. Observability only — classification, corrective, retry bound, last-parsed return, verbatim warning, keep-old-wiki outcome, and rule 33's total-failure leg are unchanged; no new configuration surface. Impl commit also syncs `AGENTS.md`'s test list and `how/project-structure.md`'s per-file test inventory (both enumerate `test_empty_report.py`'s coverage) and extends `shape_report`'s docstring where it states the empty-wiki classification (the reason now has two strings).~~ |
 | ~~#101~~ | ~~The reporting pass's completion bound retunes `REPORT_MAX_TOKENS` 24000 → **28000** (rule 8b's `[DONE: #101]` block, ADR 0036; the value also lands in `patrol-engine.md`, `system-overview.md`, `wiki-memory.md` rule 29, `how/agent-engine.md`, `how/reporting-pipeline.md`, and the glossary): the v0.3.2 soak's first attempt exhausted the 24000 completion budget (`out 24000`, 289 s — the token bound, not the gateway clock) and returned an empty wiki, so the goal is headroom over the bound that was actually exhausted while staying inside the gateway's ~900 s window at the slowest observed throughput (~35–40 output tok/s, where 28000 is ~700–800 s and 32000 would be ~800–914 s). #97's cheap shape is unchanged — one `SHAPE_TOOL_KEEP` cap of 500 characters, the rule-5 concision ask, rule 7g's same-cap rebuild — as are rule 8a's `REPORT_TIMEOUT` 900 s, rule 7f's `bound B tokens` field (which follows the constant), and rule 33's total-failure net. The optional #101 observability narrowing (a truncation qualifier on rule 7b's `empty wiki` reason) is deferred to its own spec item, named in rule 8b. A 3–5 patrol real-cluster soak recording attempt-1 outcomes with the existing failure line is the issue's acceptance evidence, and it is not a test. Impl commit also syncs `AGENTS.md`'s test list and rewrites the stale `patrol.py` comment above `REPORT_MAX_TOKENS` (its “at that honest rate 24000 is ~600–685 s” arithmetic and its ADR list carry the pre-#101 value; they must state 28000's ~700–800 s at the slow rate and cite ADR 0036)~~ |

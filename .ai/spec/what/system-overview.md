@@ -64,7 +64,10 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
    `WIKI_ANOMALY_KEEP` (20) resolved/expired entries — older ones pruned by
    the patroller, recoverable from git history — and a soft
    20,000-character budget warns on overshoot without ever failing
-   validation [DONE: #40]. The model is shown its own size: every shape-pass
+   validation [DONE: #40]. The count is not the only bound. Each
+   closed entry also keeps at most `WIKI_ANOMALY_ENTRY_CHARS` (400)
+   characters of prose. Closed-history prose can then no longer hold the wiki
+   over budget by itself [PLANNED: #86]. The model is shown its own size: every shape-pass
    report invocation carries a deterministic size line (count, budget,
    over-budget excess or headroom) and the report contract names the
    consequence chain, so an over-budget wiki is pruned by the model instead
@@ -112,8 +115,9 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
     pass on failure) [DONE: #5] → print findings, filter/emit notifications
     (state-change dedup + weekly digest) [DONE: #35], expire
     stale watch-list entries [DONE: #7], compact the Anomaly log to its keep
-    budget [DONE: #40], stamp the per-entry notify clock [DONE: #35] and the
-    frontmatter counters
+    budget [DONE: #40], truncate a closed Anomaly-log entry's prose to its
+    character cap [PLANNED: #86], stamp the per-entry notify clock [DONE: #35] and
+    the frontmatter counters
     [DONE: #5], rewrite the wiki atomically, commit it to the wiki repo, push
     if `PATROL_WIKI_REMOTE` is set [DONE: #3].
 15. If the reporting pass fails entirely, the patrol ends with a warning and the wiki
@@ -198,7 +202,8 @@ the whole client]; wiki push bounds — 3 attempts, 30 s per attempt, 5 s
 backoff between attempts [DONE: #3]; wiki skeleton schema version `WIKI_VERSION` = 1 [DONE: #5];
 wiki stats — churn window `WIKI_CHURN_WINDOW` = 5 revisions, lopsided
 thresholds 5 graded entries / 2/3 share [DONE: #8]; wiki working-set budgets —
-anomaly-log keep `WIKI_ANOMALY_KEEP` = 20 entries, soft length
+anomaly-log keep `WIKI_ANOMALY_KEEP` = 20 entries, closed-entry cap
+`WIKI_ANOMALY_ENTRY_CHARS` = 400 chars [PLANNED: #86], soft length
 `WIKI_CHAR_BUDGET` = 20,000 chars [DONE: #40]; the egress allowlist's fixed
 names — `EGRESS_POLICY_NAME` (`ols-patroller-egress`) and
 `EGRESS_DNS_NAMESPACES` (`openshift-dns`, `kube-system`) [DONE: #34].
@@ -231,5 +236,5 @@ documents). Milestone shape:
 | v0.3.1 (#88, #85) | Reporting reliability patch: the shape pass must complete inside the model gateway's ~900 s ceiling (#88 — 4 of the last 5 v0.3.0 patrols produced no report; the release gate), with the wiki prose/history payload reduced so the pass reads and re-emits less (#85); the rule-33 total-failure net stays as the last resort |
 | v0.3.2 (#93, #97) | Reporting-cost + digest-cadence patch: the digest cadence's process-owned clock is carried across rewrites (#93), and the reporting pass's first attempt takes the #88 retry's cheap shape with `REPORT_MAX_TOKENS` 32000 → 24000 (#97) |
 | v0.3.3 (#101) | Reporting-bound patch: `REPORT_MAX_TOKENS` 24000 → 28000 — the first attempt exhausted 24000 completion tokens on the v0.3.2 soak while the gateway window was nowhere near binding, so the bound gains reasoning-variance headroom; #97's cheap shape, the 900 s request bound, and the `bound B tokens` diagnostic are unchanged (rule 8b, ADR 0036) |
-| v0.4.0 (#13, #26, #86, #87, #89) | Fleet memory & wiki usability: one remote repo holds many cluster wikis via per-cluster branches (#89, blocking #13's spoke-push/hub-read leg), wiki viewer (#26), anomaly-log byte bound (#86), process-generated topology diagram (#87); #41 (runbooks) is a capacity-permitting candidate |
+| v0.4.0 (#13, #26, #86, #87, #89) | Fleet memory & wiki usability: one remote repo holds many cluster wikis via per-cluster branches (#89, blocking #13's spoke-push/hub-read leg), wiki viewer (#26), anomaly-log character cap (#86), process-generated topology diagram (#87); #41 (runbooks) is a capacity-permitting candidate |
 | future (#12, #14–#16, #31, #41) | Remediation handoff to AgenticRuns (+ its optional-module shape, #31), CRD dispatcher, pluggable investigation engine, MCP-memory decision record, external runbook referencing |
