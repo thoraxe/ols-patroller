@@ -1,4 +1,4 @@
-"""Wiki length budget — contract tests for #40 (plus the #85 prose contract).
+"""Wiki length budget — contract tests for #40 (plus #85's and #111's prose contracts).
 
 These tests pin the public surface of patrol.py's planned working-set
 budgets:
@@ -11,13 +11,14 @@ budgets:
     --wiki-stats: the size line + over-budget warning # rule 24 amendment
     REPORT_CONTRACT: working-set expectations         # reporting rule 5 amendment
     REPORT_CONTRACT: no-patrol-history clauses         # rule 5's #85 clauses
+    REPORT_CONTRACT: plain-prose clause                # rule 5's #111 clause
     SYSTEM_PROMPT: current-state clause                # patrol-engine rule 3f
 
 They fail before implementation (AttributeError on the missing symbols,
 AssertionError on the missing surfaces) and must pass after.
 Contract: .ai/spec/what/wiki-memory.md rules 28-29 (and rule 29b for the
-no-patrol-history ban) plus the rule 24/25 amendments [PLANNED: #40]
-[PLANNED: #85].
+no-patrol-history ban, rule 13a for the plain-prose rule) plus the rule 24/25
+amendments [PLANNED: #40] [PLANNED: #85] [PLANNED: #111].
 
 Scope note: like test_wiki_expiry.py, these tests pin the pure passes. The
 wiring into the patrol tail (expire -> compact -> stamp, the prune console
@@ -461,6 +462,40 @@ def test_system_prompt_teaches_current_state_not_patrol_history():
     assert flat.index("Record current state only") < flat.index("When you are DONE exploring"), (
         "the clause belongs before the closing summary guidance — it is a"
         " wiki-content rule, not summary phrasing")
+
+
+# ------------------------------------- the plain-prose contract (#111, rule 5)
+
+# reporting-notifications.md rule 5's #111 clause, verbatim: the wiki's free
+# prose uses plain English, one idea per sentence, the active voice, simple
+# tenses, one word for one thing, and the same wording on the next patrol. The
+# machine fields are named as out of scope in the same clause (wiki-memory.md
+# rule 13a).
+PLAIN_PROSE_CONTRACT_CLAUSE = (
+    "Write the wiki's free prose in plain English. Use short sentences. Use one "
+    "idea per sentence. Use the active voice. Use the simple present, past, or "
+    "future tense. Do not use idioms or slang. Use one word for one thing. Use "
+    "the same word on the next patrol instead of a synonym. Stable wording "
+    "keeps the wiki readable and reduces churn. This clause covers free prose "
+    "only. Frontmatter, entry metadata lines, recheck commands, code, and the "
+    "skeleton stay exactly as they are."
+)
+
+
+def test_report_contract_asks_for_plain_wiki_prose():
+    """reporting-notifications.md rule 5 (#111): the contract carries the
+    plain-prose clause verbatim. The clause asks for free prose only, names
+    every machine field it excludes, and asks for the same wording on the
+    next patrol (wiki-memory.md rule 13a). Teaching only: no validation rule
+    rides with it."""
+    flat = " ".join(patrol.REPORT_CONTRACT.split())
+    assert PLAIN_PROSE_CONTRACT_CLAUSE in flat, (
+        "REPORT_CONTRACT must carry the #111 plain-prose clause verbatim")
+    # rule 13a: the ask lives on the contract only — the exact clause must not
+    # appear in the system prompt (a paraphrase is outside this test's scope)
+    prompt = " ".join(patrol.SYSTEM_PROMPT.split())
+    assert PLAIN_PROSE_CONTRACT_CLAUSE not in prompt, (
+        "the plain-prose ask belongs to REPORT_CONTRACT only (rule 13a)")
 
 
 # ------------------------------------ the model-facing size note (#67, rule 29a)
