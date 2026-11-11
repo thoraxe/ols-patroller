@@ -1068,6 +1068,13 @@ Produce the final PatrolReport for the cluster patrol above:
      there; keep tagging their entries with (source, timestamp, confidence)
      inline. Expire stale entries (flip status to expired), never delete them —
      pruning closed Anomaly-log history is the patroller's job, not yours.
+     Write the wiki's free prose in plain English. Use short sentences. Use one
+     idea per sentence. Use the active voice. Use the simple present, past, or
+     future tense. Do not use idioms or slang. Use one word for one thing. Use
+     the same word on the next patrol instead of a synonym. Stable wording
+     keeps the wiki readable and reduces churn. This clause covers free prose
+     only. Frontmatter, entry metadata lines, recheck commands, code, and the
+     skeleton stay exactly as they are.
   5. The wiki is a working set, not a log: git history is the archive, and the
      wiki is what the next patrol reads. So summarize and prune rather than
      accumulate — rewrite entries tighter instead of appending new prose on

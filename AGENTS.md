@@ -157,7 +157,12 @@ under current policy (clean implementation review + `implementation-complete`):
   pins, and the shape-pass prompt wiring across modes with retry
   persistence; plus the no-patrol-history contract of #85 — the
   `REPORT_CONTRACT`'s three pinned clauses and the `SYSTEM_PROMPT` clause
-  with its placement before the closing summary guidance); and
+  with its placement before the closing summary guidance; plus the
+  plain-prose contract of #111 — the `REPORT_CONTRACT`'s verbatim
+  plain-English clause (short sentences, one idea per sentence, the active
+  voice, simple tenses, no idioms, one word for one thing, the same word on
+  the next patrol, and the excluded machine fields) and its absence from
+  `SYSTEM_PROMPT`); and
   `tests/test_request_bounds.py` covers the per-call-shape request-bound
   contract (#49 and #63, plus #88's lowered reporting bound and #101's
   28000 bound — retuned from #97's 24000: the two timeout
