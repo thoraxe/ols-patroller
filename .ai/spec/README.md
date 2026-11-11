@@ -68,6 +68,34 @@ AI agents. Content is optimized for precision and machine consumption.
 | `what/in-cluster-deployment.md` | `how/project-structure.md` (`manifests/` + `.github/workflows/` path entries) |
 | `what/egress-control.md` | `how/project-structure.md` (the egress derivation/render symbols + the `--egress-policy` mode) |
 
+## Writing rules
+
+The human reviewer approves behavior from the specs. New and changed text follows
+these rules. ASD-STE100 (Simplified Technical English) is the model.
+
+1. Write a maximum of 20 words in a rule or an instruction. Write a maximum of 25
+   words in a description. A description is text that is not a rule, an
+   instruction, or an example.
+2. Write one idea in each sentence.
+3. Use the active voice. Write "The patrol writes the wiki", not "The wiki is
+   written".
+4. Use the simple present, past, and future. Do not use the perfect tenses.
+5. Use one word for one thing. Use the word that `glossary.md` gives.
+6. Use simple, common words. Write "use", not "utilize". Do not use idioms or
+   slang.
+7. Put technical names in `code` style. Explain each name at first use, or link
+   to `glossary.md`.
+8. Put the plain rule first. Put exact fields and limits after it.
+9. Every behavioral rule must be testable.
+10. Write what the change will not do.
+
+The rules apply to new and changed text in `what/` files, `glossary.md`,
+`constraints.md`, the ADRs, and the PR body. A `how/` file uses the same sentence
+rules with the exact names from the code.
+
+When a spec PR touches a rule, simplify that rule and its immediate neighbors in
+the same section. Do not migrate whole files.
+
 ## Conventions
 
 - **Rule numbering:** behavioral rules are numbered sequentially within each what/
