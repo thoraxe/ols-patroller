@@ -374,7 +374,7 @@ def commit_count(cwd) -> int:
 
 
 def run_patrol_cli(monkeypatch, endpoint, wiki, *extra_args, wiki_remote="",
-                   model_factory=None, digest_after=0):
+                   model_factory=None, digest_after=0, cluster_id="e2e-cluster"):
     """Run one full patrol through main() — argparse, env check, startup repo
     ensure, the engine loop, the shape pass, and the wiki git tail — with the
     model pointed at the scripted endpoint. Module-level config read from env
@@ -389,7 +389,7 @@ def run_patrol_cli(monkeypatch, endpoint, wiki, *extra_args, wiki_remote="",
     monkeypatch.setattr(patrol, "BASE_URL", "http://fake.test/v1")
     monkeypatch.setattr(patrol, "MODEL", "fake-model")
     monkeypatch.setattr(patrol, "API_KEY", "test-key")
-    monkeypatch.setattr(patrol, "CLUSTER_ID", "e2e-cluster")
+    monkeypatch.setattr(patrol, "CLUSTER_ID", cluster_id)
     monkeypatch.setattr(patrol, "NOTIFY_URLS", [])
     monkeypatch.setattr(patrol, "WIKI_REMOTE", wiki_remote)
     monkeypatch.setattr(patrol, "NOTIFY_DIGEST_AFTER", digest_after, raising=False)
@@ -682,7 +682,7 @@ def test_wiki_git_wiring_end_to_end(tmp_path, monkeypatch, capsys):
     head1 = git("rev-parse", "HEAD", cwd=wiki.parent).stdout.strip()
     assert commit_count(wiki.parent) == 1
     assert frontmatter(wiki.read_text(encoding="utf-8"))["patrol_count"] == 1
-    assert git("rev-parse", "--verify", "refs/heads/main",
+    assert git("rev-parse", "--verify", "refs/heads/cluster/e2e-cluster",
                cwd=remote_a).stdout.strip() == head1, "commit must be pushed to the remote"
 
     capsys.readouterr()  # scope the no-push assertion below to patrol 2 alone
@@ -704,8 +704,43 @@ def test_wiki_git_wiring_end_to_end(tmp_path, monkeypatch, capsys):
                    "--max-steps", "8", wiki_remote=str(remote_b))
     assert commit_count(wiki.parent) == 3
     head3 = git("rev-parse", "HEAD", cwd=wiki.parent).stdout.strip()
-    assert git("rev-parse", "--verify", "refs/heads/main",
+    assert git("rev-parse", "--verify", "refs/heads/cluster/e2e-cluster",
                cwd=remote_b).stdout.strip() == head3
+
+
+def test_fleet_two_spokes_one_remote_path(tmp_path, monkeypatch):
+    """Rules 4f1/4f2 (#89): two patrols, two wiki repos, one remote path — each
+    lands on its own cluster branch, with no cross-cluster commit or push."""
+    remote = tmp_path / "fleet.git"
+    git("init", "--bare", "-b", "main", str(remote), cwd=tmp_path)
+    shas = {}
+    for cluster, marker in (("e2e-alpha", "ALPHA"), ("e2e-beta", "BETA")):
+        wiki = tmp_path / cluster / "wiki" / "cluster-wiki.md"
+        run_patrol_cli(
+            monkeypatch,
+            ScriptedEndpoint(turns=NATURAL_TURNS[:1],
+                             report=dict(REPORT, updated_wiki=wiki_text(marker))),
+            wiki, "--max-steps", "8", wiki_remote=str(remote),
+            cluster_id=cluster)
+        assert commit_count(wiki.parent) == 1
+        shas[cluster] = git("rev-parse", "HEAD", cwd=wiki.parent).stdout.strip()
+
+    assert sorted(git("for-each-ref", "--format=%(refname)", "refs/heads",
+                      cwd=remote).stdout.split()) == \
+        ["refs/heads/cluster/e2e-alpha", "refs/heads/cluster/e2e-beta"]
+    for cluster in ("e2e-alpha", "e2e-beta"):
+        assert git("rev-parse", "--verify", f"refs/heads/cluster/{cluster}",
+                   cwd=remote).stdout.strip() == shas[cluster]
+    alpha_remote = git("show", "cluster/e2e-alpha:cluster-wiki.md",
+                       cwd=remote).stdout
+    beta_remote = git("show", "cluster/e2e-beta:cluster-wiki.md",
+                      cwd=remote).stdout
+    assert "ALPHA" in alpha_remote and "BETA" not in alpha_remote
+    assert "BETA" in beta_remote and "ALPHA" not in beta_remote
+    # no cross-cluster commit: each local repo holds only its own branch
+    alpha_dir = tmp_path / "e2e-alpha" / "wiki"
+    assert git("for-each-ref", "--format=%(refname)", "refs/heads",
+               cwd=alpha_dir).stdout.split() == ["refs/heads/cluster/e2e-alpha"]
 
 
 # --------------------------------------------------------------- wiki skeleton (#5)
