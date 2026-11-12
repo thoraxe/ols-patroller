@@ -63,6 +63,7 @@ spec:
           env:
             # Rule 10: NOT secret material — the wiki commit identity.
             # Placeholder: edit to the real cluster name before applying.
+            # The value must be a slug (`wiki-memory.md` rule 4a1).
             - name: PATROL_CLUSTER_ID
               value: my-cluster
             # Rule 10a (#24): stdout is a pipe in a container (no TTY), so

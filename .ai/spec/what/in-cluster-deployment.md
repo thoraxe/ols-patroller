@@ -177,7 +177,9 @@ layer 3 (RBAC boundary) real, and what the CI-published image
     them (mirrors `container-image.md` rule 10). `PATROL_CLUSTER_ID` is set as
     a plain literal `env` entry (not secret material): a placeholder the
     operator edits to the real cluster name for wiki commit identity
-    (`wiki-memory.md`), never left at the `local` default [DONE: #2].
+    (`wiki-memory.md`) [DONE: #2]. The value must be a slug. The slug rule is
+    `wiki-memory.md` rule 4a1. The Deployment never leaves this value at `local`
+    [PLANNED: #89 — the slug rule and the cluster branch].
 10a. `PYTHONUNBUFFERED=1` is a literal `env` entry (rule 10's non-secret
     pattern). Python block-buffers stdout when it is not a TTY — in a
     container stdout is a pipe — so without it the patrol's stdout lines
@@ -345,7 +347,8 @@ layer 3 (RBAC boundary) real, and what the CI-published image
   `manifests/pvc-patch.yaml` copy + `patches:` entry in their local
   `kustomization.yaml` is the opt-in [DONE: #68]
 - `PATROL_CLUSTER_ID` — literal env in the Deployment, edit to the real
-  cluster name (rule 10)
+  cluster name (rule 10). It is a slug (`wiki-memory.md` rule 4a1)
+  [PLANNED: #89]
 - `PYTHONUNBUFFERED` — literal env `1`; unbuffered stdout so pod logs show
   patrol output as it prints (rule 10a)
 - `GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_0` / `GIT_CONFIG_VALUE_0` — literal
@@ -405,6 +408,7 @@ layer 3 (RBAC boundary) real, and what the CI-published image
 
 | Ticket | Summary |
 |---|---|
+| #89 | `PATROL_CLUSTER_ID` must be a slug, because it is the cluster-branch ref component (rule 10's amendment; behavior is `wiki-memory.md` rules 4a1/4f1, ADR 0039). The manifest comment names the rule. The `/wiki` mount, `--wiki /wiki/cluster-wiki.md`, the PVC, and the one-document constraint do not change. The impl commit flips the rule-10 marker once implemented and syncs `README.md`'s operator procedure |
 | ~~#102~~ | The manifests default to the **current release tag**, not `:main` (rule 8's rewrite + new rule 8b's local override + rule 8a's mutable-tag wording + rule 17 step 6's release-update path; contract behavior is `container-image.md` rules 17/19, ADR 0035): `oc apply -k manifests/` deploys the newest published `vX.Y.Z` release, and testing the latest merge or another registry is an explicit local override (uncommitted `images:` edit, overlay, or `oc set image`). Release cutting pins before tagging (`container-image.md` rule 19), and a published tag is never moved. README documents the override and the release order; the static suite pins the default's exact current release tag (flipping the old `newTag == main` assertion) and the README procedures. The v0.3.2 release predates the rule; its pin lands on `main` in the implementation commit, without moving the tag. Impl commit also syncs `AGENTS.md`'s test list and the stale `manifests/deployment.yaml`/`image.yml` rule-range comments |
 | ~~#34~~ | ~~The optional egress allowlist artifact (rule 1's directory amendment + the Configuration Surface entry): a committed `manifests/egress-networkpolicy.yaml.example` template, the gitignored operator `egress-networkpolicy.yaml` rendered by `--egress-policy` and applied with `oc apply -f`, and the superseded “no NetworkPolicy” constraint. Contract: `egress-control.md` (ADR 0030)~~ |
 | ~~#68~~ | ~~The storage-class override patch (rule 5a + the rule 1 directory amendment): a committed `manifests/pvc-patch.yaml.example` strategic-merge template setting exactly `spec.storageClassName`, the gitignored operator copy + `patches:` opt-in (the deploy-key pattern), and the README procedure. Impl commit also syncs `AGENTS.md`'s test list~~

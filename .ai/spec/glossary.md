@@ -11,7 +11,19 @@ redefined here.
 - **Wiki repo** — the local git repository in the wiki directory (the wiki
   file's parent dir; in-cluster, the `/wiki` PVC mount), owned by the patroller:
   one wiki-changing patrol, one commit. The wiki's irreversibility insurance and
-  audit trail (#3).
+  audit trail (#3). A new repo initializes on its **cluster branch**. An adopted
+  repo keeps the branch it has (#89).
+- **Cluster branch** — `cluster/<CLUSTER_ID>`, the branch a new wiki repo
+  initializes on and pushes to (#89, ADR 0039). `CLUSTER_ID` (from
+  `PATROL_CLUSTER_ID`) is a slug. An adopted repo keeps its own branch, for
+  example `main`, and pushes to that branch. One remote repo holds one branch
+  per cluster; a read-only hub reads each branch's `cluster-wiki.md` at the
+  branch tip.
+- **Spoke** — a cluster's own patroller process and its wiki repo. A spoke
+  writes only its own wiki branch and pushes only that branch (#89).
+- **Hub** — a fleet-level reader of the spoke branches in one remote wiki repo
+  (#13). The hub is read-only for spoke branches; its own patrol is not
+  implemented yet.
 - **Watch-list** — wiki section holding the refinement loop: rules patrol N writes
   for patrol N+1 (what to re-check, escalate, or expire) — each entry carrying
   its `recheck` command (#6); entries not re-verified within

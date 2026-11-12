@@ -45,14 +45,34 @@ knowledge base of the observed cluster.
     is a git repository owned by the patroller. The wiki repo is **local storage**
     — in-cluster it lives on the `/wiki` PVC mount (#2) — and no remote is
     required for any patrol behavior; the optional push (rule 4e) is replication
-    only. If the wiki directory contains no repository, the patroller initializes
-    one at startup, before the first patrol (default branch `main`), creating the
-    directory if absent. The wiki directory must be dedicated to the wiki: if it
-    already contains a git repository of any origin, the patroller uses that
-    repository as the wiki repo and commits into it [DONE: #3].
+    only. If the wiki directory contains no repository, the patroller creates the
+    directory. It then initializes the repository at startup, before the first
+    patrol. The new branch is the **cluster branch** `cluster/<CLUSTER_ID>` (rule
+    4a1). The wiki directory must be dedicated to the wiki. If it already contains
+    a git repository of any origin, the patroller uses that repository. It commits
+    into that repository. An adopted repo keeps its current branch. The
+    patroller never checks out, creates, or renames a branch there [DONE: #3]
+    [PLANNED: #89 — the init branch was `main`. An adopted repo stays on its own
+    branch, for example `main`. The push (rule 4e) follows that branch.]
+
+4a1. **The cluster branch** is `cluster/<CLUSTER_ID>`. `CLUSTER_ID` is
+     `PATROL_CLUSTER_ID` (default `local`). `CLUSTER_ID` must be a slug. Allowed
+     characters are lowercase ASCII letters, digits, `.`, `_`, and `-`. The
+     length is 1 to 63 characters. The first and last characters are a letter or
+     a digit. The value has no `..` and no `.lock` suffix. The constant
+     `WIKI_BRANCH_PREFIX` holds `cluster/`. The pure `wiki_branch(cluster_id)`
+     returns the branch name. An invalid slug raises `ValueError`, and the
+     message names the value. The process passes that name to
+     `ensure_wiki_repo(wiki_dir, branch)`. A new repo initializes on it. The
+     patrol derives the branch at the start of each patrol run. An invalid
+     `PATROL_CLUSTER_ID` fails startup with a config error. The error names the
+     variable and the value. The check runs after the offline `--wiki-stats` and
+     `--egress-policy` branches. Those modes do not require a valid
+     `PATROL_CLUSTER_ID`. The check runs before `ensure_wiki_repo`. The patroller never renames history to fix a
+     slug. The operator renames a branch by hand [PLANNED: #89].
 4b. If git is not on `PATH`, or repository initialization fails, the patroller
-    logs a warning and runs the process **file-only** — no init, no commit, no
-    push; the wiki file itself keeps working. A missing or broken git never fails
+    logs a warning. It runs the process **file-only**: no init, no commit, no
+    push. The wiki file itself keeps working. A missing or broken git never fails
     or blocks a patrol [DONE: #3].
 4c. Every wiki write is atomic: content is written to a temporary file in the
     wiki directory and renamed over the wiki file. The written bytes are
@@ -90,19 +110,24 @@ knowledge base of the observed cluster.
     (ADR 0024); "creates no commit" now describes only the legacy
     no-frontmatter legs of rules 31/33.]
 4e. The remote push is optional replication of the local wiki repo, never a
-    dependency: it runs only if `PATROL_WIKI_REMOTE` is set, pushing the current
-    branch to the same-named branch on that remote after each successful commit
-    (deploy-key wiring is the deployment's concern, #2 — the patroller only runs
-    `git push`). The push is best-effort and bounded: at most `PUSH_ATTEMPTS` (3)
-    attempts, `PUSH_TIMEOUT` (30 s) per attempt, `PUSH_BACKOFF` (5 s) between
-    attempts; any failure is logged and never fails the patrol or blocks the loop
-    indefinitely — the local commit is the source of truth (local-first)
-    [DONE: #3].
+    dependency. It runs only if `PATROL_WIKI_REMOTE` is set. It pushes the
+    current branch to the **same-named branch** on that remote. The push runs
+    after each successful commit. The branch is `cluster/<CLUSTER_ID>` on a repo
+    this patroller initialized. It is the adopted branch on an adopted repo
+    (rule 4a). Deploy-key wiring is the deployment's concern (#2). The patroller
+    only runs `git push`. The patroller never force-pushes. It never fetches,
+    rebases, or merges. A remote branch that diverged rejects the push
+    (non-fast-forward). The local commit stands. The push is best-effort and
+    bounded. It has at most `PUSH_ATTEMPTS` (3) attempts, `PUSH_TIMEOUT` (30 s)
+    per attempt, and `PUSH_BACKOFF` (5 s) between attempts. Any failure is
+    logged. It never fails the patrol or blocks the loop indefinitely. The local
+    commit is the source of truth (local-first) [DONE: #3] [PLANNED: #89 — the
+    never-force clause and the divergence clause].
 4f. The wiring of rules 4a–4e into the process is verified end-to-end by the
-    fake-model e2e: the repo is ensured at startup via `main()` before the first
-    patrol, the patrol tail runs write → commit → push in that order, a
-    byte-identical rewrite creates no commit, the push runs only when
-    `PATROL_WIKI_REMOTE` is set, and a failed reporting pass leaves the wiki
+    fake-model e2e. The repo is ensured at startup via `main()` before the first
+    patrol. The patrol tail runs write → commit → push in that order. A
+    byte-identical rewrite creates no commit. The push runs only when
+    `PATROL_WIKI_REMOTE` is set. A failed reporting pass leaves the wiki
     untouched [DONE: #4]. [DONE: #5 — the tail becomes validate → repair once →
     stamp → write → commit → push (rule 16); the stamp advances `patrol_count` on
     every accepted write, so the byte-identical case is superseded (rule 17), and
@@ -133,6 +158,33 @@ knowledge base of the observed cluster.
     27) cannot read it back. The e2e also pins rule 4g's legacy legs: a
     cp1252 wiki loads at patrol start (rule 4g) and a total-failure patrol
     over one writes nothing (rule 31's legacy leg).]
+    [PLANNED: #89 — the startup repo initializes on `cluster/<CLUSTER_ID>`
+    (rule 4a). The e2e adds the two-spoke leg: two patrols, one `main()` call per
+    cluster, one remote path, separate branches, no cross-cluster commit or
+    push.]
+
+4f1. **One remote repo, one branch per cluster.** A remote wiki repo holds one
+     branch per spoke cluster. A repo this process initializes uses
+     `cluster/<id>`. An adopted repo keeps its own branch (rule 4a), for example
+     `main`. Every branch carries that cluster's `cluster-wiki.md` at the same
+     path. Each spoke pushes only its own branch. Spokes share no working tree
+     and need no merge [PLANNED: #89].
+
+     **Hub read procedure (operator note).** A hub fetches the remote's branches.
+     It reads `cluster-wiki.md` at each branch tip, for example
+     `git show <branch>:cluster-wiki.md`. The frontmatter `cluster_id` names the
+     cluster. The hub is read-only for spoke branches. It never pushes, amends,
+     or deletes them. A `git worktree add` per branch is an operator convenience
+     for browsing. No code requires it. The hub is #13. No patroller behavior
+     changes here.
+
+4f2. All local wiki behavior is single-branch. The wiki read, validation,
+     expiry, compaction, stamping, history churn, and `--wiki-stats` use only the
+     local wiki file. Commits and pushes use only the current branch of the local
+     repo. The patroller never fetches, checks out, or merges another branch. It
+     never reads another cluster's branch. It never assumes a fixed branch name
+     from the remote. A fleet-wide read is the hub's job (rule 4f1), not the
+     spoke's [PLANNED: #89].
 
 ### Format Contract
 
@@ -1249,11 +1301,14 @@ write.
 - `--wiki` — path to the wiki file (default `wiki/cluster-wiki.md` beside
   `patrol.py` [DONE: #3; was `cluster-wiki.md`])
 - `PATROL_CLUSTER_ID` — cluster identity used in wiki commit emails
-  (`patrol@<cluster-id>`); default `local` (the in-cluster Deployment, #2, sets
-  the real cluster name) [DONE: #3]
-- `PATROL_WIKI_REMOTE` — if set, each wiki commit is pushed to this git remote
-  (best-effort and bounded, rule 4e; local commit is the source of truth)
-  [DONE: #3]
+  (`patrol@<cluster-id>`) and in the cluster branch `cluster/<id>` (rule 4a1);
+  default `local` (the in-cluster Deployment, #2, sets the real cluster name)
+  [DONE: #3] [PLANNED: #89 — the branch use and the slug rule: lowercase
+  letters, digits, `.`, `_`, `-`; 1–63 characters; no `..`; no `.lock` suffix]
+- `PATROL_WIKI_REMOTE` — if set, each wiki commit is pushed to this git remote,
+  on the same-named branch (best-effort and bounded, rule 4e; local commit is
+  the source of truth). One repo can hold many clusters' wiki branches (rule
+  4f1) [DONE: #3] [PLANNED: #89 — the one-repo, one-branch-per-cluster layout]
 - `WIKI_VERSION` — hard-coded skeleton schema version (1), checked against the
   wiki frontmatter's `wiki_version` (rule 10); not env-configurable
   [DONE: #5]
@@ -1288,6 +1343,9 @@ write.
   lines with one marker line; the metadata line never changes. Passed to
   `truncate_closed_entries` by the write path (read at call time, the
   `WIKI_ANOMALY_KEEP` pattern) [DONE: #86]
+- `WIKI_BRANCH_PREFIX` — hard-coded constant (not env-configurable), the
+  cluster-branch prefix (rule 4a1): `cluster/`. The full branch is the prefix
+  plus the `PATROL_CLUSTER_ID` slug [PLANNED: #89]
 - `WIKI_CHAR_BUDGET` — hard-coded constant (not env-configurable), the soft
   whole-wiki character budget (rule 29): 20,000 characters (the whole file,
   frontmatter included). Overshoot warns — write path (stderr),
@@ -1327,6 +1385,7 @@ write.
 
 | Ticket | Summary |
 |---|---|
+| #89 | Fleet wiki layout (rules 4a, 4a1, 4e, 4f1, 4f2, ADR 0039): one remote repo holds one branch `cluster/<CLUSTER_ID>` per cluster, each carrying its `cluster-wiki.md` at the same path. A wiki repo initializes on the cluster branch; an adopted repo keeps its own branch (typically `main`), and the same-named push follows it — no rename, no history rewrite. `CLUSTER_ID` becomes a ref component, so it must be a slug (lowercase letters, digits, `.`, `_`, `-`; 1–63 characters; starts and ends alphanumeric; no `..`; no `.lock`); `WIKI_BRANCH_PREFIX` (`cluster/`) and the pure `wiki_branch(cluster_id)` expose the rule, and an invalid value fails startup with a config error. The push never forces, fetches, rebases, or merges: a diverged remote branch rejects the push and the local commit stands. The hub read procedure is a fetch of the remote's branches plus a per-branch read of `cluster-wiki.md` at each tip (`git worktree` is optional, operator-only); the hub never pushes to a spoke branch. All local behavior (read, validation, expiry, compaction, stats, churn, commit, push) stays single-branch and never fetches or reads another cluster's branch. `/wiki`, `--wiki /wiki/cluster-wiki.md`, the manifests, and the one-document constraint keep their behavior. No manifest behavior changes. Impl commit also syncs `how/project-structure.md` (the `ensure_wiki_repo`/push signatures and the new `wiki_branch`/`WIKI_BRANCH_PREFIX` symbols), `README.md` (the wiki-remote paragraphs and config table), `ARCHITECTURE.md`'s wiki prose, and `AGENTS.md`'s test list |
 | ~~#86~~ | ~~Closed-entry character bound (rule 28a, ADR 0038; the model-facing half is `reporting-notifications.md` rule 5): rule 28 bounds the count of closed Anomaly-log entries, not their characters — 20 entries held 16,402 characters (59% of the wiki) — so a `resolved`/`expired` entry now keeps at most `WIKI_ANOMALY_ENTRY_CHARS` (400) characters of continuation prose. The pure `truncate_closed_entries(content, cap)` pass keeps whole lines from the top (head share 240) and the bottom (tail share 160), drops the middle, and writes one `_truncated:` marker line naming the dropped characters and git retention; the metadata line stays byte-for-byte (`verified_patrol`, `last_notified`), `watching` entries and the Watch-list stay whole, fences are kept or dropped whole, a second pass changes nothing, and one console line per truncated entry names the cap, and `cap = 0` is legal (marker only). It runs after the prune and before the carry and the stamp. Rule 29 stays the soft alarm; the report contract names the cap so the model writes closed entries tight. Impl commit also syncs `README.md`'s wiki-tail flow line and its working-set paragraphs, `ARCHITECTURE.md`'s working-set prose, `AGENTS.md`'s test list, `how/reporting-pipeline.md` (the write-path order), and `how/project-structure.md` (the symbol inventory)~~ |
 | ~~#111~~ | Wiki free prose uses plain English (rule 13a; the model-facing half is `reporting-notifications.md` rule 5). The shape pass writes the wiki, so `REPORT_CONTRACT` carries the ask. The ask is short sentences, one idea per sentence, the active voice, simple tenses, no idioms, and one word for one thing. It asks for the same word on the next patrol, which lowers rule 26's churn number. The rule covers free prose only. Frontmatter (rule 10), entry metadata lines (rule 12), `recheck` commands (rule 12a), `code`, and the skeleton (rule 11) are machine text and do not change. The rule is taught, never validated. No sentence counter, no prose lint, no schema change, no configuration key, and `validate_wiki` (rule 15) still judges no prose. The patrol system prompt does not repeat the ask (`patrol-engine.md` rule 3f is unchanged). Impl commit also syncs `AGENTS.md`'s test list, `how/reporting-pipeline.md`'s `REPORT_CONTRACT` row, and `how/project-structure.md`'s `test_wiki_budget.py` inventory~~ |
 | ~~#101~~ | ~~The Working-Set Budget intro's and rule 29's `REPORT_MAX_TOKENS` value retunes 24000 → 28000 (behavior is `reporting-notifications.md` rule 8b's `[DONE: #101]` block, ADR 0036): the reporting pass's completion bound gains reasoning-variance headroom after the v0.3.2 soak exhausted 24000. The wiki half is the rationale number only — the soft character budget `WIKI_CHAR_BUDGET`, the anomaly-log keep budget, the size note (rule 29a), and `validate_wiki`'s never-judges-length stance are unchanged. Impl commit also syncs `AGENTS.md`'s test list~~ |

@@ -406,7 +406,7 @@ def test_wiki_history_returns_last_window_oldest_first(tmp_path):
     """Rule 27: the wiki file's blobs at the last `window` commits that
     changed it, oldest -> newest."""
     wiki_path = tmp_path / "wiki" / "cluster-wiki.md"
-    patrol.ensure_wiki_repo(wiki_path.parent)
+    patrol.ensure_wiki_repo(wiki_path.parent, "cluster/local")
     revisions = {i: build_wiki(watch=[entry(id="W-1", prose=f"  v{i}",
                                             verified_patrol=i)],
                                patrol_count=i)
@@ -420,7 +420,7 @@ def test_wiki_history_short_history_returns_all(tmp_path):
     """Rule 27: a history shorter than the window yields every revision it
     has — the window takes what exists."""
     wiki_path = tmp_path / "wiki" / "cluster-wiki.md"
-    patrol.ensure_wiki_repo(wiki_path.parent)
+    patrol.ensure_wiki_repo(wiki_path.parent, "cluster/local")
     v1 = build_wiki(watch=[entry(id="W-1", prose="  v1")], patrol_count=1)
     commit_rev(wiki_path, v1)
     assert patrol.wiki_history(wiki_path, window=5) == [v1]
@@ -433,7 +433,7 @@ def test_wiki_history_empty_without_repo_or_commits(tmp_path):
     wiki_path.parent.mkdir(parents=True)
     wiki_path.write_text(build_wiki(), encoding="utf-8", newline="\n")
     assert patrol.wiki_history(wiki_path, window=5) == []
-    patrol.ensure_wiki_repo(wiki_path.parent)  # repo present, zero commits
+    patrol.ensure_wiki_repo(wiki_path.parent, "cluster/local")  # repo present, zero commits
     assert patrol.wiki_history(wiki_path, window=5) == []
 
 
@@ -444,7 +444,7 @@ def test_stats_mode_prints_all_four_numbers(tmp_path):
     offline (no PATROL_* env), reading the document (three numbers) and the
     git history (churn: W-3 reworded every patrol, W-1/W-2/A-1/A-2 stable)."""
     wiki_path = tmp_path / "wiki" / "cluster-wiki.md"
-    patrol.ensure_wiki_repo(wiki_path.parent)
+    patrol.ensure_wiki_repo(wiki_path.parent, "cluster/local")
 
     def rev(i, w3_prose):
         return build_wiki(
@@ -550,7 +550,7 @@ def test_stats_mode_churn_none_and_once_precedence(tmp_path):
     (not n/a), and --wiki-stats takes precedence over --once (the default
     patrol mode) — the command prints stats and exits 0."""
     wiki_path = tmp_path / "wiki" / "cluster-wiki.md"
-    patrol.ensure_wiki_repo(wiki_path.parent)
+    patrol.ensure_wiki_repo(wiki_path.parent, "cluster/local")
     for i in (1, 2):
         commit_rev(wiki_path, build_wiki(
             watch=[entry(id="W-1", prose="  stable prose", verified_patrol=i)],
