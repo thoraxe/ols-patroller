@@ -52,7 +52,7 @@ redefined here.
   at most
   `WIKI_ANOMALY_ENTRY_CHARS` (400) characters of prose, the rest replaced
   by a `_truncated:` marker line that names git history (the **closed-entry
-  character cap** [PLANNED: #86]). A soft whole-wiki character budget
+  character cap** [DONE: #86]). A soft whole-wiki character budget
   (`WIKI_CHAR_BUDGET`, 20,000) warns on overshoot (write path, repair
   pass, `--wiki-stats`) without ever failing validation. The wiki is what
   the next patrol reads; the repo is what the auditor reads.

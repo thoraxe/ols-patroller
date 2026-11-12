@@ -98,9 +98,12 @@ from the document and its git history, with no `PATROL_*` env, cluster access,
 or repo initialization (`.ai/spec/decisions/0015`). Since #40 the wiki is a
 bounded working set — git history is the archive: the patroller keeps every
 watching Anomaly-log entry plus the last 20 resolved/expired ones (older
-closed entries pruned on write, recoverable from the wiki repo) and warns
-when the whole wiki passes the soft 20,000-character budget
-(`.ai/spec/decisions/0017`). Since #20 the prompt teaches an efficient
+closed entries pruned on write, recoverable from the wiki repo), caps a
+closed entry's continuation prose at 400 characters on write (whole lines
+from the head and the tail, the middle replaced by a `_truncated:` marker
+line, recoverable from the repo), and warns when the whole wiki passes the
+soft 20,000-character budget (`.ai/spec/decisions/0017`,
+`.ai/spec/decisions/0038`). Since #20 the prompt teaches an efficient
 cluster sweep — layered (operators → nodes → namespaces → workload objects →
 problem pods → warning events), field-selected (`--field-selector`,
 jsonpath/custom-columns, single-object drilldowns) over flat enumeration and

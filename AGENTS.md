@@ -91,9 +91,15 @@ under current policy (clean implementation review + `implementation-complete`):
   is the fake-model e2e over the
   real engine stack (#4, incl. the wiki-skeleton wiring of #5, the recheck
   repair path of #6, the stale-entry expiry wiring of #7, the working-set
-  budget wiring of #40 — expire → compact → stamp, prune console lines, the
+  budget wiring of #40 — expire → compact → truncate → stamp, prune and
+  truncation console lines, the
   soft-budget stderr warning, the repair-pass budget inclusion, and prune
-  recoverability from git history — and the request-bound wiring of #49: the
+  recoverability from git history — and the closed-entry character-cap
+  wiring of #86: an over-cap closed entry written truncated with its marker
+  line, one console line naming the cap, a `watching` entry in the same
+  section keeping its prose, the minimal-write legs leaving an over-cap entry
+  whole, and the dropped prose recoverable from git history — and the
+  request-bound wiring of #49: the
   agent's model built at the exploration bound, the shape pass's at the
   reporting bound, the repair reusing the shape instance — and the
   token-bound wiring of #63: the same two `make_model` calls carrying the
@@ -151,6 +157,14 @@ under current policy (clean implementation review + `implementation-complete`):
   length-budget contract (#40: the `compact_anomaly_log` and
   `wiki_budget_warnings` matrices, the `wiki_stats` size keys, the
   `--wiki-stats` size line, and the report contract's working-set pins;
+  plus the closed-entry character-cap contract of #86 — the
+  `WIKI_ANOMALY_ENTRY_CHARS` pin and the `truncate_closed_entries` matrix
+  (head/tail keeping with the metadata line byte-for-byte, the dropped-
+  character count in the marker, minimal rewrite, watching and Watch-list
+  exemption, fence awareness three ways — dropped whole, kept whole when it
+  fits, counted toward the share — `cap = 0` as marker-only, document-order
+  ids, idempotence over the pass's own marker, the rule-21 `auto-expired`
+  tail) and the contract's verbatim closed-entry clause;
   plus the model-facing size-note contract of #67 — the `wiki_size_note`
   matrix (within/over budget, empty content, exactly-at-budget boundary,
   call-time `WIKI_CHAR_BUDGET`), the contract's consequence-chain/shrink

@@ -67,7 +67,7 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
    validation [DONE: #40]. The count is not the only bound. Each
    closed entry also keeps at most `WIKI_ANOMALY_ENTRY_CHARS` (400)
    characters of prose. Closed-history prose can then no longer hold the wiki
-   over budget by itself [PLANNED: #86]. The model is shown its own size: every shape-pass
+   over budget by itself [DONE: #86]. The model is shown its own size: every shape-pass
    report invocation carries a deterministic size line (count, budget,
    over-budget excess or headroom) and the report contract names the
    consequence chain, so an over-budget wiki is pruned by the model instead
@@ -116,7 +116,7 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
     (state-change dedup + weekly digest) [DONE: #35], expire
     stale watch-list entries [DONE: #7], compact the Anomaly log to its keep
     budget [DONE: #40], truncate a closed Anomaly-log entry's prose to its
-    character cap [PLANNED: #86], stamp the per-entry notify clock [DONE: #35] and
+    character cap [DONE: #86], stamp the per-entry notify clock [DONE: #35] and
     the frontmatter counters
     [DONE: #5], rewrite the wiki atomically, commit it to the wiki repo, push
     if `PATROL_WIKI_REMOTE` is set [DONE: #3].
@@ -203,7 +203,7 @@ backoff between attempts [DONE: #3]; wiki skeleton schema version `WIKI_VERSION`
 wiki stats — churn window `WIKI_CHURN_WINDOW` = 5 revisions, lopsided
 thresholds 5 graded entries / 2/3 share [DONE: #8]; wiki working-set budgets —
 anomaly-log keep `WIKI_ANOMALY_KEEP` = 20 entries, closed-entry cap
-`WIKI_ANOMALY_ENTRY_CHARS` = 400 chars [PLANNED: #86], soft length
+`WIKI_ANOMALY_ENTRY_CHARS` = 400 chars [DONE: #86], soft length
 `WIKI_CHAR_BUDGET` = 20,000 chars [DONE: #40]; the egress allowlist's fixed
 names — `EGRESS_POLICY_NAME` (`ols-patroller-egress`) and
 `EGRESS_DNS_NAMESPACES` (`openshift-dns`, `kube-system`) [DONE: #34].
