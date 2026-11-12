@@ -159,11 +159,13 @@ Environment variables:
 - `PATROL_INTERVAL` — seconds between patrols in `--loop` mode (default
   `21600`, six hours) [DONE: #25 — was `900`]
 - `PATROL_TOOL_TIMEOUT` — per-command timeout in seconds (default `60`)
-- `PATROL_CLUSTER_ID` — cluster identity for wiki commit emails (default `local`)
-  [DONE: #3]
-- `PATROL_WIKI_REMOTE` — if set, wiki commits are pushed to this git remote
-  (best-effort, bounded; the local commit is the source of truth) [DONE: #3];
-  in-cluster, the SSH form rides the optional deploy-key wiring
+- `PATROL_CLUSTER_ID` — cluster identity for wiki commit emails and the cluster
+  branch `cluster/<id>` (default `local`) [DONE: #3] [PLANNED: #89 — the slug
+  rule and the branch use, `wiki-memory.md` rules 4a1/4f1]
+- `PATROL_WIKI_REMOTE` — if set, wiki commits are pushed to this git remote,
+  on the same-named branch (best-effort, bounded; the local commit is the
+  source of truth) [DONE: #3] [PLANNED: #89 — one repo can hold one branch per
+  cluster]. In-cluster, the SSH form rides the optional deploy-key wiring
   (`in-cluster-deployment.md` rules 16a–16d [DONE: #39])
 - `PATROL_WIKI_STALE_AFTER` — accepted-write threshold for stale-entry expiry:
   a Watch-list entry whose `last_verified` has not advanced for this many
@@ -200,6 +202,7 @@ timeout — `REQUEST_TIMEOUT` 300 s per exploration turn, `REPORT_TIMEOUT`
 (`reporting-notifications.md` rule 8a) [DONE: #49 — was a flat 300 s on
 the whole client]; wiki push bounds — 3 attempts, 30 s per attempt, 5 s
 backoff between attempts [DONE: #3]; wiki skeleton schema version `WIKI_VERSION` = 1 [DONE: #5];
+cluster-branch prefix `WIKI_BRANCH_PREFIX` = `cluster/` [PLANNED: #89];
 wiki stats — churn window `WIKI_CHURN_WINDOW` = 5 revisions, lopsided
 thresholds 5 graded entries / 2/3 share [DONE: #8]; wiki working-set budgets —
 anomaly-log keep `WIKI_ANOMALY_KEEP` = 20 entries, closed-entry cap
@@ -227,6 +230,7 @@ documents). Milestone shape:
 
 | Ticket | Summary |
 |---|---|
+| #89 | Fleet wiki layout: one remote repo holds one branch per cluster (rules 4a/4a1/4e/4f1/4f2 in `wiki-memory.md`, ADR 0039). The configuration surface changes: `PATROL_CLUSTER_ID` must be a slug, and it names the cluster branch; `PATROL_WIKI_REMOTE` receives the same-named branch. The `WIKI_BRANCH_PREFIX` constant joins the hard-coded constant line. Tracked in milestone v0.4.0 |
 | ~~#101~~ | ~~The hard-coded constant line's `REPORT_MAX_TOKENS` retunes 24000 → 28000 (`reporting-notifications.md` rule 8b, ADR 0036), after the v0.3.2 soak's first attempt exhausted the 24000 completion budget and returned an empty wiki. No other constant changes; `REPORT_TIMEOUT` stays 900 s and #97's cheap first-attempt shape is untouched. Tracked in milestone v0.3.3 (patch)~~ |
 | ~~#97~~ | ~~The hard-coded constant line's `REPORT_MAX_TOKENS` drops 32000 → 24000 (`reporting-notifications.md` rule 8b, ADR 0034), alongside the first attempt taking the #88 retry's cheap shape. No other constant changes; `REPORT_TIMEOUT` stays 900 s. Tracked in milestone v0.3.2 (patch), not v0.3.1's reliability gate~~ |
 | v0.1 (#1–#4, #9, #11, #24, #25, #27, #28) | In-cluster: Containerfile, manifests (SA + cluster-reader + PVC + Deployment), git-backed wiki, e2e tests in-repo, deployment defaults & observability (6 h cadence, unbuffered + verbose logs, git-safe `/wiki`), guard `--raw` refusal [#9 was later re-scoped to apprise multi-sink (v0.3) with its original dedup scope moved to #35] |
