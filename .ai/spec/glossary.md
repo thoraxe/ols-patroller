@@ -48,7 +48,11 @@ redefined here.
   the archive, the wiki is the working set. The Anomaly log keeps at most
   the last `WIKI_ANOMALY_KEEP` (20) resolved/expired entries — the
   patroller prunes older ones on every accepted write, whole items,
-  recoverable from the wiki repo — and a soft whole-wiki character budget
+  recoverable from the wiki repo — and each closed Anomaly-log entry keeps
+  at most
+  `WIKI_ANOMALY_ENTRY_CHARS` (400) characters of prose, the rest replaced
+  by a `_truncated:` marker line that names git history (the **closed-entry
+  character cap** [DONE: #86]). A soft whole-wiki character budget
   (`WIKI_CHAR_BUDGET`, 20,000) warns on overshoot (write path, repair
   pass, `--wiki-stats`) without ever failing validation. The wiki is what
   the next patrol reads; the repo is what the auditor reads.
@@ -264,7 +268,7 @@ redefined here.
   exhausted 24000 completion tokens while the gateway window was not
   binding), v0.4.0 fleet
   memory & wiki usability (#89: one repo, one branch per cluster; #13: fleet
-  spoke push/hub read; #26: wiki viewer; #86: anomaly-log byte bound; #87:
+  spoke push/hub read; #26: wiki viewer; #86: anomaly-log character cap; #87:
   process-generated topology diagram; #106: the empty-wiki reason names bound
   truncation), future (#12, #14–#16, #31, #41). Plans live
   in GitHub issues; #9/#11 were promoted into v0.1 (#9's original dedup scope
@@ -279,6 +283,6 @@ redefined here.
   a green suite on Windows) — was filed from the Windows dev environment and
   slotted into v0.3. #85–#89 were filed from the v0.3.0 release soak and the
   #88 recurrence: the reporting-pass gateway ceiling, the over-budget wiki
-  (prose/history and anomaly-log bytes), the multi-wiki single-repo layout,
+  (prose/history and anomaly-log size), the multi-wiki single-repo layout,
   and the mermaid-topology question; #85/#88 gate v0.3.1, the rest follow
   in v0.4.0.

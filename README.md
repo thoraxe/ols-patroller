@@ -101,7 +101,8 @@ a single run):
  wiki gate ── validate the skeleton → one repair pass → else keep the old wiki
        │
        ▼
- wiki tail ── expire stale entries → compact the anomaly log → stamp counters
+ wiki tail ── expire stale entries → compact the anomaly log
+       │         → truncate over-cap closed entries → stamp counters
        │         atomic UTF-8/LF write → git commit → optional push
        ▼
  delivery ── state-change filter → periodic digest → console + apprise sinks
@@ -171,8 +172,12 @@ truth). If git is unavailable, the patroller degrades to file-only. The wiki is
 a bounded working set: every watching Anomaly-log entry plus the last 20
 resolved/expired ones survive each accepted write (older closed entries are
 pruned by the patroller — one console line each — and stay recoverable from
-the repo's history), and a soft 20,000-character budget warns on overshoot
-without ever rejecting a write.
+the repo's history). A count slot alone leaves entry size unbounded, so a
+closed entry keeps at most 400 characters of prose: the patroller keeps whole
+lines from the top and the bottom of a longer entry, drops the middle, and
+leaves a `_truncated:` marker line naming the dropped characters and git
+history — one console line each, metadata untouched. And a soft 20,000-character budget
+warns on overshoot without ever rejecting a write.
 
 ## Security model
 

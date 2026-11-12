@@ -36,7 +36,9 @@ would burn the one repair pass on formatting instead of hypotheses and push
 against #5's document constraint; model-judged compaction was rejected for
 the same reason as model-judged expiry (ADR 0014: models are unreliable at
 self-limiting bookkeeping); per-section budgets and truncation were rejected
-as over-structuring / structure-destroying. The first accepted write after
+as over-structuring / structure-destroying; the character cap on a closed entry
+is amended in by ADR 0038 (issue #86), because the count bound alone left
+the document over its soft budget. The first accepted write after
 adoption may prune a burst of legacy entries at once (one console line each,
 once). Watching entries and the Watch-list are never pruned — live memory
 stays whole; only closed history compacts. #9's digest (now #35's) remains the human

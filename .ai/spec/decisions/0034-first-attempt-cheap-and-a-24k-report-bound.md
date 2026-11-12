@@ -4,7 +4,7 @@ Date: 2026-11-09 · Status: proposed; bound retuned by 0036 (#101), cheap-shape 
 
 > **Bound retuned.** The 24000 completion bound decided below is retuned to
 > 28000 by ADR 0036 (#101), on this record's own condition — "If a 24k bound
-> still measures tight after #86's anomaly-log byte bound lands, retuning it is
+> still measures tight after #86's anomaly-log size bound lands, retuning it is
 > another spec change with a fresh soak". The #86 half of that condition does
 > not gate this change: #86 bounds the wiki's Anomaly-log **input** bytes, while
 > #101's truncation is completion-side (`out` equal to the bound on a wiki under
@@ -48,7 +48,7 @@ user message), and the corrective asked for a smaller answer (an output-token
 cut). The 27,773-char document the #88 wiki carried is the *other* half of the
 cost and is **not** addressed here: the wiki's own levers are the rule-29a size
 note, the character budget (`wiki-memory.md` rules 28–29), and #86's anomaly-log
-byte bound.
+size bound.
 
 (The ADR sequence skips 0033 because it belongs to the concurrent #93 spec
 branch — the digest clock carry — not to this record.)

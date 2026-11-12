@@ -118,6 +118,11 @@ knowledge base of the observed cluster.
     is pruned on the written wiki with one console line per pruned entry,
     an over-budget wiki still writes with one stderr warning, and a repair
     pass carries the budget warning (rules 28–29).]
+    [DONE: #86 — the e2e gains the closed-entry character-cap wiring after
+    the #40 block: an over-cap closed entry is written truncated with the
+    marker line, one console line names the cap, a `watching` entry in the
+    same section keeps its prose, and the truncated wiki still validates
+    (rule 28a).]
     [DONE: #66 — the e2e's failed-reporting-pass pin flips with rule 33:
     a total-failure patrol warns, sends the FAILURE notification, and
     minimal-writes (the stamped seed on a fresh deployment; the old wiki
@@ -450,16 +455,29 @@ attempt, and then the old wiki wins. Persistence problems degrade, never block.
       stamp → write → commit → push. `carry_last_notified(new_wiki, old_wiki)`
       restores the old on-disk `last_notified` value onto every entry the two
       wikis share and drops model-written pairs the old wiki has no clock for
-      (rule 12c, `reporting-notifications.md` rule 4d); it is pure and
-      byte-preserving, and runs on the same accepted-write leg as the stamp.
-      The abbreviated `expire → compact → stamp` shorthand other rules use
-      (rules 22, 28–31, 33; ADR 0022) names the housekeeping stages only —
-      this rule is the authoritative order, and the notify clock's carry and
-      stamp sit between compaction and the frontmatter stamp];
+      (rule 12c, `reporting-notifications.md` rule 4d). It is pure and
+      byte-preserving, and runs on the same accepted-write leg as the stamp.]
+      [DONE: #86 — the closed-entry character cap (rule 28a) joins after
+      the compaction pass and before the notify carry: expire → compact →
+      truncate → notify carry → notify stamp → stamp → write → commit →
+      push. **This is the current authoritative order.** The order strings
+      inside the #35 and #93 blocks above record the stage each ticket
+      inserted; they are historical. The truncation pass runs on the
+      model-authored accepted-write legs — the normal one, the
+      repaired-report one, and the wiki-repair one. The minimal-write legs
+      (rules 31 and 33) run no truncation, like rule 4d's carry: they write
+      no model-authored content, and rule 32 says memory content stays
+      unchanged. One console line per truncated entry.]
+      The housekeeping shorthand has two forms (ADR 0022). A model-authored
+      accepted write uses `expire → compact → truncate → stamp`. A
+      minimal-write leg (rules 31 and 33) uses `expire → compact → stamp`.
+      The notify clock's carry and stamp sit between compaction and the
+      frontmatter stamp in both forms.
     - **invalid** → one repair pass (rule 18). If the repaired report's wiki
-      validates, that report is the patrol's final report (expire → compact
-      → stamp → write → commit → push [DONE: #40 — compaction joins
-      the tail]). If the repair is absent, fails, or its wiki is
+      validates, that report is the patrol's final report (expire → compact →
+      truncate → stamp → write → commit → push [DONE: #40 — compaction joins
+      the tail; DONE: #86 — truncation joins it, the repaired wiki being
+      model-authored]). If the repair is absent, fails, or its wiki is
       still invalid → keep the old wiki, log a warning to **stderr** (the wiki
       update was rejected; the previous wiki stands), write/commit/push nothing.
     Findings printing and notification run after the validation/repair decision
@@ -602,7 +620,8 @@ archaeology).
     fence-aware section/entry scanning as the validator (rule 15). It runs in the write path after the
     validation/repair decision and the delivery, immediately before the
     stamp (rule 16) [DONE: #40 — with compaction in the tail, "immediately"
-    becomes "next": expire → compact → stamp (rule 16), and what is stamped
+    becomes "next": expire → compact → truncate → stamp (rule 16; #86 adds
+    the truncation stage to model-authored writes), and what is stamped
     is the compacted output]: its inputs are the validated wiki and the old on-disk
     wiki (the clock's carry source — the same basis rule 17 uses for
     `patrol_count`), and its output is what is stamped, written, committed,
@@ -781,8 +800,10 @@ the wiki repo already retains every accepted write (rule 4d). The stance:
 **git history is the archive; the wiki is the working set** (ADR
 `decisions/0017-working-set-wiki-not-log.md`). The Anomaly log is append-only
 by nature — #7's expiry flips land there, resolutions accumulate — so it
-gets the mechanical bound, enforced by the process the way expiry is (ADR
-0014's rationale: models are unreliable at self-limiting bookkeeping);
+gets the mechanical bounds, enforced by the process the way expiry is (ADR
+0014's rationale: models are unreliable at self-limiting bookkeeping): a
+count bound on closed entries (rule 28) and a character bound on each closed
+entry (rule 28a);
 everything else (prose sections bloat too) gets a soft budget that warns
 and teaches but never gates — a hard failure would burn repair passes on
 formatting instead of hypotheses, and the wiki stays a document (the
@@ -839,6 +860,90 @@ load-bearing constraint of #5).
       discipline). The first accepted write after this rule ships may
       prune a burst of legacy entries at once — one line each, once,
       honest.
+28a. **Closed-entry character bound** [DONE: #86]. On a model-authored
+    accepted write, a `resolved` or `expired` Anomaly-log entry keeps at most
+    `WIKI_ANOMALY_ENTRY_CHARS` (400) characters of continuation prose. Rule
+    28 bounds the number of closed entries. It does not bound their length.
+    One live wiki carried 20 closed entries. They held 16,402 characters.
+    That was 59% of a 27,773-character wiki. Compaction worked as designed. A
+    count slot cost about 820 characters of prose. So the process also bounds
+    each closed entry's size. The cap bounds closed history: 20 entries hold
+    at most 8,000 kept characters. The cap does not bound the whole wiki.
+    `watching` entries, metadata lines, and prose sections keep their
+    length. Rule 29 stays the soft drift alarm. This rule is the mechanical bound (rule 28's division).
+
+    The pass:
+    - keeps the metadata line byte-for-byte. That line carries the id, the
+      status, the rule-20 `verified_patrol` clock, and rule 12c's
+      `last_notified` date. A prose cut never corrupts entry identity or the
+      notify clock;
+    - measures a line in characters: `len(line)`. Newlines do not count;
+    - measures the entry's continuation lines, with its own marker line
+      excluded. When the total is at most `cap`, it leaves the entry
+      unchanged;
+    - keeps whole lines from the top and whole lines from the bottom. It
+      drops the lines between them. It never cuts a line in the middle, so
+      an entry stays one item. No kept line loses its indentation: a
+      column-0 line would end the item and could grow a stray entry;
+    - gives the head `cap * 3 // 5` characters (240 by default) and the tail
+      the rest (160). A closed entry leads with what happened. It ends with
+      how it ended: the rule-21 `auto-expired` annotation is its last line.
+      This is the `kubectl-guard.md` rule 11 head+tail rationale, applied to
+      memory;
+    - adds a line from the top while the head lines fit the head share. It
+      stops at the first unit that does not fit. The bottom walk works the
+      same way with the tail share. A side keeps no line when no whole line
+      fits;
+    - treats a fenced block as one unit. It keeps or drops the block whole.
+      An open fence would swallow the rest of the document and fail rule 15.
+      A block's lines count toward the share like any other line;
+    - writes one marker line where the dropped lines stood:
+      `  _truncated: 512 characters elided; git history has the full entry_`.
+      The count is the dropped lines' characters. The retention phrase states
+      the git-backed case, as rule 28's prune line does. File-only mode
+      (rule 4b) has no archive, and startup said so;
+    - ignores its marker line when it measures an entry. A second pass leaves
+      a truncated entry unchanged: rule 28's byte-for-byte minimal rewrite;
+    - is pure and deterministic. `truncate_closed_entries(content, cap)`
+      returns `(rewritten content, [truncated entry ids])`. The ids follow
+      document order. The pass makes no I/O and no model calls. It scans the
+      same fence-aware sections and entries as the validator (rule 15);
+    - never touches `watching` entries. Live prose is the hypothesis, and the
+      model manages it (rule 28's exemption). It never touches the
+      Watch-list either: a closed entry there is the model's placement to
+      reconsider (rule 28's scope). The prose sections, the frontmatter
+      (rule 17 owns it), and non-item prose in the Anomaly log stay whole;
+    - treats `cap = 0` as marker-only for every closed entry. That is
+      aggressive but legal: `watching` entries keep their prose;
+    - keeps the written wiki valid. Whole lines and whole fences cannot break
+      the skeleton. The truncated wiki must pass `validate_wiki`, pinned like
+      rule 28's cut;
+    - runs after rule 28's prune and before rule 12c's carry and rule 17's
+      stamp (rule 16's order). Only survivors are rewritten. The later
+      metadata passes then see untouched lines;
+    - runs on model-authored accepted writes only. The minimal-write legs
+      (rules 31 and 33) run none: they write no model-authored content, like
+      rule 4d's carry;
+    - logs one console line per truncated entry, to stdout, beside rule 28's
+      prune line. The line names the entry id and the cap, and states that
+      git history retains the full prose. The format is pinned:
+      `[patrol] wiki: entry '<id>' truncated in the Anomaly log (over the
+      closed-entry cap <cap>; git history retains the full prose)`. Rule 28's
+      caveat holds here too. An entry introduced and truncated within the
+      same write was never accepted memory. The repo owes it nothing, and the
+      retention phrase names the git-backed case only. Truncation is wiki
+      housekeeping. It is never a finding or a notification. The first
+      accepted write after this rule ships may truncate a burst of legacy
+      entries at once. That is one line each, once.
+
+    The bound is taught as well as enforced (ADR 0017's pattern). The report
+    contract states the cap. The model then writes closed entries tight, and
+    the process cut is the net, never the plan
+    (`reporting-notifications.md` rule 5). ADR 0038 records the choice. A
+    lower keep count leaves size unbounded. A separate archive file breaks
+    the document constraint (`constraints.md` rule 3). Model-written
+    summaries carry #67's failure mode.
+
 29. **Soft length budget.** A whole-wiki character budget `WIKI_CHAR_BUDGET`
     (20,000 — roughly a third of the shape pass's completion-token output
     ceiling as it stood at #40's writing; the ceiling has since been
@@ -855,9 +960,9 @@ load-bearing constraint of #5).
     (rule 4g's explicit decoding) [DONE: #77].
     **Soft**: `validate_wiki` (rule 15) never judges length, and a
     structurally valid over-budget wiki is accepted, written, committed,
-    and pushed exactly like any other — the anomaly-log budget (rule 28)
-    is the mechanical bound; this one is the drift alarm (a hard gate
-    would burn repair passes on formatting instead of hypotheses, and
+    and pushed exactly like any other — the anomaly-log budgets (rules 28
+    and 28a) are the mechanical bounds; this one is the drift alarm (a hard
+    gate would burn repair passes on formatting instead of hypotheses, and
     push against #5's document constraint). The pure function
     `wiki_budget_warnings(content) -> list[str]` returns the overshoot
     warning — empty within budget, otherwise exactly one line naming the
@@ -866,7 +971,7 @@ load-bearing constraint of #5).
     budget — summarize and prune; git history is the archive`. The
     warning surfaces in three places:
     - **write path:** when the final wiki that is written (post expire →
-      compact → stamp) exceeds the budget, one warning line to **stderr**
+      compact → truncate → stamp) exceeds the budget, one warning line to **stderr**
       (rule 16's channel for wiki problems); the write, the commit, and
       the push all proceed;
     - **repair pass:** when a repair pass runs (rule 18), the rejected
@@ -1008,7 +1113,7 @@ load-bearing constraint of #5).
       `updated_wiki` output — and rule 29a's size note alone did not
       stop the growth (#85 evidence: 27,773 characters, 39% over the
       20,000 budget, 16,402 of them in the Anomaly log). The Anomaly
-      log's own byte bound is #86's concern, not this rule's.
+      log's own size bound is #86's concern, not this rule's.
 
 ### Still-Empty Safety Net
 
@@ -1055,7 +1160,7 @@ write.
     repair** (rule 18's repair budget belongs to the validation leg;
     this pass gets exactly one invocation per patrol). A valid non-empty
     repaired wiki flows through the standard accepted-write tail
-    (expire → compact → stamp → write → commit → push, rule 16); an
+    (expire → compact → truncate → stamp → write → commit → push, rule 16); an
     absent, empty, or invalid one falls to the minimal-write fallback
     (rule 31). Scope boundary: only the reporting-pass still-empty
     outcome triggers the net — the rule-18 repair pass's own wiki-less
@@ -1067,7 +1172,9 @@ write.
     patrol writes the old wiki with the process-owned frontmatter
     advanced: the old on-disk wiki is run through the
     accepted-write tail — expire → compact → stamp → write → commit →
-    push — exactly as if the model had returned it verbatim. When the
+    push — exactly as if the model had returned it verbatim. Rule 28a's
+    truncation runs on no minimal-write leg: memory content stays as it is.
+    When the
     wiki file is absent (a brand-new deployment whose first patrol
     double-fails), the seed takes that ride: it is stamped-and-written —
     the one case where the seed reaches disk (rule 14a's deliberate
@@ -1175,6 +1282,12 @@ write.
   survive every accepted write; earlier ones are pruned by the patroller,
   recoverable from git history. Passed to the compaction pass by the write
   path (read at call time, the `STALE_AFTER` pattern) [DONE: #40]
+- `WIKI_ANOMALY_ENTRY_CHARS` — hard-coded constant (not env-configurable),
+  the closed-entry character cap (rule 28a): 400 characters of continuation
+  prose, head 240 and tail 160. Longer closed entries are truncated on whole
+  lines with one marker line; the metadata line never changes. Passed to
+  `truncate_closed_entries` by the write path (read at call time, the
+  `WIKI_ANOMALY_KEEP` pattern) [DONE: #86]
 - `WIKI_CHAR_BUDGET` — hard-coded constant (not env-configurable), the soft
   whole-wiki character budget (rule 29): 20,000 characters (the whole file,
   frontmatter included). Overshoot warns — write path (stderr),
@@ -1205,12 +1318,16 @@ write.
   prunes older ones, recoverable from git history — and a soft character
   budget warns on overshoot without ever gating validation. Growth taxes
   every patrol (the wiki is injected whole, rule 3); the archive is the
-  wiki repo, not the document [DONE: #40].
+  wiki repo, not the document [DONE: #40]. The keep budget is a count. So
+  each closed entry also carries a character cap (rule 28a). Large entries
+  can then no longer hold the working set above the soft budget on their own
+  [DONE: #86].
 
 ## Planned Changes
 
 | Ticket | Summary |
 |---|---|
+| ~~#86~~ | ~~Closed-entry character bound (rule 28a, ADR 0038; the model-facing half is `reporting-notifications.md` rule 5): rule 28 bounds the count of closed Anomaly-log entries, not their characters — 20 entries held 16,402 characters (59% of the wiki) — so a `resolved`/`expired` entry now keeps at most `WIKI_ANOMALY_ENTRY_CHARS` (400) characters of continuation prose. The pure `truncate_closed_entries(content, cap)` pass keeps whole lines from the top (head share 240) and the bottom (tail share 160), drops the middle, and writes one `_truncated:` marker line naming the dropped characters and git retention; the metadata line stays byte-for-byte (`verified_patrol`, `last_notified`), `watching` entries and the Watch-list stay whole, fences are kept or dropped whole, a second pass changes nothing, and one console line per truncated entry names the cap, and `cap = 0` is legal (marker only). It runs after the prune and before the carry and the stamp. Rule 29 stays the soft alarm; the report contract names the cap so the model writes closed entries tight. Impl commit also syncs `README.md`'s wiki-tail flow line and its working-set paragraphs, `ARCHITECTURE.md`'s working-set prose, `AGENTS.md`'s test list, `how/reporting-pipeline.md` (the write-path order), and `how/project-structure.md` (the symbol inventory)~~ |
 | ~~#111~~ | Wiki free prose uses plain English (rule 13a; the model-facing half is `reporting-notifications.md` rule 5). The shape pass writes the wiki, so `REPORT_CONTRACT` carries the ask. The ask is short sentences, one idea per sentence, the active voice, simple tenses, no idioms, and one word for one thing. It asks for the same word on the next patrol, which lowers rule 26's churn number. The rule covers free prose only. Frontmatter (rule 10), entry metadata lines (rule 12), `recheck` commands (rule 12a), `code`, and the skeleton (rule 11) are machine text and do not change. The rule is taught, never validated. No sentence counter, no prose lint, no schema change, no configuration key, and `validate_wiki` (rule 15) still judges no prose. The patrol system prompt does not repeat the ask (`patrol-engine.md` rule 3f is unchanged). Impl commit also syncs `AGENTS.md`'s test list, `how/reporting-pipeline.md`'s `REPORT_CONTRACT` row, and `how/project-structure.md`'s `test_wiki_budget.py` inventory~~ |
 | ~~#101~~ | ~~The Working-Set Budget intro's and rule 29's `REPORT_MAX_TOKENS` value retunes 24000 → 28000 (behavior is `reporting-notifications.md` rule 8b's `[DONE: #101]` block, ADR 0036): the reporting pass's completion bound gains reasoning-variance headroom after the v0.3.2 soak exhausted 24000. The wiki half is the rationale number only — the soft character budget `WIKI_CHAR_BUDGET`, the anomaly-log keep budget, the size note (rule 29a), and `validate_wiki`'s never-judges-length stance are unchanged. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#93~~ | ~~The notify clock is carried across rewrites (rule 12c's new carry paragraph + the rule-16 write-path ordering; the behavior contract is `reporting-notifications.md` rules 4c/4d, ADR 0033): `carry_last_notified(new_wiki, old_wiki)` restores the old on-disk `last_notified` onto every entry present in both wikis and drops model-written pairs the old wiki has no clock for, between the anomaly-log compaction and the notify stamp — so a rewrite that omits the optional process-owned pair cannot reset the digest cadence (the #93 evidence: `last_notified` dropped on every rewrite, digest re-firing every other patrol). Byte-for-byte otherwise, no schema change (`wiki_version` stays 1), validation still does not judge the pair. Impl commit also syncs `AGENTS.md`'s test list~~ |

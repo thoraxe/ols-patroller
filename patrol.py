@@ -183,16 +183,19 @@ WIKI_CHURN_WINDOW = 5               # revisions (one per commit) churn examines
 WIKI_STATS_LOPSIDED_MIN = 5         # graded entries before a spread can be lopsided
 WIKI_STATS_LOPSIDED_SHARE = 2 / 3   # dominant-level share that fires the warning
 
-# Wiki working-set budgets (wiki-memory.md rules 28-29, #40; ADR 0017). Git
-# history is the archive; the wiki is the working set: the Anomaly log is
-# mechanically bounded (the keep budget — every watching entry plus the last
-# N resolved/expired entries survive each accepted write), and the whole wiki
-# is softly budgeted (the drift alarm — warns, never gates validation).
+# Wiki working-set budgets (wiki-memory.md rules 28-29 and 28a, #40 and #86;
+# ADR 0017, ADR 0038). Git history is the archive; the wiki is the working
+# set: the Anomaly log is mechanically bounded (the keep budget — every
+# watching entry plus the last N resolved/expired entries survive each
+# accepted write — plus the closed-entry character cap, since a count slot
+# can otherwise cost ~820 characters of prose), and the whole wiki is softly
+# budgeted (the drift alarm — warns, never gates validation).
 # Hard-coded like the stats constants, not env-configurable — retuning them
 # is a spec change, not a config knob. Read at call time (the PUSH_* pattern)
 # so tests can bound them.
-WIKI_ANOMALY_KEEP = 20     # last resolved/expired Anomaly-log entries kept
-WIKI_CHAR_BUDGET = 20_000  # soft whole-wiki character budget (whole file)
+WIKI_ANOMALY_KEEP = 20          # last resolved/expired Anomaly-log entries kept
+WIKI_ANOMALY_ENTRY_CHARS = 400  # closed-entry continuation-prose cap (chars)
+WIKI_CHAR_BUDGET = 20_000       # soft whole-wiki character budget (whole file)
 
 # Egress allowlist (egress-control.md rule 6, #34; ADR 0030). Hard-coded, not
 # env-configurable (the ADR 0015 convention): the policy object's fixed name
@@ -1081,7 +1084,11 @@ Produce the final PatrolReport for the cluster patrol above:
      top of old. Keep the whole wiki within the soft budget of {WIKI_CHAR_BUDGET}
      characters (frontmatter included). The Anomaly log keeps only the
      last {WIKI_ANOMALY_KEEP} resolved/expired entries (the patroller prunes
-     older closed ones) — never hoard closed history there.
+     older closed ones) — never hoard closed history there. An Anomaly-log
+     entry with status resolved or expired keeps at most
+     {WIKI_ANOMALY_ENTRY_CHARS} characters of prose. The patroller truncates a
+     longer entry on whole lines and leaves a marker line. Git history has the
+     full entry.
      The wiki records current state only — never write patrol-history prose: no
      per-patrol headline log, no History: list, no "as of patrol #N" chronology.
      Git history is the record of what changed when. Keep the opening prose to a
@@ -2190,6 +2197,142 @@ def compact_anomaly_log(content: str, keep: int) -> tuple[str, list[str]]:
     return "\n".join(out), [entry_id for _idx, entry_id in closed[:beyond]]
 
 
+def _continuation_units(lines: list[str]) -> list[list[str]]:
+    """Rule 28a's truncation units: one line each, except that a fenced block
+    is one unit — the pass keeps or drops a block whole (an open fence would
+    swallow the rest of the document and fail rule 15). An unterminated block
+    is one unit running to the item's end."""
+    units: list[list[str]] = []
+    i = 0
+    while i < len(lines):
+        if lines[i].strip().startswith("```"):
+            j = i + 1
+            while j < len(lines) and not lines[j].strip().startswith("```"):
+                j += 1
+            units.append(lines[i:j + 1])
+            i = j + 1
+        else:
+            units.append([lines[i]])
+            i += 1
+    return units
+
+
+def _unit_chars(unit: list[str]) -> int:
+    """Rule 28a's measure: a unit's characters — `len(line)` summed, newlines
+    excluded (the unit the constant and the tests share)."""
+    return sum(len(line) for line in unit)
+
+
+# Rule 28a's marker line: one text source for the line the pass writes and the
+# shape it then ignores when it measures (so a second pass changes nothing).
+_TRUNCATION_MARKER = ("_truncated: {dropped} characters elided; "
+                      "git history has the full entry_")
+_TRUNCATION_MARKER_RE = re.compile(
+    "^" + re.escape(_TRUNCATION_MARKER).replace(re.escape("{dropped}"), r"\d+") + "$")
+
+
+def _truncation_marker(dropped: int) -> str:
+    """Rule 28a's one marker line, where the dropped lines stood: the count is
+    the dropped lines' characters, the retention phrase states the git-backed
+    case. Indented like the rest of the item, so the entry stays one item."""
+    return "  " + _TRUNCATION_MARKER.format(dropped=dropped)
+
+
+def _is_truncation_marker(line: str) -> bool:
+    """Rule 28a: the pass's OWN marker line, which it writes and then ignores
+    when it measures an entry (so a second pass changes nothing). Matched on
+    the emitted shape, never on a prefix: a model-written prose line that
+    happens to start `_truncated:` is prose and is measured like any other."""
+    return _TRUNCATION_MARKER_RE.match(line.strip()) is not None
+
+
+def _cap_continuation(continuation: list[str], cap: int) -> list[str] | None:
+    """Rule 28a: one closed entry's continuation capped to `cap` characters.
+
+    Returns the new continuation lines, or None when the entry is within the
+    cap and must be left byte-for-byte. Whole lines
+    are kept from the top (head share `cap * 3 // 5`) and from the bottom
+    (the rest), the units between them are dropped, and one marker line names
+    the dropped characters and git retention. Newlines never count; the
+    entry's own marker line is excluded from the measurement and replaced.
+    """
+    measured = [line for line in continuation
+                if not _is_truncation_marker(line)]
+    if sum(len(line) for line in measured) <= cap:
+        return None
+    units = _continuation_units(measured)
+    head_share = cap * 3 // 5
+    head, used = 0, 0
+    while head < len(units) and used + _unit_chars(units[head]) <= head_share:
+        used += _unit_chars(units[head])
+        head += 1
+    tail, used = len(units), 0
+    while tail > head and used + _unit_chars(units[tail - 1]) <= cap - head_share:
+        used += _unit_chars(units[tail - 1])
+        tail -= 1
+    dropped = sum(_unit_chars(unit) for unit in units[head:tail])
+    kept = [line for unit in units[:head] for line in unit]
+    kept.append(_truncation_marker(dropped))
+    kept.extend(line for unit in units[tail:] for line in unit)
+    return kept
+
+
+def truncate_closed_entries(content: str, cap: int) -> tuple[str, list[str]]:
+    """Rule 28a (#86): the closed-entry character cap — pure and deterministic.
+
+    Rule 28 bounds the number of closed Anomaly-log entries, not their length:
+    one live wiki carried 20 closed entries holding 16,402 characters (59% of
+    the document) with compaction working as designed. So a `resolved` or
+    `expired` Anomaly-log entry keeps at most `cap` characters of continuation
+    prose: whole lines from the top (head share 240 of the 400 default) and
+    from the bottom (the rest — the tail carries how the entry ended, the
+    rule-21 `auto-expired` annotation included), the units between them
+    dropped, and one marker line naming the dropped characters and git
+    retention. The metadata line (id, status, rule 20's `verified_patrol`
+    clock, rule 12c's `last_notified`) is never touched. Returns (rewritten
+    content, [truncated entry ids] in document order).
+
+    `watching` entries, the Watch-list (a closed entry there is the model's
+    placement to reconsider, rule 28's scope), the prose sections, the
+    frontmatter, and non-item prose in the Anomaly log stay whole; when
+    nothing is truncated the content is returned unchanged. cap = 0 is
+    marker-only for every closed entry (aggressive but legal). Whole lines and
+    whole fenced blocks cannot break the skeleton, so the truncated wiki still
+    passes validate_wiki.
+    """
+    lines = content.split("\n")
+    anomaly = next(((start, end) for name, start, end in _scan_sections(lines)
+                    if name == "Anomaly log"), None)
+    if anomaly is None:
+        return content, []
+    rewrites: dict[int, tuple[int, list[str]]] = {}  # start -> (end, new block)
+    truncated: list[str] = []
+    for idx in _scan_section_entries(lines, *anomaly):
+        pairs = _metadata_pairs(lines[idx])
+        if pairs.get("status") not in ("resolved", "expired"):
+            continue
+        end = _item_extent(lines, idx)
+        continuation = _cap_continuation(lines[idx + 1:end], cap)
+        if continuation is None:
+            continue
+        rewrites[idx] = (end, [lines[idx], *continuation])
+        truncated.append(pairs.get("id", ""))
+    if not rewrites:
+        return content, []
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        rewrite = rewrites.get(i)
+        if rewrite is None:
+            out.append(lines[i])
+            i += 1
+        else:
+            end, block = rewrite
+            out.extend(block)
+            i = end
+    return "\n".join(out), truncated
+
+
 # ---- notification dedup (reporting-notifications.md rules 4a-4e, #35) ----
 # Notifications are state-change keyed: the wiki's standing entries are the
 # diff baseline. Everything here is pure — no I/O, no model calls — and uses
@@ -3064,6 +3207,23 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
             print(f"[patrol] wiki: entry '{entry_id}' pruned from the Anomaly log "
                   f"(beyond the keep budget {WIKI_ANOMALY_KEEP}; "
                   "git history retains it)")
+        # Rule 28a (#86): the closed-entry character cap — pure and
+        # deterministic, after the prune (only survivors are rewritten, so the
+        # later metadata passes see untouched lines) and before the notify
+        # carry and the frontmatter stamp. A resolved/expired entry keeps at
+        # most WIKI_ANOMALY_ENTRY_CHARS characters of continuation prose; the
+        # metadata line, watching entries, and the Watch-list stay whole. One
+        # console line per truncated entry: truncation is wiki housekeeping,
+        # never a finding or a notification. The minimal-write legs (rules 31
+        # and 33) run no truncation — they write no model-authored content.
+        if not minimal_write:
+            new_wiki, truncated = truncate_closed_entries(
+                new_wiki, WIKI_ANOMALY_ENTRY_CHARS)
+            for entry_id in truncated:
+                print(f"[patrol] wiki: entry '{entry_id}' truncated in the "
+                      "Anomaly log (over the closed-entry cap "
+                      f"{WIKI_ANOMALY_ENTRY_CHARS}; "
+                      "git history retains the full prose)")
         # Rule 4d (#93): the notify clock is carried, not merely stamped —
         # the model drops the optional process-owned pair on every rewrite, so
         # the old on-disk value is restored onto every shared entry before the
@@ -3087,9 +3247,9 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
                              last_patrol=ts,
                              cluster_id=CLUSTER_ID)
         # Rule 29 (#40): the soft-budget warning — on the final wiki (post
-        # expire → compact → stamp), to stderr (rule 16's channel for wiki
-        # problems). The budget never gates: the write, commit, and push
-        # proceed regardless.
+        # expire → compact → truncate → stamp), to stderr (rule 16's channel
+        # for wiki problems). The budget never gates: the write, commit, and
+        # push proceed regardless.
         for warning in wiki_budget_warnings(stamped):
             print(f"[patrol] WARNING: {warning}", file=sys.stderr)
         write_wiki_atomic(wiki_path, stamped)

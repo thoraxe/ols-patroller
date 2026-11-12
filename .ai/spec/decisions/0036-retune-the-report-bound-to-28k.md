@@ -14,7 +14,7 @@ Date: 2026-11-10 · Status: proposed
 ADR 0034 set `REPORT_MAX_TOKENS` to 24000 and made the first reporting attempt
 take the retry's cheap shape (one `SHAPE_TOOL_KEEP` cap of 500 characters plus a
 pinned `REPORT_CONTRACT` concision ask). Its own closing condition was explicit:
-"If a 24k bound still measures tight after #86's anomaly-log byte bound lands,
+"If a 24k bound still measures tight after #86's anomaly-log size bound lands,
 retuning it is another spec change with a fresh soak."
 
 The v0.3.2 soak (#101) supplies that measurement, from the **completion** side,

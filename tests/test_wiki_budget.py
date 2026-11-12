@@ -6,6 +6,9 @@ budgets:
     WIKI_ANOMALY_KEEP / WIKI_CHAR_BUDGET             # rules 28-29 constants
     compact_anomaly_log(content, keep)                # rule 28 (compaction pass)
         -> (rewritten content, [pruned entry ids])
+    WIKI_ANOMALY_ENTRY_CHARS                          # rule 28a constant
+    truncate_closed_entries(content, cap)             # rule 28a (character cap)
+        -> (rewritten content, [truncated entry ids])
     wiki_budget_warnings(content) -> list[str]        # rule 29 (soft budget)
     wiki_stats: char_count / over_budget keys         # rule 25 amendment
     --wiki-stats: the size line + over-budget warning # rule 24 amendment
@@ -16,14 +19,16 @@ budgets:
 
 They fail before implementation (AttributeError on the missing symbols,
 AssertionError on the missing surfaces) and must pass after.
-Contract: .ai/spec/what/wiki-memory.md rules 28-29 (and rule 29b for the
-no-patrol-history ban, rule 13a for the plain-prose rule) plus the rule 24/25
-amendments [PLANNED: #40] [PLANNED: #85] [PLANNED: #111].
+Contract: .ai/spec/what/wiki-memory.md rules 28-29 (and rule 28a for the
+closed-entry character bound, rule 29b for the no-patrol-history ban, rule 13a for
+the plain-prose rule) plus the rule 24/25 amendments
+[PLANNED: #40] [PLANNED: #85] [PLANNED: #86] [PLANNED: #111].
 
 Scope note: like test_wiki_expiry.py, these tests pin the pure passes. The
-wiring into the patrol tail (expire -> compact -> stamp, the prune console
-lines, the stderr warning, the repair-pass inclusion) is verified
-end-to-end by the fake-model e2e in test_patrol_deepagents.py.
+wiring into the patrol tail (expire -> compact -> truncate -> carry -> stamp,
+the prune and truncation console lines, the stderr warning, the repair-pass
+inclusion, the minimal-write exclusion) is verified end-to-end by the
+fake-model e2e in test_patrol_deepagents.py.
 
 Run: uv run --group dev pytest tests/ -q
 """
@@ -72,6 +77,14 @@ def closed(i):
     status = "resolved" if i % 2 else "expired"
     return entry(id=f"A-{i}", status=status, recheck=None,
                  prose=f"  history prose {i}.\n  - sub-bullet {i}")
+
+
+def long_closed(i, lines=12, width=100):
+    """A closed Anomaly-log entry whose continuation is far over the
+    closed-entry character cap — the #86 evidence, one ~820-character entry."""
+    body = "\n".join(f"  line {n:02d} " + "x" * width
+                     for n in range(1, lines + 1))
+    return entry(id=f"A-{i}", status="expired", recheck=None, prose=body)
 
 
 def build_wiki(watch=(), anomaly=(), patrol_count=3):
@@ -306,6 +319,225 @@ def test_flipped_entries_land_newest_and_survive_the_cut():
     assert patrol.validate_wiki(out) == []
 
 
+# ------------------------------------------ the closed-entry character cap (#86, rule 28a)
+
+def test_anomaly_entry_cap_constant_surface():
+    """Rule 28a (#86): the closed-entry character cap is a pinned constant, like
+    the keep budget — retuning it is a spec change, not a config knob."""
+    assert patrol.WIKI_ANOMALY_ENTRY_CHARS == 400
+
+
+def _continuation(content):
+    """[(entry id, [continuation lines])] of the Anomaly log's items."""
+    return [(pairs_of(m)["id"], cont)
+            for m, cont in entry_blocks(section_body(content, "Anomaly log"))]
+
+
+def test_truncate_keeps_the_metadata_line_head_and_tail():
+    """Rule 28a: an over-cap closed entry keeps its metadata line byte for
+    byte, whole lines from the top and the bottom, and one marker line where
+    the middle lines stood; the compacted wiki still validates."""
+    wiki = build_wiki(anomaly=[long_closed(1)])
+    meta_before = entry_blocks(section_body(wiki, "Anomaly log"))[0][0]
+    out, truncated = patrol.truncate_closed_entries(wiki, cap=400)
+    assert truncated == ["A-1"]
+    blocks = entry_blocks(section_body(out, "Anomaly log"))
+    assert len(blocks) == 1, "truncation must never grow or split an entry"
+    meta, cont = blocks[0]
+    assert meta == meta_before, "the metadata line carries the clocks, never cut"
+    kept = [line for line in cont if "_truncated:" not in line]
+    assert sum(len(line) for line in kept) <= 400
+    assert kept[0].strip().startswith("line 01")   # head kept from the top
+    assert kept[-1].strip().startswith("line 12")  # tail kept from the bottom
+    assert kept[0].startswith("  ") and kept[-1].startswith("  "), \
+        "a kept line never loses its indentation (rule 28a)"
+    assert "line 06" not in out                    # a middle line was dropped
+    marker = [line for line in cont if "_truncated:" in line]
+    assert len(marker) == 1
+    assert marker[0].startswith("  _truncated: ")
+    assert "git history has the full entry" in marker[0]
+    assert patrol.validate_wiki(out) == []
+
+
+def test_truncate_marker_counts_the_dropped_characters():
+    """Rule 28a: the marker names how many characters the pass dropped, in
+    the cap's unit (line lengths, newlines excluded)."""
+    lines = [f"  line {n:02d} " + "x" * 100 for n in range(1, 13)]
+    wiki = build_wiki(anomaly=[entry(id="A-1", status="expired", recheck=None,
+                                     prose="\n".join(lines))])
+    out, truncated = patrol.truncate_closed_entries(wiki, cap=400)
+    assert truncated == ["A-1"]
+    kept = [line for line in out.split("\n")
+            if line.startswith("  line ")]
+    dropped = sum(len(line) for line in lines if line not in kept)
+    assert dropped > 0
+    assert f"_truncated: {dropped} characters elided" in out
+    assert sum(len(line) for line in kept) <= 400
+
+
+def test_truncate_leaves_a_short_closed_entry_unchanged():
+    """Rule 28a: within the cap nothing is dropped and the content returns
+    unchanged, byte for byte (rule 28's minimal-rewrite guarantee)."""
+    wiki = build_wiki(anomaly=[closed(1), closed(2)])
+    out, truncated = patrol.truncate_closed_entries(wiki, cap=400)
+    assert truncated == []
+    assert out == wiki
+
+
+def test_truncate_is_idempotent():
+    """Rule 28a: the pass ignores its own marker line when it measures, so a
+    second pass over a truncated wiki changes nothing. The fixture keeps 360
+    of the 400 characters, so counting the marker (~68) would push it over
+    the cap and a marker-counting pass would truncate again."""
+    wiki = build_wiki(anomaly=[long_closed(1, width=110)])
+    once, first = patrol.truncate_closed_entries(wiki, cap=400)
+    assert first == ["A-1"]
+    kept = [line for line in once.split("\n") if line.startswith("  line ")]
+    assert sum(len(line) for line in kept) == 360
+    assert len(kept) < 12
+    twice, truncated = patrol.truncate_closed_entries(once, cap=400)
+    assert truncated == []
+    assert twice == once
+
+
+def test_truncate_never_touches_watching_entries_or_the_watch_list():
+    """Rule 28a: `watching` entries keep their whole hypothesis and a closed
+    entry placed in the Watch-list is the model's placement to reconsider —
+    neither is truncated (rule 28's scope)."""
+    live = entry(id="A-live", status="watching", recheck=None,
+                 prose="  " + "y" * 900)
+    watch = entry(id="W-1", status="resolved",
+                  prose="  " + "z" * 900)
+    wiki = build_wiki(watch=[watch], anomaly=[live])
+    out, truncated = patrol.truncate_closed_entries(wiki, cap=400)
+    assert truncated == []
+    assert out == wiki
+
+
+def test_truncate_preserves_everything_outside_truncated_entries():
+    """Rule 28a: a minimal rewrite — the frontmatter, the prose sections, the
+    Watch-list, non-item prose in the Anomaly log, and every entry under the
+    cap stay byte for byte; only the truncated entry's middle lines vanish."""
+    note = "Closed history beyond the cap lives in git."
+    wiki = build_wiki(watch=[entry(id="W-1")],
+                      anomaly=[note, long_closed(1), closed(2)])
+    out, truncated = patrol.truncate_closed_entries(wiki, cap=400)
+    assert truncated == ["A-1"]
+    assert split_wiki(out)[0] == split_wiki(wiki)[0]  # frontmatter untouched
+    for section in ("Topology", "Baselines", "Open questions", "Watch-list"):
+        assert section_body(out, section) == section_body(wiki, section)
+    al = section_body(out, "Anomaly log")
+    assert note in al                       # non-item prose never touched
+    before = dict(_continuation(wiki))
+    after = dict(_continuation(out))
+    assert set(after) == {"A-1", "A-2"}
+    assert after["A-2"] == before["A-2"]    # under the cap: byte for byte
+    assert patrol.validate_wiki(out) == []
+
+
+def test_truncate_is_fence_aware():
+    """Rule 28a: fenced list-looking lines are prose — never truncated, never
+    counted as entries (the validator's scanning discipline, rule 11)."""
+    fenced = "```\n- id: FENCED · status: expired · fenced prose, not an entry\n```"
+    wiki = build_wiki(anomaly=[closed(1), fenced])
+    out, truncated = patrol.truncate_closed_entries(wiki, cap=400)
+    assert truncated == []
+    assert out == wiki
+    assert fenced in section_body(out, "Anomaly log")
+
+
+def test_truncate_keeps_a_fence_balanced():
+    """Rule 28a: a fenced block inside an entry is kept or dropped whole, so a
+    truncated entry never leaves an open fence (which would swallow the rest
+    of the document and fail rule 15)."""
+    prose = "\n".join(
+        ["  " + "a" * 100] * 6
+        + ["  ```", "  fenced block line", "  ```"]
+        + ["  " + "b" * 100] * 6)
+    wiki = build_wiki(anomaly=[entry(id="A-1", status="expired", recheck=None,
+                                     prose=prose)])
+    out, truncated = patrol.truncate_closed_entries(wiki, cap=400)
+    assert truncated == ["A-1"]
+    assert out.count("```") % 2 == 0, "the wiki's fences stay balanced"
+    assert patrol.validate_wiki(out) == []
+
+
+def test_truncate_keeps_a_fitted_fence_whole():
+    """Rule 28a: a fenced block that fits its share is kept whole, markers
+    included — the pass drops blocks, never half of one."""
+    prose = "\n".join(["  " + "a" * 20, "  ```", "  fence line", "  ```",
+                       "  " + "b" * 20, "  " + "c" * 20, "  " + "d" * 20])
+    wiki = build_wiki(anomaly=[entry(id="A-1", status="expired", recheck=None,
+                                     prose=prose)])
+    out, truncated = patrol.truncate_closed_entries(wiki, cap=100)
+    assert truncated == ["A-1"]
+    assert "```" in out and out.count("```") == 2
+    assert "fence line" in out
+    assert "b" * 20 not in out, "a middle line is dropped"
+    assert "d" * 20 in out, "the tail line is kept"
+    assert patrol.validate_wiki(out) == []
+
+
+def test_truncate_counts_a_fenced_block_toward_the_share():
+    """Rule 28a: a fenced block's lines count toward the share like any other
+    line, so a block that does not fit is dropped whole and the pass stops at
+    it — no free fence, no orphan fence marker."""
+    prose = "\n".join(["  " + "a" * 40, "  ```", "  " + "b" * 30, "  ```",
+                       "  " + "c" * 40])
+    wiki = build_wiki(anomaly=[entry(id="A-1", status="expired", recheck=None,
+                                     prose=prose)])
+    out, truncated = patrol.truncate_closed_entries(wiki, cap=100)
+    assert truncated == ["A-1"]
+    assert "```" not in out, "the fence block does not fit: dropped whole"
+    assert "b" * 30 not in out and "c" * 40 not in out
+    assert "a" * 40 in out, "the head line before the block is kept"
+    assert patrol.validate_wiki(out) == []
+
+
+def test_truncate_cap_zero_leaves_only_the_marker():
+    """Rule 28a: cap = 0 is legal — every closed entry keeps its metadata line
+    and the marker alone, while `watching` entries keep their prose."""
+    live = entry(id="A-live", status="watching", recheck=None,
+                 prose="  still live, never truncated")
+    wiki = build_wiki(anomaly=[long_closed(1), live])
+    out, truncated = patrol.truncate_closed_entries(wiki, cap=0)
+    assert truncated == ["A-1"]
+    assert [entry_id for entry_id, _ in _continuation(out)] == ["A-1", "A-live"]
+    cont = dict(_continuation(out))["A-1"]
+    assert [line for line in cont if "_truncated:" not in line] == []
+    assert "still live, never truncated" in out
+    assert patrol.validate_wiki(out) == []
+
+
+def test_truncate_returns_ids_in_document_order():
+    """Rule 28a: the returned ids follow document order, like rule 28's
+    pruned ids."""
+    wiki = build_wiki(anomaly=[long_closed(3), closed(1), long_closed(2)])
+    out, truncated = patrol.truncate_closed_entries(wiki, cap=400)
+    assert truncated == ["A-3", "A-2"]
+    assert patrol.validate_wiki(out) == []
+
+
+def test_truncate_keeps_the_auto_expired_annotation():
+    """Rule 28a's head+tail split: the rule-21 `auto-expired` annotation is
+    the entry's last line, so the tail keeps it — the reason the pass is not
+    head-only."""
+    long_watch = entry(
+        id="W-1", last_verified="2026-10-01",
+        prose="\n".join(f"  hypothesis line {n} " + "x" * 100
+                        for n in range(1, 8)))
+    new = build_wiki(watch=[long_watch])
+    old = build_wiki(watch=[entry(id="W-1", last_verified="2026-10-01",
+                                  verified_patrol=1)])
+    expired, flips = patrol.expire_stale_entries(new, old, patrol_count=7,
+                                                 stale_after=5)
+    assert flips == [("W-1", 6)]
+    out, truncated = patrol.truncate_closed_entries(expired, cap=400)
+    assert truncated == ["W-1"]
+    assert "auto-expired at patrol 7" in out
+    assert patrol.validate_wiki(out) == []
+
+
 # ---------------------------------------------------------- the soft budget (rule 29)
 
 def test_budget_warnings_empty_within_budget():
@@ -407,6 +639,30 @@ def test_report_contract_states_working_set_expectations():
         "the contract's old closing sentence must be reworded per the rule 5"
         " amendment — prose entries are expired by the model, closed"
         " Anomaly-log history is pruned by the patroller")
+
+
+# reporting-notifications.md rule 5's #86 clause, verbatim: the model learns
+# the closed-entry character cap, so it writes closed entries tight instead of
+# delegating the cut to the process (wiki-memory.md rule 28a).
+def closed_entry_budget_clause(cap):
+    """The rule 5 clause with the cap value the constant carries — the number
+    is part of the contract text, so the clause moves when the cap moves."""
+    return (
+        "An Anomaly-log entry with status resolved or expired keeps at most "
+        f"{cap} characters of prose. The patroller truncates a longer entry on "
+        "whole lines and leaves a marker line. Git history has the full entry."
+    )
+
+
+def test_report_contract_states_the_closed_entry_character_budget():
+    """reporting-notifications.md rule 5 (#86): the working-set text also
+    states the closed-entry character cap verbatim, with the number the
+    constant carries — taught as well as enforced."""
+    flat = " ".join(patrol.REPORT_CONTRACT.split())
+    clause = closed_entry_budget_clause(patrol.WIKI_ANOMALY_ENTRY_CHARS)
+    assert clause in flat, (
+        "REPORT_CONTRACT must carry the closed-entry character-cap clause with"
+        " the current WIKI_ANOMALY_ENTRY_CHARS value")
 
 
 # ------------------------------- the no-patrol-history contract (#85, rule 29b)
