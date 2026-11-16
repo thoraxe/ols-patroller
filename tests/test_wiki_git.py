@@ -2,7 +2,7 @@
 
 These tests pin the public surface of patrol.py's planned wiki-git region:
 
-    ensure_wiki_repo(wiki_dir) -> bool          # rule 4a/4b: init at startup
+    ensure_wiki_repo(wiki_dir, branch) -> bool  # rule 4a/4b: init at startup
     write_wiki_atomic(wiki_path, content)       # rule 4c: temp file + rename
     commit_wiki(wiki_path, findings, cluster_id) -> bool   # rule 4d
     push_wiki(wiki_dir, remote) -> bool         # rule 4e: bounded best-effort push
@@ -39,24 +39,24 @@ def git(*args, cwd):
 def test_ensure_wiki_repo_inits_when_absent(tmp_path):
     wiki_dir = tmp_path / "wiki"
     wiki_dir.mkdir()
-    assert patrol.ensure_wiki_repo(wiki_dir) is True
+    assert patrol.ensure_wiki_repo(wiki_dir, "cluster/local") is True
     assert (wiki_dir / ".git").is_dir()
     top = git("rev-parse", "--show-toplevel", cwd=wiki_dir).stdout.strip()
     assert Path(top) == wiki_dir
-    # default branch is main (rule 4a)
+    # default branch is the cluster branch (rules 4a/4a1)
     ref = git("symbolic-ref", "HEAD", cwd=wiki_dir).stdout.strip()
-    assert ref == "refs/heads/main"
+    assert ref == "refs/heads/cluster/local"
 
 
 def test_ensure_wiki_repo_creates_missing_directory(tmp_path):
     wiki_dir = tmp_path / "wiki"  # does not exist yet
-    assert patrol.ensure_wiki_repo(wiki_dir) is True
+    assert patrol.ensure_wiki_repo(wiki_dir, "cluster/local") is True
     assert (wiki_dir / ".git").is_dir()
 
 
 def test_ensure_wiki_repo_idempotent(tmp_path):
-    assert patrol.ensure_wiki_repo(tmp_path) is True
-    assert patrol.ensure_wiki_repo(tmp_path) is True  # already a repo: no error
+    assert patrol.ensure_wiki_repo(tmp_path, "cluster/local") is True
+    assert patrol.ensure_wiki_repo(tmp_path, "cluster/local") is True  # already a repo: no error
     assert git("rev-parse", "--is-inside-work-tree",
                cwd=tmp_path).stdout.strip() == "true"
 
@@ -66,7 +66,7 @@ def test_ensure_wiki_repo_without_git_binary(tmp_path, monkeypatch):
     def no_git(*args, **kwargs):
         raise FileNotFoundError("git not found")
     monkeypatch.setattr(patrol.subprocess, "run", no_git)
-    assert patrol.ensure_wiki_repo(tmp_path) is False
+    assert patrol.ensure_wiki_repo(tmp_path, "cluster/local") is False
 
 
 # ------------------------------------------------------------------ write_wiki_atomic
@@ -100,7 +100,7 @@ def test_write_wiki_atomic_failure_leaves_old_intact(tmp_path, monkeypatch):
 # ------------------------------------------------------------------ commit_wiki
 
 def test_commit_wiki_message_and_identity(tmp_path):
-    patrol.ensure_wiki_repo(tmp_path)
+    patrol.ensure_wiki_repo(tmp_path, "cluster/local")
     wiki = tmp_path / "cluster-wiki.md"
     patrol.write_wiki_atomic(wiki, "# wiki v1\n")
     findings = [{"severity": "info"}, {"severity": "warn"}, {"severity": "crit"}]
@@ -112,7 +112,7 @@ def test_commit_wiki_message_and_identity(tmp_path):
 
 
 def test_commit_wiki_number_increments(tmp_path):
-    patrol.ensure_wiki_repo(tmp_path)
+    patrol.ensure_wiki_repo(tmp_path, "cluster/local")
     wiki = tmp_path / "cluster-wiki.md"
     patrol.write_wiki_atomic(wiki, "# v1\n")
     patrol.commit_wiki(wiki, [], "c")
@@ -124,7 +124,7 @@ def test_commit_wiki_number_increments(tmp_path):
 
 
 def test_commit_wiki_no_change_no_commit(tmp_path):
-    patrol.ensure_wiki_repo(tmp_path)
+    patrol.ensure_wiki_repo(tmp_path, "cluster/local")
     wiki = tmp_path / "cluster-wiki.md"
     patrol.write_wiki_atomic(wiki, "# same\n")
     assert patrol.commit_wiki(wiki, [], "c") is True
@@ -136,7 +136,7 @@ def test_commit_wiki_no_change_no_commit(tmp_path):
 def test_commit_wiki_stages_only_the_wiki_file(tmp_path):
     """Rule 4d: exactly the wiki file is staged — a tracked, modified stray file
     must NOT ride along (this is what rules out a literal `git commit -am`)."""
-    patrol.ensure_wiki_repo(tmp_path)
+    patrol.ensure_wiki_repo(tmp_path, "cluster/local")
     stray = tmp_path / "stray.txt"
     stray.write_text("baseline\n")
     git("add", "stray.txt", cwd=tmp_path)
@@ -166,7 +166,7 @@ def test_commit_wiki_independent_of_home_and_user_config(tmp_path, monkeypatch):
     """Rule 4d: git invocations work with no readable HOME / user git config."""
     monkeypatch.setenv("HOME", str(tmp_path / "no-such-home"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "no-such-xdg"))
-    patrol.ensure_wiki_repo(tmp_path)
+    patrol.ensure_wiki_repo(tmp_path, "cluster/local")
     wiki = tmp_path / "cluster-wiki.md"
     patrol.write_wiki_atomic(wiki, "# wiki\n")
     assert patrol.commit_wiki(wiki, [{"severity": "warn"}], "c") is True
@@ -177,14 +177,14 @@ def test_commit_wiki_independent_of_home_and_user_config(tmp_path, monkeypatch):
 def test_push_wiki_success(tmp_path):
     wiki_dir = tmp_path / "wiki"
     remote = tmp_path / "remote.git"
-    patrol.ensure_wiki_repo(wiki_dir)
+    patrol.ensure_wiki_repo(wiki_dir, "cluster/local")
     git("init", "--bare", "-b", "main", str(remote), cwd=tmp_path)
     wiki = wiki_dir / "cluster-wiki.md"
     patrol.write_wiki_atomic(wiki, "# wiki\n")
     patrol.commit_wiki(wiki, [], "c")
     assert patrol.push_wiki(wiki_dir, str(remote)) is True
     local_sha = git("rev-parse", "HEAD", cwd=wiki_dir).stdout.strip()
-    remote_sha = git("rev-parse", "--verify", "refs/heads/main",
+    remote_sha = git("rev-parse", "--verify", "refs/heads/cluster/local",
                      cwd=remote).stdout.strip()
     assert remote_sha == local_sha
 
@@ -203,7 +203,7 @@ def test_push_wiki_retries_are_bounded(tmp_path, monkeypatch):
     monkeypatch.setattr(patrol, "PUSH_BACKOFF", 0)  # no sleeping in tests
 
     wiki_dir = tmp_path / "wiki"
-    patrol.ensure_wiki_repo(wiki_dir)
+    patrol.ensure_wiki_repo(wiki_dir, "cluster/local")
     wiki = wiki_dir / "cluster-wiki.md"
     patrol.write_wiki_atomic(wiki, "# wiki\n")
     patrol.commit_wiki(wiki, [], "c")

@@ -188,7 +188,7 @@ def test_wiki_history_degrades_on_undecodable_blobs(tmp_path):
     may hold cp1252 blobs; the production archive is UTF-8."""
     wiki = tmp_path / "wiki" / "cluster-wiki.md"
     wiki.parent.mkdir()
-    assert patrol.ensure_wiki_repo(wiki.parent)
+    assert patrol.ensure_wiki_repo(wiki.parent, "cluster/local")
     wiki.write_bytes(wiki_text().replace(ARROW, "-").replace(YO, "o")
                      .encode("cp1252"))   # cp1252 ` · ` = 0xB7
     assert patrol.commit_wiki(wiki, [], "test") is True

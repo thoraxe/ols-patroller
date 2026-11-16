@@ -166,9 +166,17 @@ patrol N writes the rules patrol N+1 follows.
 The wiki directory is a git repo (initialized at startup if absent): each
 wiki-changing patrol stages exactly the wiki file and commits
 `patrol N: X findings, Y warn` — irreversibility insurance, since a bad rewrite
-is always revertible. Set `PATROL_WIKI_REMOTE` to replicate the repo off-cluster
-(best-effort, bounded, never blocks the patrol; the local repo is the source of
-truth). If git is unavailable, the patroller degrades to file-only. The wiki is
+is always revertible. A new repo starts on its cluster branch
+`cluster/<PATROL_CLUSTER_ID>`; an adopted repo keeps the branch it already has
+(typically `main`), and the patroller never renames or switches it.
+`PATROL_CLUSTER_ID` is a slug: lowercase letters, digits, `.`, `_`, `-`; 1–63
+characters; starts and ends alphanumeric; no `..`; no `.lock` suffix. An invalid
+value fails patrol startup with a config error. Set `PATROL_WIKI_REMOTE` to
+replicate the repo off-cluster (best-effort, bounded, never blocks the patrol;
+the local repo is the source of truth): the current branch is pushed to the
+same-named branch, so one remote repo can hold one branch per cluster, and a
+read-only hub reads each branch's `cluster-wiki.md` at the branch tip. If git is
+unavailable, the patroller degrades to file-only. The wiki is
 a bounded working set: every watching Anomaly-log entry plus the last 20
 resolved/expired ones survive each accepted write (older closed entries are
 pruned by the patroller — one console line each — and stay recoverable from
@@ -238,8 +246,8 @@ that list into a default-deny policy — render it with `--egress-policy` (see
 | `PATROL_MAX_STEPS` | `30` | LLM-turn exploration budget per patrol (raised from 15 after real-cluster runs; GLM needs >15 turns even single-node — if exhausted, the reporting pass reports from observations so far) |
 | `PATROL_INTERVAL` | `21600` | seconds (`--loop`, 6 h) |
 | `PATROL_TOOL_TIMEOUT` | `60` | per-command timeout |
-| `PATROL_CLUSTER_ID` | `local` | cluster identity for wiki commit emails (`patrol@<id>`) |
-| `PATROL_WIKI_REMOTE` | — | if set, wiki commits are pushed there (best-effort replication) |
+| `PATROL_CLUSTER_ID` | `local` | cluster identity for wiki commit emails (`patrol@<id>`) and the cluster branch `cluster/<id>`; must be a slug (lowercase letters, digits, `.`, `_`, `-`; 1–63 characters; starts and ends alphanumeric; no `..`; no `.lock` suffix) |
+| `PATROL_WIKI_REMOTE` | — | if set, wiki commits are pushed there on the same-named branch (best-effort replication); one repo can hold one branch per cluster |
 | `PATROL_WIKI_STALE_AFTER` | `5` | auto-expire a watch-list entry — flip to `expired`, move it to the Anomaly log with an `auto-expired` annotation — when its `last_verified` has not advanced for this many accepted wiki writes; `0` disables the flip (the per-entry clock is still kept) |
 | `--wiki-stats` (CLI flag) | — | print the wiki's health numbers (verification rate, resolution ratio, confidence spread, churn, size against the soft 20,000-char budget) and exit — fully offline: no `PATROL_*` env, no cluster, no repo initialization; a missing wiki file is an error, everything else degrades to `n/a`. Churn examines the last 5 wiki commits (prose-only — process stamps and date advances never count as rewording) and the lopsided-confidence warning fires at ≥ 2/3 of ≥ 5 graded entries; both thresholds are hard-coded, not configurable |
 
@@ -336,7 +344,15 @@ resolves it by making the manifest match the bound claim).
 
 The wiki replicates off-cluster if `PATROL_WIKI_REMOTE` is set in the patrol
 Secret (best-effort: the push never blocks a patrol; the local repo on the PVC
-is the source of truth). For an SSH remote (e.g.
+is the source of truth). The push sends the current branch to the same-named
+branch on the remote — a fresh repo pushes `cluster/<PATROL_CLUSTER_ID>`, an
+adopted repo pushes its own branch (for example `main`). No force-push, fetch,
+rebase, or merge ever runs: a diverged remote branch rejects the push and the
+local commit stands. To share one remote repo across clusters, give each cluster
+a distinct `PATROL_CLUSTER_ID`; each branch then carries that cluster's
+`cluster-wiki.md` at the same path. A read-only hub reads one branch at a time
+(`git fetch`, then `git show cluster/<id>:cluster-wiki.md`); a `git worktree`
+per branch is optional. For an SSH remote (e.g.
 `git@github.com:you/cluster-wiki.git`) the push needs a deploy key — wired in
 as an opt-in patch, so the base manifests stay self-contained (`oc apply -k`
 works with zero git wiring):
