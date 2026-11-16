@@ -76,7 +76,12 @@ non-deterministic, the wiki plus logs are the audit trail.
 The wiki directory is a git repo (#3, `.ai/spec/decisions/0003`): one wiki-changing
 patrol, one commit (`patrol N: X findings, Y warn`), atomic writes (temp + rename),
 optional `PATROL_WIKI_REMOTE` replication that never blocks the loop — in-cluster it
-lives on the `/wiki` PVC. Since #5 the wiki carries a validated skeleton: YAML
+lives on the `/wiki` PVC. A new repo initializes on its cluster branch
+`cluster/<PATROL_CLUSTER_ID>`; an adopted repo keeps its current branch (typically
+`main`). The push sends the current branch to the same-named remote branch, so one
+remote repo holds one branch per cluster; the patroller never force-pushes, fetches,
+rebases, or merges, and every local wiki behavior stays single-branch (#89,
+`.ai/spec/decisions/0039`). Since #5 the wiki carries a validated skeleton: YAML
 frontmatter whose counters (`patrol_count`, `last_patrol`, `cluster_id`) are
 process-stamped after validation — never model-trusted — plus entry metadata lines
 (`id · status · first_seen · last_verified · source · confidence`) in Watch-list and

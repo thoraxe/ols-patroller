@@ -158,6 +158,11 @@ WIKI_REMOTE = os.environ.get("PATROL_WIKI_REMOTE", "")     # optional wiki repli
 PUSH_ATTEMPTS = 3  # max push attempts
 PUSH_TIMEOUT  = 30 # seconds per push attempt
 PUSH_BACKOFF  = 5  # seconds between push attempts
+# Cluster-branch prefix (wiki-memory.md rule 4a1, ADR 0039). A wiki repo this
+# process initializes is born on `cluster/<CLUSTER_ID>`; an adopted repo keeps
+# its own branch and the same-named push follows it. Hard-coded, not
+# env-configurable — the ref layout is a spec decision, not a config knob.
+WIKI_BRANCH_PREFIX = "cluster/"
 
 # Wiki skeleton schema (wiki-memory.md rules 10-12, #5). WIKI_VERSION is the
 # skeleton schema version: bumping it is a deliberate spec migration, never a
@@ -2698,16 +2703,44 @@ def _run_git(wiki_dir: Path, *args: str, timeout: float | None = None,
         return None
 
 
-def ensure_wiki_repo(wiki_dir) -> bool:
-    """Rule 4a/4b: make the wiki directory a git repo, before the first patrol.
+# A cluster slug is one git ref component (rule 4a1): lowercase ASCII letters,
+# digits, `.`, `_`, `-`; 1-63 characters; first and last alphanumeric; no `..`;
+# no `.lock` suffix. The slug doubles as the cluster branch's ref component, so
+# every ref-special value is refused rather than mapped into a branch.
+_CLUSTER_SLUG_RE = re.compile(r"[a-z0-9](?:[a-z0-9._-]{0,61}[a-z0-9])?")
 
-    Creates the directory if absent, inits a repo (default branch `main`) if the
-    directory contains none, and adopts any repo already there (the wiki dir
-    must be dedicated to the wiki — patrol commits land in whatever repo
-    governs it). Returns True when git backing is on. Returns False — with a
-    warning, never an exception — when git is missing or init fails: the process
-    then runs file-only (no init/commit/push), and the wiki file itself keeps
-    working.
+
+def wiki_branch(cluster_id: str) -> str:
+    """Rule 4a1 (#89): the cluster branch `cluster/<CLUSTER_ID>`.
+
+    `cluster_id` must be a slug — lowercase ASCII letters, digits, `.`, `_`,
+    `-`; 1-63 characters; first and last alphanumeric; no `..`; no `.lock`
+    suffix. Raises `ValueError` naming the offending value: a bad value is a
+    config error, never silently mapped into a (broken) branch ref.
+    """
+    value = cluster_id if isinstance(cluster_id, str) else str(cluster_id)
+    if (not _CLUSTER_SLUG_RE.fullmatch(value)
+            or ".." in value
+            or value.endswith(".lock")):
+        raise ValueError(
+            f"invalid CLUSTER_ID {value!r}: it must be a slug (lowercase "
+            "letters, digits, '.', '_', '-'; 1-63 characters; starts and ends "
+            "alphanumeric; no '..'; no '.lock' suffix)")
+    return WIKI_BRANCH_PREFIX + value
+
+
+def ensure_wiki_repo(wiki_dir, branch: str) -> bool:
+    """Rule 4a/4b (#89): make the wiki directory a git repo, before the first
+    patrol.
+
+    Creates the directory if absent, inits a repo on `branch` (`cluster/<id>`,
+    rule 4a1) if the directory contains none, and adopts any repo already there
+    (the wiki dir must be dedicated to the wiki — patrol commits land in
+    whatever repo governs it). An adopted repo keeps its current branch: this
+    function never checks out, creates, or renames one. Returns True when git
+    backing is on. Returns False — with a warning, never an exception — when git
+    is missing or init fails: the process then runs file-only (no
+    init/commit/push), and the wiki file itself keeps working.
     """
     wiki_dir = Path(wiki_dir)
     try:
@@ -2718,7 +2751,7 @@ def ensure_wiki_repo(wiki_dir) -> bool:
         return False
     if (wiki_dir / ".git").exists():
         return True  # already a repository of any origin: adopt it
-    r = _run_git(wiki_dir, "init", "-b", "main")
+    r = _run_git(wiki_dir, "init", "-b", branch)
     if r is None or r.returncode != 0:
         print(f"[patrol] WARNING: wiki repo init failed ({_git_err(r)}); "
               "running file-only (no wiki history)", file=sys.stderr)
@@ -3428,12 +3461,21 @@ def main() -> None:
         die("set PATROL_API_KEY, PATROL_BASE_URL, and PATROL_MODEL in the environment "
             "(any OpenAI-compatible chat-completions endpoint).")
 
+    # Rule 4a1 (#89): CLUSTER_ID is the cluster branch's ref component, so an
+    # invalid slug is a startup config error. It runs before any wiki touch, and
+    # after the offline modes above, which do not need a valid value.
+    try:
+        branch = wiki_branch(CLUSTER_ID)
+    except ValueError as e:
+        die(f"PATROL_CLUSTER_ID={CLUSTER_ID!r} is invalid: {e}")
+
     kubectl = resolve_kubectl()
     wiki_path = Path(args.wiki)
     # Git-backed wiki (#3): ensure the wiki directory is a repo before the first
-    # patrol (wiki-memory.md rule 4a). If git is unusable this warns and the
-    # process runs file-only (rule 4b) — patrol behavior never depends on git.
-    if ensure_wiki_repo(wiki_path.parent):
+    # patrol (wiki-memory.md rule 4a), on the cluster branch (rule 4a1). If git
+    # is unusable this warns and the process runs file-only (rule 4b) — patrol
+    # behavior never depends on git.
+    if ensure_wiki_repo(wiki_path.parent, branch):
         print(f"[patrol] wiki repo: {wiki_path.parent}")
 
     # #27: the per-turn output stream is on by default — verbose is derived
