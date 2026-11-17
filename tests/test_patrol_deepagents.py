@@ -104,6 +104,7 @@ import yaml
 from langchain_openai import ChatOpenAI
 
 import patrol
+from support import patrol_free_env
 
 
 # --------------------------------------------------------------- scripted endpoint
@@ -1758,3 +1759,216 @@ def test_notification_dedup_fails_open_on_the_minimal_write_leg(
     assert "minimal write" in captured.out
     assert "🔔 NOTIFY: [W-1] worker-1 NotReady" in captured.out
     assert "suppressed 1 standing-unchanged" not in captured.err
+
+
+# ------------------------------------------------------- fleet hub mode (#13)
+# The hub reads the other clusters' wikis from the shared remote and never
+# writes a spoke branch (fleet-hub.md rules 9-28, ADR 0041). The spoke stays
+# untouched: no fetch, no fleet block, one system prompt.
+
+FLEET_HEADER = ("=== FLEET WIKIS (prior notes from other clusters — "
+                "read-only, may be stale) ===")
+
+
+def spoke_wiki(cluster_id, entry_id):
+    """A skeleton-valid spoke wiki: the projection keeps the frontmatter and
+    the entry metadata lines (fleet-hub.md rule 18)."""
+    return (
+        "---\n"
+        "wiki_version: 1\n"
+        f"cluster_id: {cluster_id}\n"
+        "patrol_count: 7\n"
+        'last_patrol: "2026-11-15T00:00:00+00:00"\n'
+        "---\n"
+        "# Cluster Wiki\n"
+        "\n"
+        "## Topology\n"
+        f"- {cluster_id} spoke prose\n"
+        "\n"
+        "## Baselines\n"
+        "_(none)_\n"
+        "\n"
+        "## Watch-list\n"
+        f"- id: W-{entry_id} · status: watching · first_seen: 2026-11-14"
+        " · last_verified: 2026-11-15 · source: kubectl get nodes"
+        " · confidence: high · recheck: get nodes\n"
+        f"  {cluster_id} watch prose\n"
+        "\n"
+        "## Open questions\n"
+        "- (none yet)\n"
+        "\n"
+        "## Anomaly log\n"
+        "_(empty)_\n"
+    )
+
+
+def fleet_remote(tmp_path, cluster_ids):
+    """A shared bare wiki remote with one pushed spoke branch per cluster."""
+    remote = tmp_path / "fleet.git"
+    git("init", "--bare", "-b", "main", str(remote), cwd=tmp_path)
+    for cluster_id in cluster_ids:
+        spoke = tmp_path / f"spoke-{cluster_id}"
+        spoke.mkdir()
+        assert patrol.ensure_wiki_repo(spoke, patrol.wiki_branch(cluster_id))
+        wiki = spoke / "cluster-wiki.md"
+        patrol.write_wiki_atomic(wiki, spoke_wiki(cluster_id, cluster_id))
+        assert patrol.commit_wiki(wiki, [], cluster_id) is True
+        assert patrol.push_wiki(spoke, str(remote)) is True
+    return remote
+
+
+def help_text() -> str:
+    """patrol.py's argparse usage text — the CLI surface under test."""
+    result = subprocess.run(
+        [sys.executable, str(Path(__file__).resolve().parent.parent / "patrol.py"),
+         "--help"], capture_output=True, text=True,
+        env=patrol_free_env())
+    return result.stdout + result.stderr
+
+
+def branch_refs(repo):
+    """Every branch ref and its commit — the remote's state, for equality."""
+    out = git("for-each-ref", "--format=%(refname) %(objectname)", cwd=repo).stdout
+    return dict(line.split(" ", 1) for line in out.splitlines() if line)
+
+
+def system_prompt_of(request) -> str:
+    """The system message a recorded chat request carries."""
+    for message in request.get("messages", []):
+        if message.get("role") == "system":
+            return str(message.get("content"))
+    return ""
+
+
+def test_hub_patrol_carries_the_fleet_block_and_never_writes_a_spoke(
+        tmp_path, monkeypatch, capsys):
+    """Rules 9-28: the hub reads both spoke branches, hands the model a
+    bounded block after its own wiki, and leaves every spoke branch
+    byte-identical. The hub writes and pushes only its own branch."""
+    assert "--hub" in help_text(), (
+        "hub mode is a CLI mode (fleet-hub.md rule 1) — argparse rejects the "
+        "flag before implementation"
+    )
+    remote = fleet_remote(tmp_path, ["alpha", "beta"])
+    before = branch_refs(remote)
+    wiki = tmp_path / "hub" / "cluster-wiki.md"
+    endpoint = ScriptedEndpoint(turns=NATURAL_TURNS, report=REPORT)
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--hub", "--max-steps", "8",
+                   wiki_remote=str(remote), cluster_id="hub-cluster")
+
+    # the fleet block reached the model's exploration prompt, in rule 23's slot
+    agents = endpoint.agent_requests
+    assert agents, "no agent requests recorded"
+    prompt = endpoint.last_user_prompt(agents[0])
+    assert FLEET_HEADER in prompt, "the hub prompt carries the fleet block (rule 23)"
+    assert "--- cluster/alpha (cluster alpha)\n" in prompt
+    assert "--- cluster/beta (cluster beta)\n" in prompt
+    assert (prompt.index("=== CLUSTER WIKI")
+            < prompt.index(FLEET_HEADER)
+            < prompt.index("Begin your patrol")), (
+        "the fleet block sits after the hub's own wiki and before the patrol "
+        "instruction (rule 23)"
+    )
+    assert "alpha watch prose" not in prompt, (
+        "the block carries the projection, not the spoke prose (rule 19)"
+    )
+    assert "id: W-alpha · status: watching" in prompt
+
+    # the hub teaching is in the system prompt (rule 29)
+    system_prompt = system_prompt_of(agents[0])
+    assert system_prompt.startswith(patrol.SYSTEM_PROMPT), (
+        "the hub keeps the base system prompt (rule 29)"
+    )
+    assert system_prompt.endswith(patrol.HUB_PROMPT), (
+        "the hub appends the teaching (rule 29)"
+    )
+    assert len(system_prompt) == len(patrol.SYSTEM_PROMPT) + len(patrol.HUB_PROMPT), (
+        "the hub prompt is exactly the base prompt plus HUB_PROMPT (rule 29)"
+    )
+
+    # the fleet block also reaches the shape pass through the conversation
+    shapes = endpoint.shape_requests
+    assert len(shapes) == 1
+    assert FLEET_HEADER in endpoint.conversation_text(shapes[0])
+
+    # no spoke write: every branch the spokes own is byte-identical
+    after = branch_refs(remote)
+    for branch, sha in before.items():
+        assert after.get(branch) == sha, (
+            f"the hub must never move a spoke branch ({branch}, rule 10)"
+        )
+    # the hub pushed exactly one new branch — its own
+    assert set(after) - set(before) == {"refs/heads/cluster/hub-cluster"}
+    assert sorted(b for b in after) == [
+        "refs/heads/cluster/alpha", "refs/heads/cluster/beta",
+        "refs/heads/cluster/hub-cluster",
+    ]
+
+    # rule 34: fleet findings and notifications ride the standard report — the
+    # console surface is unchanged (no new channel, no new severity)
+    out = capsys.readouterr().out
+    assert "🔔 NOTIFY: worker-1 has been NotReady for 40 days" in out
+    assert "[warn] worker-1 NotReady for 40d" in out
+
+    # the hub's own wiki: its own identity, written and committed once
+    written = wiki.read_text(encoding="utf-8")
+    assert frontmatter(written)["cluster_id"] == "hub-cluster"
+    assert git("rev-list", "--count", "HEAD", cwd=wiki.parent).stdout.strip() == "1"
+    assert git("for-each-ref", "--format=%(refname)",
+               "refs/heads", cwd=wiki.parent).stdout.split() == [
+        "refs/heads/cluster/hub-cluster"]
+
+
+def test_hub_patrol_survives_an_unreachable_fleet(tmp_path, monkeypatch, capsys):
+    """Rule 12: a failed fleet read is one stderr line and a patrol with no
+    fleet block — never a failed patrol."""
+    assert "--hub" in help_text(), (
+        "hub mode is a CLI mode (fleet-hub.md rule 1) — argparse rejects the "
+        "flag before implementation"
+    )
+    wiki = tmp_path / "hub" / "cluster-wiki.md"
+    endpoint = ScriptedEndpoint(turns=NATURAL_TURNS, report=REPORT)
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--hub", "--max-steps", "8",
+                   wiki_remote=str(tmp_path / "missing.git"),
+                   cluster_id="hub-cluster")
+
+    captured = capsys.readouterr()
+    fleet_lines = [ln for ln in captured.err.splitlines()
+                   if "fleet" in ln.lower()]
+    assert len(fleet_lines) == 1, (
+        f"one stderr line names the failed fleet read and nothing more "
+        f"(rule 12), got {fleet_lines}"
+    )
+    prompt = endpoint.last_user_prompt(endpoint.agent_requests[0])
+    assert FLEET_HEADER not in prompt, "no fleet block without a fleet read"
+    assert "e2e wiki marker" in wiki.read_text(encoding="utf-8"), (
+        "the patrol still writes its own wiki (rule 12)"
+    )
+
+
+def test_spoke_patrol_never_fetches_the_fleet(tmp_path, monkeypatch):
+    """Rule 9: a spoke patrol keeps rule 4f2 — no fetch, no fleet block, and
+    the system prompt stays SYSTEM_PROMPT alone (rule 29)."""
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    endpoint = ScriptedEndpoint(turns=NATURAL_TURNS, report=REPORT)
+
+    git_calls = []
+    real_run = subprocess.run
+
+    def recording_run(cmd, *args, **kwargs):
+        if cmd and cmd[0] == "git":
+            git_calls.append(list(cmd))
+        return real_run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(patrol.subprocess, "run", recording_run)
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
+
+    agents = endpoint.agent_requests
+    assert agents, "no agent requests recorded"
+    prompt = endpoint.last_user_prompt(agents[0])
+    assert FLEET_HEADER not in prompt, "a spoke carries no fleet block (rule 23)"
+    assert system_prompt_of(agents[0]) == patrol.SYSTEM_PROMPT, (
+        "a spoke's system prompt stays byte-for-byte (rule 29)"
+    )
+    for cmd in git_calls:
+        assert "fetch" not in cmd, f"a spoke never fetches the fleet (rule 9): {cmd}"

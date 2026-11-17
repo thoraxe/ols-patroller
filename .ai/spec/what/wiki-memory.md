@@ -114,9 +114,9 @@ knowledge base of the observed cluster.
     current branch to the **same-named branch** on that remote. The push runs
     after each successful commit. The branch is `cluster/<CLUSTER_ID>` on a repo
     this patroller initialized. It is the adopted branch on an adopted repo
-    (rule 4a). Deploy-key wiring is the deployment's concern (#2). The patroller
-    only runs `git push`. The patroller never force-pushes. It never fetches,
-    rebases, or merges. A remote branch that diverged rejects the push
+    (rule 4a). Deploy-key wiring is the deployment's concern (#2). The push
+    runs only `git push`. The patroller never force-pushes. The push never
+    fetches, rebases, or merges. A remote branch that diverged rejects the push
     (non-fast-forward). The local commit stands. The push is best-effort and
     bounded. It has at most `PUSH_ATTEMPTS` (3) attempts, `PUSH_TIMEOUT` (30 s)
     per attempt, and `PUSH_BACKOFF` (5 s) between attempts. Any failure is
@@ -175,16 +175,17 @@ knowledge base of the observed cluster.
      `git show <branch>:cluster-wiki.md`. The frontmatter `cluster_id` names the
      cluster. The hub is read-only for spoke branches. It never pushes, amends,
      or deletes them. A `git worktree add` per branch is an operator convenience
-     for browsing. No code requires it. The hub is #13. No patroller behavior
-     changes here.
+     for browsing. No code requires it. The hub is a hub patrol (`fleet-hub.md`)
+     [PLANNED: #13]. A spoke's behavior does not change.
 
 4f2. All local wiki behavior is single-branch. The wiki read, validation,
      expiry, compaction, stamping, history churn, and `--wiki-stats` use only the
      local wiki file. Commits and pushes use only the current branch of the local
-     repo. The patroller never fetches, checks out, or merges another branch. It
+     repo. A spoke patrol never fetches, checks out, or merges another branch. It
      never reads another cluster's branch. It never assumes a fixed branch name
      from the remote. A fleet-wide read is the hub's job (rule 4f1), not the
-     spoke's [DONE: #89].
+     spoke's. The hub's fleet read is the one fetch (`fleet-hub.md` rule 11)
+     [PLANNED: #13].
 
 ### Format Contract
 
@@ -1385,6 +1386,7 @@ write.
 
 | Ticket | Summary |
 |---|---|
+| #13 | The hub's fleet read is the wiki layer's one fetch. The push never fetches (rule 4e), and a spoke patrol never fetches or reads another branch (rule 4f2), so the hub's read is not a contradiction. The behavior contract is `fleet-hub.md` (ADR 0041): the read is read-only, one bounded fetch, one read per spoke branch tip, and the hub writes only its own wiki on its own branch. Nothing else changes — the wiki format, the skeleton, `validate_wiki`, expiry, compaction, the closed-entry cap, the notify carry and stamp, the digest, and `--wiki-stats` stay single-branch and untouched. Impl commit also syncs `how/project-structure.md` and `AGENTS.md`'s test list |
 | ~~#89~~ | ~~Fleet wiki layout (rules 4a, 4a1, 4e, 4f1, 4f2, ADR 0039): one remote repo holds one branch `cluster/<CLUSTER_ID>` per cluster, each carrying its `cluster-wiki.md` at the same path. A wiki repo initializes on the cluster branch; an adopted repo keeps its own branch (typically `main`), and the same-named push follows it — no rename, no history rewrite. `CLUSTER_ID` becomes a ref component, so it must be a slug (lowercase letters, digits, `.`, `_`, `-`; 1–63 characters; starts and ends alphanumeric; no `..`; no `.lock`); `WIKI_BRANCH_PREFIX` (`cluster/`) and the pure `wiki_branch(cluster_id)` expose the rule, and an invalid value fails startup with a config error. The push never forces, fetches, rebases, or merges: a diverged remote branch rejects the push and the local commit stands. The hub read procedure is a fetch of the remote's branches plus a per-branch read of `cluster-wiki.md` at each tip (`git worktree` is optional, operator-only); the hub never pushes to a spoke branch. All local behavior (read, validation, expiry, compaction, stats, churn, commit, push) stays single-branch and never fetches or reads another cluster's branch. `/wiki`, `--wiki /wiki/cluster-wiki.md`, the manifests, and the one-document constraint keep their behavior. No manifest behavior changes. Impl commit also syncs `how/project-structure.md` (the `ensure_wiki_repo`/push signatures and the new `wiki_branch`/`WIKI_BRANCH_PREFIX` symbols), `README.md` (the wiki-remote paragraphs and config table), `ARCHITECTURE.md`'s wiki prose, and `AGENTS.md`'s test list~~ |
 | ~~#86~~ | ~~Closed-entry character bound (rule 28a, ADR 0038; the model-facing half is `reporting-notifications.md` rule 5): rule 28 bounds the count of closed Anomaly-log entries, not their characters — 20 entries held 16,402 characters (59% of the wiki) — so a `resolved`/`expired` entry now keeps at most `WIKI_ANOMALY_ENTRY_CHARS` (400) characters of continuation prose. The pure `truncate_closed_entries(content, cap)` pass keeps whole lines from the top (head share 240) and the bottom (tail share 160), drops the middle, and writes one `_truncated:` marker line naming the dropped characters and git retention; the metadata line stays byte-for-byte (`verified_patrol`, `last_notified`), `watching` entries and the Watch-list stay whole, fences are kept or dropped whole, a second pass changes nothing, and one console line per truncated entry names the cap, and `cap = 0` is legal (marker only). It runs after the prune and before the carry and the stamp. Rule 29 stays the soft alarm; the report contract names the cap so the model writes closed entries tight. Impl commit also syncs `README.md`'s wiki-tail flow line and its working-set paragraphs, `ARCHITECTURE.md`'s working-set prose, `AGENTS.md`'s test list, `how/reporting-pipeline.md` (the write-path order), and `how/project-structure.md` (the symbol inventory)~~ |
 | ~~#111~~ | Wiki free prose uses plain English (rule 13a; the model-facing half is `reporting-notifications.md` rule 5). The shape pass writes the wiki, so `REPORT_CONTRACT` carries the ask. The ask is short sentences, one idea per sentence, the active voice, simple tenses, no idioms, and one word for one thing. It asks for the same word on the next patrol, which lowers rule 26's churn number. The rule covers free prose only. Frontmatter (rule 10), entry metadata lines (rule 12), `recheck` commands (rule 12a), `code`, and the skeleton (rule 11) are machine text and do not change. The rule is taught, never validated. No sentence counter, no prose lint, no schema change, no configuration key, and `validate_wiki` (rule 15) still judges no prose. The patrol system prompt does not repeat the ask (`patrol-engine.md` rule 3f is unchanged). Impl commit also syncs `AGENTS.md`'s test list, `how/reporting-pipeline.md`'s `REPORT_CONTRACT` row, and `how/project-structure.md`'s `test_wiki_budget.py` inventory~~ |

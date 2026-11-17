@@ -162,8 +162,10 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
 
 ### Context Inputs
 
-11. Each patrol's user prompt contains: current timestamp, dry-cluster note (if
-    enabled), the output of an in-flight AgenticRuns check, and the full wiki.
+11. Each patrol's user prompt has four parts. They are the current timestamp,
+    the dry-cluster note (if enabled), the in-flight AgenticRuns output, and
+    the full wiki. A hub patrol adds the fleet block after the wiki
+    (`fleet-hub.md` rule 23) [PLANNED: #13].
 12. The in-flight check runs `get agenticruns -A` through the same read-only guard
     before exploration, as best-effort dedup context — if the CRD is absent the
     command errors and the patrol proceeds anyway.
@@ -248,6 +250,7 @@ terminates, and what context it is given. Implementation wiring (deepagents) is 
 
 | Ticket | Summary |
 |---|---|
+| #13 | Fleet mode adds one user-prompt section and one system-prompt constant: the fleet block after the CLUSTER WIKI section (rule 11's amendment) and `HUB_PROMPT` appended to the system prompt in hub mode only (`fleet-hub.md` rules 23–30, ADR 0041). The tool surface, the guard, the exploration order, the budgets, and the spoke's prompt do not change. Impl commit also syncs `how/agent-engine.md` if the system-prompt assembly is described there |
 | ~~#101~~ | ~~The engine-constants line above carries `REPORT_MAX_TOKENS` **28000** (`reporting-notifications.md` rule 8b's `[DONE: #101]` block, ADR 0036): the v0.3.2 soak's first reporting attempt spent the whole 24000 completion budget (`out 24000` at 289 s) and returned an empty wiki, so the bound gains 4000 tokens of reasoning-variance headroom while staying inside the gateway's ~900 s window at the slowest observed throughput. No other constant changes — `REQUEST_MAX_TOKENS` 16000, `REPORT_TIMEOUT` 900 s, and #97's `SHAPE_TOOL_KEEP` 500 are untouched — and there is no new config surface. Tracked in milestone v0.3.3 (patch). Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#97~~ | ~~The reporting/repair completion bound drops to `REPORT_MAX_TOKENS` 24000 in the engine-constants line above (behavior is `reporting-notifications.md` rule 8b, ADR 0034): the first reporting attempt takes the #88 retry's cheap shape (500-character tool results, a contract concision ask), so the bound is insurance for a slow attempt while staying above #63's observed ~20k completion. The request bound (`REPORT_TIMEOUT` 900 s) is unchanged. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#88~~ | ~~The reporting/repair completion bound drops to `REPORT_MAX_TOKENS` 32000 in the engine-constants line above (`reporting-notifications.md` rule 8b, ADR 0031): a 64k-bounded shape-pass generation hits the model gateway's ~900 s wall clock at ~902 s (≈71 output tok/s), while #63's successful run needed only ~20k completion tokens — 32000 is ~450 s of generation and still ~12k of reasoning headroom. Exploration's `REQUEST_MAX_TOKENS` 16000 and both timeouts are unchanged; no new config surface~~ |

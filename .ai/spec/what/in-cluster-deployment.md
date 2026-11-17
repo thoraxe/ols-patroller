@@ -10,28 +10,30 @@ layer 3 (RBAC boundary) real, and what the CI-published image
 
 ### Layout & Apply
 
-1. The manifests live in `manifests/` at the repo root as a kustomize root:
-   `oc apply -k manifests/` applies the whole set. The directory's complete
-   contents are `kustomization.yaml` (listing exactly six resources:
-   `namespace.yaml`, `serviceaccount.yaml`, `clusterrolebinding.yaml`,
-   `pvc.yaml`, `secret.yaml`, `deployment.yaml`), the committed
-   `secret.yaml.example` template — a template, not a resource (rule 14) —
-   the committed `deploy-key-patch.yaml.example` template — likewise a
-   template, not a resource (rule 16a) — the committed
-   `pvc-patch.yaml.example` template — likewise a template, not a resource
-   (rule 5a) [DONE: #68] — the committed
-   `egress-networkpolicy.yaml.example` template — likewise a template, not a
-   resource (`egress-control.md` rule 8) [DONE: #34] — and, once the
-   operator follows
-   rule 14, the gitignored `secret.yaml` itself, plus, once the operator
-   follows rule 16c, the gitignored `deploy-key-patch.yaml` copy and the
-   matching `patches:` entry in the operator's `kustomization.yaml`, plus,
-   once the operator follows rule 5a, the gitignored `pvc-patch.yaml` copy
-   and its matching `patches:` entry [DONE: #68], plus, once the operator
-   follows `egress-control.md` rule 8, the gitignored
-   `egress-networkpolicy.yaml` policy artifact — applied out-of-band with
-   `oc apply -f`, never a resource of this kustomization [DONE: #34];
-   nothing else [DONE: #2] [example templates + opt-in copy: DONE: #39].
+1. The manifests live in `manifests/` at the repo root as a kustomize root.
+   `oc apply -k manifests/` applies the whole set. The directory holds these
+   committed files:
+   - `kustomization.yaml` — the root. It lists exactly six resources:
+     `namespace.yaml`, `serviceaccount.yaml`, `clusterrolebinding.yaml`,
+     `pvc.yaml`, `secret.yaml`, `deployment.yaml`.
+   - `secret.yaml.example` — the Secret template, not a resource (rule 14).
+   - `deploy-key-patch.yaml.example` — the deploy-key patch template, not a
+     resource (rule 16a) [DONE: #39].
+   - `pvc-patch.yaml.example` — the storage-class patch template, not a
+     resource (rule 5a) [DONE: #68].
+   - `egress-networkpolicy.yaml.example` — the egress policy template, not a
+     resource (`egress-control.md` rule 8) [DONE: #34].
+   - `hub-patch.yaml.example` — the hub-mode patch template, not a resource
+     (rule 18) [PLANNED: #13].
+
+   The operator adds gitignored copies and never commits them. These are
+   `secret.yaml` (rule 14), `deploy-key-patch.yaml` plus its `patches:` entry
+   (rule 16c), and `pvc-patch.yaml` plus its `patches:` entry (rule 5a). The
+   list also holds `hub-patch.yaml` plus its `patches:` entry (rule 18)
+   [PLANNED: #13]. The operator also renders `egress-networkpolicy.yaml` and
+   applies it with `oc apply -f`. It is never a kustomization resource
+   (`egress-control.md` rule 8). The directory holds nothing else [DONE: #2]
+   [example templates + opt-in copy: DONE: #39].
 2. Every namespaced object carries the literal `metadata.namespace:
    ols-patroller`, the `ClusterRoleBinding`'s subject namespace is the same,
    and the `kustomization.yaml` sets **no** `namespace:` field — the kustomize
@@ -333,6 +335,30 @@ layer 3 (RBAC boundary) real, and what the CI-published image
        the pod; `git ls-remote <remote-url>` from anywhere shows the remote
        head) [DONE: #39].
 
+### The fleet hub (optional)
+
+18. A hub is the same image and the same base manifests with hub mode on
+    (`fleet-hub.md`). `manifests/hub-patch.yaml.example` is a committed
+    strategic-merge patch over the base Deployment (the rule-16a pattern). It
+    carries `apiVersion`, kind `Deployment`, and the base name and namespace. At
+    the spec level it carries only `spec.template.spec`, with the base
+    container's merge key and no `image:` key. It sets exactly two things: the
+    container args, and the `PATROL_CLUSTER_ID` literal `hub`. The args are
+    exactly `--loop --interval 21600 --wiki /wiki/cluster-wiki.md --hub`.
+    The operator copies the template to a gitignored
+    `manifests/hub-patch.yaml` and sets the hub's own slug. The operator points
+    `PATROL_WIKI_REMOTE` at the shared fleet repo in the Secret (rule 14), adds
+    the `patches:` entry, and applies. The hub's deploy key takes the rule-16a
+    form. A deploy key is repo-scoped, so it grants the hub read and write
+    access to the shared repo. The hub's code pushes its own branch only
+    (`fleet-hub.md` rule 5). The operator applies both patches:
+    `hub-patch.yaml` and `deploy-key-patch.yaml`. The hub needs no
+    second cluster credential and no extra RBAC (rule 4). It adds no egress
+    destination beyond `PATROL_WIKI_REMOTE`'s host (`egress-control.md` rule
+    4c). A spoke's deployment does not change. `README.md` documents the
+    procedure end-to-end under a `### Fleet hub (optional)` subsection (the
+    rule-16d standard) [PLANNED: #13].
+
 ## Configuration Surface
 
 - `manifests/` — the kustomize root (files per rule 1); namespace and object
@@ -351,6 +377,10 @@ layer 3 (RBAC boundary) real, and what the CI-published image
   [DONE: #89]
 - `PYTHONUNBUFFERED` — literal env `1`; unbuffered stdout so pod logs show
   patrol output as it prints (rule 10a)
+- `manifests/hub-patch.yaml.example` — committed template for the optional hub
+  deployment (rule 18): container args with `--hub` and the hub's
+  `PATROL_CLUSTER_ID`; the operator's gitignored `manifests/hub-patch.yaml`
+  copy + `patches:` entry are the opt-in [PLANNED: #13]
 - `GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_0` / `GIT_CONFIG_VALUE_0` — literal
   env trio setting `safe.directory=/wiki` for in-container git (rule 10b)
 - Secret keys — required `PATROL_API_KEY`, `PATROL_BASE_URL`,
@@ -400,14 +430,17 @@ layer 3 (RBAC boundary) real, and what the CI-published image
   [DONE: #34 — this bullet previously read “no NetworkPolicy”; #34
   supersedes that sentence].
 - The deployment adds no patrol behavior: same `patrol.py`, same guard, same
-  env contract — wiring only. No new **patrol** configuration exists; the only
-  change to `system-overview.md`'s Configuration Surface is a pointer to this
-  deployment surface.
+  env contract — wiring only. The one exception is hub mode. It is the
+  patrol's own opt-in contract (`fleet-hub.md`) and an optional mode in
+  v0.4.0; the base manifests never turn it on. No other **patrol** configuration
+  exists; the only change to `system-overview.md`'s Configuration Surface is a
+  pointer to this deployment surface [PLANNED: #13].
 
 ## Planned Changes
 
 | Ticket | Summary |
 |---|---|
+| #13 | The optional hub deployment (rule 18 + rule 1's file list + the Configuration Surface entry): a committed `manifests/hub-patch.yaml.example` strategic-merge template that sets the container args with `--hub` and the hub's `PATROL_CLUSTER_ID` literal, the gitignored operator copy plus its `patches:` entry, and the README `### Fleet hub (optional)` procedure. The behavior is `fleet-hub.md` (ADR 0041); the base manifests, the RBAC grant, the PVC, and a spoke's deployment do not change. Impl commit also syncs `.gitignore` (`manifests/hub-patch.yaml`), `README.md`, and `AGENTS.md`'s test list |
 | ~~#89~~ | ~~`PATROL_CLUSTER_ID` must be a slug, because it is the cluster-branch ref component (rule 10's amendment; behavior is `wiki-memory.md` rules 4a1/4f1, ADR 0039). The manifest comment names the rule. The `/wiki` mount, `--wiki /wiki/cluster-wiki.md`, the PVC, and the one-document constraint do not change. The impl commit flips the rule-10 marker once implemented and syncs `README.md`'s operator procedure~~ |
 | ~~#102~~ | The manifests default to the **current release tag**, not `:main` (rule 8's rewrite + new rule 8b's local override + rule 8a's mutable-tag wording + rule 17 step 6's release-update path; contract behavior is `container-image.md` rules 17/19, ADR 0035): `oc apply -k manifests/` deploys the newest published `vX.Y.Z` release, and testing the latest merge or another registry is an explicit local override (uncommitted `images:` edit, overlay, or `oc set image`). Release cutting pins before tagging (`container-image.md` rule 19), and a published tag is never moved. README documents the override and the release order; the static suite pins the default's exact current release tag (flipping the old `newTag == main` assertion) and the README procedures. The v0.3.2 release predates the rule; its pin lands on `main` in the implementation commit, without moving the tag. Impl commit also syncs `AGENTS.md`'s test list and the stale `manifests/deployment.yaml`/`image.yml` rule-range comments |
 | ~~#34~~ | ~~The optional egress allowlist artifact (rule 1's directory amendment + the Configuration Surface entry): a committed `manifests/egress-networkpolicy.yaml.example` template, the gitignored operator `egress-networkpolicy.yaml` rendered by `--egress-policy` and applied with `oc apply -f`, and the superseded “no NetworkPolicy” constraint. Contract: `egress-control.md` (ADR 0030)~~ |

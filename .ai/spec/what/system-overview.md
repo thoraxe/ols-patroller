@@ -39,7 +39,8 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
    `--wiki-stats` mode, which reads only the wiki and needs no model env
    [DONE: #8], and the offline `--egress-policy` mode, whose only input is
    `PATROL_BASE_URL` (it never reads `PATROL_API_KEY`/`PATROL_MODEL`)
-   [DONE: #34].
+   [DONE: #34]. In `--hub` mode, `PATROL_WIKI_REMOTE` is also required
+   (`fleet-hub.md` rule 8) [PLANNED: #13].
 
 ### Component Inventory
 
@@ -104,6 +105,11 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
      (`PATROL_BASE_URL`, `PATROL_NOTIFY_URLS`, `PATROL_WIKI_REMOTE`), a
      committed template plus a gitignored operator artifact applied with
      `oc apply -f` (`egress-control.md`) [DONE: #34].
+12d. **Fleet hub** — an opt-in mode (`--hub`). The patroller also reads the other
+     clusters' wikis. It makes one bounded read-only fetch of the shared remote.
+     It builds one bounded projection per spoke branch. It adds one bounded
+     prompt block (`fleet-hub.md`) [PLANNED: #13]. The hub writes only its own
+     wiki. It pushes only its own branch. No spoke behavior changes.
 
 ### Lifecycle
 
@@ -166,7 +172,9 @@ Environment variables:
   on the same-named branch (best-effort, bounded; the local commit is the
   source of truth) [DONE: #3] [DONE: #89 — one repo can hold one branch per
   cluster]. In-cluster, the SSH form rides the optional deploy-key wiring
-  (`in-cluster-deployment.md` rules 16a–16d [DONE: #39])
+  (`in-cluster-deployment.md` rules 16a–16d [DONE: #39]). Required in hub mode:
+  it is the shared fleet repo the hub reads every spoke branch from
+  (`fleet-hub.md` rules 8–17) [PLANNED: #13]
 - `PATROL_WIKI_STALE_AFTER` — accepted-write threshold for stale-entry expiry:
   a Watch-list entry whose `last_verified` has not advanced for this many
   accepted writes is flipped to `expired` and moved to the Anomaly log
@@ -178,11 +186,14 @@ CLI flags: `--once` (default), `--loop`, `--interval`, `--dry-cluster`, `--wiki`
 stream, on by default [DONE: #27 — was the opt-in `-v/--verbose`]), and
 `--wiki-stats` (print the wiki's four health numbers and exit — offline, no
 `PATROL_*` env needed, never runs a patrol [DONE: #8]; plus the #40 size
-line: the character count and over-budget warning [DONE: #40]), and
+line: the character count and over-budget warning [DONE: #40]),
 `--egress-policy` (print the default-deny egress `NetworkPolicy` for the
 process's own egress configuration and exit — offline, `PATROL_BASE_URL` its
 only required input, no model call, no cluster, no writes [DONE: #34]
-(`egress-control.md` rules 7–7e).
+(`egress-control.md` rules 7–7e)), and
+`--hub` (fleet mode: the patrol also reads the other clusters' wikis from
+`PATROL_WIKI_REMOTE`; a CLI flag only, like `--dry-cluster` [PLANNED: #13]
+(`fleet-hub.md`)).
 In-cluster, the image's default command is `--loop --interval 21600 --wiki
 /wiki/cluster-wiki.md` [DONE: #1] [DONE: #25] (`container-image.md`).
 
@@ -203,6 +214,10 @@ timeout — `REQUEST_TIMEOUT` 300 s per exploration turn, `REPORT_TIMEOUT`
 the whole client]; wiki push bounds — 3 attempts, 30 s per attempt, 5 s
 backoff between attempts [DONE: #3]; wiki skeleton schema version `WIKI_VERSION` = 1 [DONE: #5];
 cluster-branch prefix `WIKI_BRANCH_PREFIX` = `cluster/` [DONE: #89];
+fleet-read bounds — `FLEET_MAX_WIKIS` = 5 spokes per patrol, `FLEET_WIKI_CHARS`
+= 2000 characters per spoke projection, `FLEET_TIMEOUT` = 30 s for the one fetch
+attempt, and the hub teaching `HUB_PROMPT` (`fleet-hub.md` rule 30)
+[PLANNED: #13];
 wiki stats — churn window `WIKI_CHURN_WINDOW` = 5 revisions, lopsided
 thresholds 5 graded entries / 2/3 share [DONE: #8]; wiki working-set budgets —
 anomaly-log keep `WIKI_ANOMALY_KEEP` = 20 entries, closed-entry cap
@@ -231,6 +246,7 @@ documents). Milestone shape:
 | Ticket | Summary |
 |---|---|
 | ~~#89~~ | ~~Fleet wiki layout: one remote repo holds one branch per cluster (rules 4a/4a1/4e/4f1/4f2 in `wiki-memory.md`, ADR 0039). The configuration surface changes: `PATROL_CLUSTER_ID` must be a slug, and it names the cluster branch; `PATROL_WIKI_REMOTE` receives the same-named branch. The `WIKI_BRANCH_PREFIX` constant joins the hard-coded constant line. Tracked in milestone v0.4.0~~ |
+| #13 | Fleet patrolling through the hub (`fleet-hub.md`, ADR 0041): the opt-in `--hub` mode reads the shared wiki remote read-only, carries a bounded projection of each spoke branch, and records fleet state in the hub's own wiki. No spoke write, no second cluster credential, no new egress destination; the spoke's behavior and prompt do not change. Impl commit also syncs `how/project-structure.md`, `README.md`, `AGENTS.md`'s test list, and `.gitignore` |
 | ~~#101~~ | ~~The hard-coded constant line's `REPORT_MAX_TOKENS` retunes 24000 → 28000 (`reporting-notifications.md` rule 8b, ADR 0036), after the v0.3.2 soak's first attempt exhausted the 24000 completion budget and returned an empty wiki. No other constant changes; `REPORT_TIMEOUT` stays 900 s and #97's cheap first-attempt shape is untouched. Tracked in milestone v0.3.3 (patch)~~ |
 | ~~#97~~ | ~~The hard-coded constant line's `REPORT_MAX_TOKENS` drops 32000 → 24000 (`reporting-notifications.md` rule 8b, ADR 0034), alongside the first attempt taking the #88 retry's cheap shape. No other constant changes; `REPORT_TIMEOUT` stays 900 s. Tracked in milestone v0.3.2 (patch), not v0.3.1's reliability gate~~ |
 | v0.1 (#1–#4, #9, #11, #24, #25, #27, #28) | In-cluster: Containerfile, manifests (SA + cluster-reader + PVC + Deployment), git-backed wiki, e2e tests in-repo, deployment defaults & observability (6 h cadence, unbuffered + verbose logs, git-safe `/wiki`), guard `--raw` refusal [#9 was later re-scoped to apprise multi-sink (v0.3) with its original dedup scope moved to #35] |

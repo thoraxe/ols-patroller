@@ -21,9 +21,12 @@ redefined here.
   branch tip.
 - **Spoke** — a cluster's own patroller process and its wiki repo. A spoke
   writes only its own wiki branch and pushes only that branch (#89).
-- **Hub** — a fleet-level reader of the spoke branches in one remote wiki repo
-  (#13). The hub is read-only for spoke branches; its own patrol is not
-  implemented yet.
+- **Fleet** — the set of spoke wikis in one remote wiki repo, one branch each,
+  that the hub reads (#13, ADR 0039/0041). A fleet is not a service: there is
+  no central memory, no spoke API, and no merge protocol.
+- **Hub** — a patroller that also reads the fleet, one bounded projection per
+  spoke branch (`fleet-hub.md`, ADR 0041) [PLANNED: #13]. The hub is read-only
+  for spoke branches. It patrols its own cluster like a spoke.
 - **Watch-list** — wiki section holding the refinement loop: rules patrol N writes
   for patrol N+1 (what to re-check, escalate, or expire) — each entry carrying
   its `recheck` command (#6); entries not re-verified within

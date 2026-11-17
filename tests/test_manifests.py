@@ -15,7 +15,9 @@ Contract: .ai/spec/what/in-cluster-deployment.md [PLANNED: #2]
 [storage-class override: rule 5a, PLANNED: #68]
 [release-pinned default + local override: rules 8/8b/17 step 6, PLANNED: #102]
 [egress allowlist template: rule 1 + `.ai/spec/what/egress-control.md` rule 8,
-PLANNED: #34 — the policy contract itself lives in `tests/test_egress_control.py`].
+PLANNED: #34 — the policy contract itself lives in `tests/test_egress_control.py`]
+[hub deployment template: rule 18, PLANNED: #13 — the fleet contract itself
+lives in `tests/test_fleet_hub.py`].
 
 Run: uv run --group dev pytest tests/ -q
 """
@@ -162,13 +164,17 @@ def test_no_extra_files_in_manifests_dir():
         # artifact, not resources (the policy is applied out-of-band).
         "egress-networkpolicy.yaml.example",
         "egress-networkpolicy.yaml",
+        # #13: the hub-mode patch template (committed, rule 18) and the
+        # operator's gitignored copy — template / copy, not resources.
+        "hub-patch.yaml.example",
+        "hub-patch.yaml",
     }
     names = {p.name for p in MANIFESTS.glob("*") if p.is_file()}
     assert names <= allowed, (
         f"manifests/ may contain only kustomization.yaml, the six resources "
         f"and the .example templates, plus the gitignored operator copies "
         f"(secret.yaml, deploy-key-patch.yaml, pvc-patch.yaml, "
-        f"egress-networkpolicy.yaml) (rule 1), got extra: "
+        f"egress-networkpolicy.yaml, hub-patch.yaml) (rule 1), got extra: "
         f"{sorted(names - allowed)}"
     )
 
@@ -905,3 +911,98 @@ def test_readme_documents_pvc_patch_procedure():
             f"the README storage-class procedure must mention {needle!r} "
             f"(rule 5a, #68)"
         )
+
+
+# ------------------------------------------------- fleet hub deployment (#13)
+
+HUB_PATCH_EXAMPLE = MANIFESTS / "hub-patch.yaml.example"
+
+
+def test_hub_patch_example_template():
+    """Rule 18 (#13): the committed hub-mode template — a strategic-merge
+    patch over the base Deployment that sets exactly the container args (with
+    --hub) and the hub's own PATROL_CLUSTER_ID literal. It never carries an
+    image key, so it cannot drift the kustomize image override."""
+    assert HUB_PATCH_EXAMPLE.exists(), (
+        "manifests/hub-patch.yaml.example must exist (rule 18, #13) — the "
+        "committed template for the optional hub deployment"
+    )
+    doc = yaml.safe_load(HUB_PATCH_EXAMPLE.read_text(encoding="utf-8"))
+    assert doc["apiVersion"] == "apps/v1", "the patch targets apps/v1 (rule 18)"
+    assert doc["kind"] == "Deployment"
+    assert doc["metadata"]["name"] == NAMESPACE, (
+        "the patch must target the base Deployment by name (rule 18)"
+    )
+    assert doc["metadata"]["namespace"] == NAMESPACE, (
+        "the patch must carry the literal namespace (rule 2)"
+    )
+    assert set(doc["spec"]) == {"template"}, (
+        "the patch must be additive — nothing at spec level beyond template "
+        "(rule 18, the rule-16a pattern)"
+    )
+    ps = doc["spec"]["template"]["spec"]
+    assert set(ps) == {"containers"}, (
+        f"the hub patch touches containers only (rule 18), got {sorted(ps)}"
+    )
+    c = ps["containers"][0]
+    assert c["name"] == IMAGE_KEY, (
+        "the patch must carry the base container's merge key (rule 18)"
+    )
+    assert set(c) == {"name", "args", "env"}, (
+        f"the patch sets exactly args and the cluster-id env (rule 18), got "
+        f"{sorted(c)}"
+    )
+    assert "image" not in c, (
+        "the patch must never carry the image key (rule 18)"
+    )
+    assert c["args"] == ["--loop", "--interval", "21600", "--wiki",
+                         "/wiki/cluster-wiki.md", "--hub"], (
+        f"the hub runs the base args plus --hub (rule 18), got {c['args']}"
+    )
+    assert c["env"] == [{"name": "PATROL_CLUSTER_ID", "value": "hub"}], (
+        "the env is exactly the hub's own slug placeholder (rule 18)"
+    )
+
+
+def test_hub_patch_copy_is_gitignored():
+    # Rule 18 (#13): the operator's copied-in patch is gitignored like
+    # secret.yaml — real wiring never commits.
+    gitignore = (REPO / ".gitignore").read_text(encoding="utf-8")
+    assert re.search(r"^manifests/hub-patch\.yaml\s*$", gitignore, re.M), (
+        ".gitignore must ignore manifests/hub-patch.yaml — the operator's "
+        "copy is never committed (rule 18, #13)"
+    )
+    tracked = subprocess.run(
+        ["git", "ls-files", "manifests/"], cwd=REPO,
+        capture_output=True, text=True, check=True,
+    ).stdout.split()
+    assert "manifests/hub-patch.yaml" not in tracked, (
+        "manifests/hub-patch.yaml must never be tracked (rule 18, #13)"
+    )
+
+
+def test_readme_documents_hub_procedure():
+    # Rule 18 (#13): the README's in-cluster deployment section carries the hub
+    # procedure end-to-end, self-sufficiently (the rule-16d standard).
+    readme = (REPO / "README.md").read_text(encoding="utf-8")
+    assert re.search(r"^### Fleet hub \(optional\)", readme, re.M), (
+        "the README must carry the 'Fleet hub (optional)' subsection "
+        "(rule 18, #13)"
+    )
+    section = re.search(r"^### Fleet hub \(optional\)$(.*?)(?=^### |\Z)",
+                        readme, re.M | re.S).group(1)
+    for needle in (
+        "hub-patch.yaml.example",
+        "hub-patch.yaml",
+        "deploy-key-patch.yaml",
+        "--hub",
+        "patches:",
+        "PATROL_WIKI_REMOTE",
+        "PATROL_CLUSTER_ID",
+    ):
+        assert needle in section, (
+            f"the README hub section must mention {needle!r} (rule 18, #13)"
+        )
+    assert ".ai/spec" not in section, (
+        "the hub procedure is self-sufficient (rule 18's rule-16d standard)"
+    )

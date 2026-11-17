@@ -48,6 +48,7 @@ AI agents. Content is optimized for precision and machine consumption.
 | What one patrol does | `what/patrol-engine.md` |
 | Read-only safety guarantees | `what/safety-model.md`, `what/kubectl-guard.md` |
 | The wiki (agent memory) contract | `what/wiki-memory.md` |
+| Fleet patrolling through the hub | `what/fleet-hub.md` |
 | The in-cluster container image | `what/container-image.md` |
 | Run it in-cluster (manifests + CI-published image) | `what/in-cluster-deployment.md` |
 | Report & notification formats | `what/reporting-notifications.md` |
@@ -64,6 +65,7 @@ AI agents. Content is optimized for precision and machine consumption.
 | `what/patrol-engine.md` | `how/agent-engine.md` |
 | `what/reporting-notifications.md` | `how/reporting-pipeline.md` |
 | `what/kubectl-guard.md`, `what/wiki-memory.md` | `how/project-structure.md` (all symbols live in `patrol.py`) |
+| `what/fleet-hub.md` | `how/project-structure.md` (the fleet-read symbols, the `--hub` flag, and `run_patrol`'s hub argument) [PLANNED: #13] |
 | `what/container-image.md` | `how/project-structure.md` (Containerfile + `requirements.txt` path entries) |
 | `what/in-cluster-deployment.md` | `how/project-structure.md` (`manifests/` + `.github/workflows/` path entries) |
 | `what/egress-control.md` | `how/project-structure.md` (the egress derivation/render symbols + the `--egress-policy` mode) |
