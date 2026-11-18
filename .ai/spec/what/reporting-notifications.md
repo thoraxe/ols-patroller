@@ -405,7 +405,7 @@ entry whose status and severity are unchanged is wiki-only.
    verbatim: `[patrol] WARNING: reporting pass produced no report; skipping
    wiki write.` — "skipping" names the model's write; the rule-33
    fallback's minimal write follows it.]
-   [PLANNED: #119 — rule 7i owns the other blind-patrol family: a raise
+   [DONE: #119 — rule 7i owns the other blind-patrol family: a raise
    before a report.]
 7a. A report whose `updated_wiki` fails skeleton validation triggers **one repair
     pass**: the shape pass re-invoked with the validation errors and the rejected
@@ -414,7 +414,7 @@ entry whose status and severity are unchanged is wiki-only.
     the wiki is left unchanged (`wiki-memory.md` rules 15–19). Delivery — findings
     printing, notification — runs after the validation/repair decision resolves
     and before the physical wiki write, so exactly one report, the final one, is
-    delivered [DONE: #5]. [PLANNED: #119 — a raise from the repair call itself
+    delivered [DONE: #5]. [DONE: #119 — a raise from the repair call itself
     is rule 7i's leg: no report is delivered.]
 7b. **Empty-wiki classification** [DONE: #51]. A parsed result whose
     `updated_wiki` is empty is a **failed reporting attempt**, not a valid
@@ -739,7 +739,7 @@ entry whose status and severity are unchanged is wiki-only.
     `REPORT_MAX_TOKENS` (28000), `REPORT_TIMEOUT` (900 s), #97's cheap
     first-attempt shape, and rule 33's total-failure net are all unchanged.
     The executable pin is `tests/test_empty_report.py`.
-7i. **Pre-report failure notification** [PLANNED: #119]. A patrol that raises
+7i. **Pre-report failure notification** [DONE: #119]. A patrol that raises
     an exception before it delivers a report or a failure notification is
     never silent. It makes one `notify` call with `notify_type="FAILURE"` and
     one message (rules 10–10c). Then it raises the same exception again. The
@@ -1019,7 +1019,7 @@ entry whose status and severity are unchanged is wiki-only.
 
 | Ticket | Summary |
 |---|---|
-| #119 | Pre-report failure notification (rule 7i, ADR 0040): a patrol that raises before it delivers a report or a failure notification sends one FAILURE notification and then re-raises. It writes no wiki, commits nothing, and advances no clock. Rule 33's total-failure leg is unchanged and sends no duplicate. No new configuration surface, no model-facing contract text, no schema change. Impl commit also syncs `AGENTS.md`'s test list, `how/reporting-pipeline.md` (the failure-notification wiring), and `how/project-structure.md` (the patrol entry-point line) |
+| ~~#119~~ | ~~Pre-report failure notification (rule 7i, ADR 0040): a patrol that raises before it delivers a report or a failure notification sends one FAILURE notification and then re-raises. It writes no wiki, commits nothing, and advances no clock. Rule 33's total-failure leg is unchanged and sends no duplicate. No new configuration surface, no model-facing contract text, no schema change. Impl commit also syncs `AGENTS.md`'s test list, `how/reporting-pipeline.md` (the failure-notification wiring), and `how/project-structure.md` (the patrol entry-point line)~~ |
 | ~~#86~~ | ~~The contract states the closed-entry character bound (rule 5's `[DONE: #86]` block; the home rule is `wiki-memory.md` rule 28a): a `resolved`/`expired` Anomaly-log entry keeps at most `WIKI_ANOMALY_ENTRY_CHARS` (400) characters of prose, and the patroller truncates a longer one on whole lines with a marker line. Taught so the model writes closed entries tight; the process cut is the net. Impl commit also syncs `AGENTS.md`'s test list and `how/reporting-pipeline.md` (the `REPORT_CONTRACT` row)~~ |
 | ~~#111~~ | Wiki free prose uses plain English (rule 5's `[DONE: #111]` block; the home rule is `wiki-memory.md` rule 13a). `REPORT_CONTRACT` asks for short sentences, one idea per sentence, the active voice, and simple tenses. It asks for no idioms, one word for one thing, and the same wording on the next patrol. Stable wording lowers #8's churn number. The clause names the machine fields as out of scope. Frontmatter, entry metadata lines, `recheck` commands, `code`, and the skeleton stay as specified. The change is teaching only. It adds no prose lint, no sentence counter, no schema change, and no configuration surface. `validate_wiki` is unchanged. The surface is the contract, not the system prompt (`patrol-engine.md` rule 3f is unchanged). A real-cluster soak showing shorter sentences and less paraphrase churn is the acceptance evidence. The soak is not a test. Impl commit also syncs `AGENTS.md`'s test list, `how/reporting-pipeline.md`'s `REPORT_CONTRACT` row, and `how/project-structure.md`'s `test_wiki_budget.py` inventory~~ |
 | ~~#106~~ | ~~The empty-wiki reason names bound truncation (rule 7h; rule 7c's truncation predicate shared by both reason paths, ADR 0036's design-space option 4 deferred there): a parsed report whose `updated_wiki` is empty logs `empty wiki (truncated at max_tokens)` when the attempt reached its completion bound and plain `empty wiki` otherwise, so a tail is self-diagnosing from pod logs across image versions. Observability only — classification, corrective, retry bound, last-parsed return, verbatim warning, keep-old-wiki outcome, and rule 33's total-failure leg are unchanged; no new configuration surface. Impl commit also syncs `AGENTS.md`'s test list and `how/project-structure.md`'s per-file test inventory (both enumerate `test_empty_report.py`'s coverage) and extends `shape_report`'s docstring where it states the empty-wiki classification (the reason now has two strings).~~ |

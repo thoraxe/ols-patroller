@@ -34,7 +34,7 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
    or the inter-patrol wait still stops the process cleanly; `--once` is
    unchanged — one patrol per process run (ADR
    `decisions/0020-one-event-loop-per-process.md`).]
-   [PLANNED: #119 — a patrol that fails before its report sends one FAILURE
+   [DONE: #119 — a patrol that fails before its report sends one FAILURE
    notification naming the error. It then raises. The loop's line and the
    continue stay as they are (`reporting-notifications.md` rule 7i).]
 6. Startup requires `PATROL_API_KEY`, `PATROL_BASE_URL`, and `PATROL_MODEL`; the
@@ -134,7 +134,7 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
     inside the reporting pass (`reporting-notifications.md` rule 7b),
     then delivered findings-only with a stderr warning, the wiki
     unchanged.]
-    [PLANNED: #119 — a patrol that raises before it delivers a report or a
+    [DONE: #119 — a patrol that raises before it delivers a report or a
     failure message sends one FAILURE message and then raises. The wiki stays
     byte-for-byte unchanged: no write, no commit, no clock advance
     (`reporting-notifications.md` rule 7i).]
@@ -240,7 +240,7 @@ documents). Milestone shape:
 
 | Ticket | Summary |
 |---|---|
-| #119 | Pre-report failure notification (rules 5 and 15; `reporting-notifications.md` rule 7i, `wiki-memory.md` rule 33, ADR 0040). The patrol sends one FAILURE notification naming the error, then raises. Loop mode's catch-and-continue and `--once`'s nonzero exit do not change. The wiki does not change either: no write, no commit, no clock advance. Tracked in milestone v0.4.0 |
+| ~~#119~~ | ~~Pre-report failure notification (rules 5 and 15; `reporting-notifications.md` rule 7i, `wiki-memory.md` rule 33, ADR 0040). The patrol sends one FAILURE notification naming the error, then raises. Loop mode's catch-and-continue and `--once`'s nonzero exit do not change. The wiki does not change either: no write, no commit, no clock advance. Tracked in milestone v0.4.0~~ |
 | ~~#89~~ | ~~Fleet wiki layout: one remote repo holds one branch per cluster (rules 4a/4a1/4e/4f1/4f2 in `wiki-memory.md`, ADR 0039). The configuration surface changes: `PATROL_CLUSTER_ID` must be a slug, and it names the cluster branch; `PATROL_WIKI_REMOTE` receives the same-named branch. The `WIKI_BRANCH_PREFIX` constant joins the hard-coded constant line. Tracked in milestone v0.4.0~~ |
 | ~~#101~~ | ~~The hard-coded constant line's `REPORT_MAX_TOKENS` retunes 24000 → 28000 (`reporting-notifications.md` rule 8b, ADR 0036), after the v0.3.2 soak's first attempt exhausted the 24000 completion budget and returned an empty wiki. No other constant changes; `REPORT_TIMEOUT` stays 900 s and #97's cheap first-attempt shape is untouched. Tracked in milestone v0.3.3 (patch)~~ |
 | ~~#97~~ | ~~The hard-coded constant line's `REPORT_MAX_TOKENS` drops 32000 → 24000 (`reporting-notifications.md` rule 8b, ADR 0034), alongside the first attempt taking the #88 retry's cheap shape. No other constant changes; `REPORT_TIMEOUT` stays 900 s. Tracked in milestone v0.3.2 (patch), not v0.3.1's reliability gate~~ |
