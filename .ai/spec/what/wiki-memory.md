@@ -1259,10 +1259,10 @@ write.
     own constants, not model output).
 32. **Visibility and bounds.** The rule-7b stderr warning still fires
     first (the reporting failure is visible whatever happens next). The
-    wiki-repair pass and fallback together cost at most one model call
-    beyond the reporting pass (the wiki-repair invocation, which keeps
-    the shape pass's own internal retry — rules 7/7b) and then one
-    deterministic, model-free write. The wiki-repair pass logs its
+    wiki-repair pass and the fallback cost at most one model call beyond the
+    reporting pass. Then they cost one deterministic, model-free write. That
+    one call is the wiki-repair invocation, which keeps the shape pass's own
+    internal retry (rules 7/7b). The wiki-repair pass logs its
     engagement to stderr alongside the attempt-failure lines; the
     fallback logs one console line (stdout, alongside rule 4d's
     wiki-commit line) naming the outcome — e.g. `[patrol] wiki: minimal
@@ -1275,12 +1275,12 @@ write.
     failure writes the old wiki with the clock advanced (writes nothing
     at all on a legacy no-frontmatter wiki, and writes the stamped seed
     on a file-absent fresh deployment — rule 31).
-33. **Total-failure leg** [DONE: #66]. When the reporting pass ends in
-    rule 7's total failure (`shape_report` returned `None` — no attempt
-    parsed, a different failure family from rule 30's still-empty outcome:
-    there is no observed report at all), the patrol tail runs the rule-31
-    minimal-write fallback directly. The wiki-repair pass (rule 30) is
-    skipped on this leg — it exists to merge *observed findings* into the
+33. **Total-failure leg** [DONE: #66]. The reporting pass ends in rule 7's total
+    failure, so the patrol tail runs the rule-31 minimal-write fallback
+    directly. A total failure is `shape_report` returning `None` — no attempt
+    parsed. It is a different failure family from rule 30's still-empty
+    outcome: there is no observed report at all. The wiki-repair pass (rule 30)
+    is skipped on this leg — it exists to merge *observed findings* into the
     old wiki, and a total failure has none to merge. Everything else is
     rule 31 verbatim: the old on-disk wiki runs through the accepted-write
     tail (expire → compact → stamp → write → commit → push), the seed
@@ -1295,6 +1295,9 @@ write.
     frozen-wiki threat ADR 0022 answered for the still-empty outcome,
     answered the same way: honest staleness, never frozen staleness, and
     a blind patrol that tells the human it is blind.
+    [DONE: #119 — this net does not extend to a patrol that raises before
+    it delivers a report. Such a patrol notifies one FAILURE message and writes
+    nothing (`reporting-notifications.md` rule 7i, ADR 0040).]
 
 ## Configuration Surface
 
@@ -1385,6 +1388,7 @@ write.
 
 | Ticket | Summary |
 |---|---|
+| ~~#119~~ | ~~Pre-report failure notification (rule 33's amendment, ADR 0040): a patrol that raises before it delivers a report sends one FAILURE message and writes nothing. No schema change: `wiki_version` stays 1. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#89~~ | ~~Fleet wiki layout (rules 4a, 4a1, 4e, 4f1, 4f2, ADR 0039): one remote repo holds one branch `cluster/<CLUSTER_ID>` per cluster, each carrying its `cluster-wiki.md` at the same path. A wiki repo initializes on the cluster branch; an adopted repo keeps its own branch (typically `main`), and the same-named push follows it — no rename, no history rewrite. `CLUSTER_ID` becomes a ref component, so it must be a slug (lowercase letters, digits, `.`, `_`, `-`; 1–63 characters; starts and ends alphanumeric; no `..`; no `.lock`); `WIKI_BRANCH_PREFIX` (`cluster/`) and the pure `wiki_branch(cluster_id)` expose the rule, and an invalid value fails startup with a config error. The push never forces, fetches, rebases, or merges: a diverged remote branch rejects the push and the local commit stands. The hub read procedure is a fetch of the remote's branches plus a per-branch read of `cluster-wiki.md` at each tip (`git worktree` is optional, operator-only); the hub never pushes to a spoke branch. All local behavior (read, validation, expiry, compaction, stats, churn, commit, push) stays single-branch and never fetches or reads another cluster's branch. `/wiki`, `--wiki /wiki/cluster-wiki.md`, the manifests, and the one-document constraint keep their behavior. No manifest behavior changes. Impl commit also syncs `how/project-structure.md` (the `ensure_wiki_repo`/push signatures and the new `wiki_branch`/`WIKI_BRANCH_PREFIX` symbols), `README.md` (the wiki-remote paragraphs and config table), `ARCHITECTURE.md`'s wiki prose, and `AGENTS.md`'s test list~~ |
 | ~~#86~~ | ~~Closed-entry character bound (rule 28a, ADR 0038; the model-facing half is `reporting-notifications.md` rule 5): rule 28 bounds the count of closed Anomaly-log entries, not their characters — 20 entries held 16,402 characters (59% of the wiki) — so a `resolved`/`expired` entry now keeps at most `WIKI_ANOMALY_ENTRY_CHARS` (400) characters of continuation prose. The pure `truncate_closed_entries(content, cap)` pass keeps whole lines from the top (head share 240) and the bottom (tail share 160), drops the middle, and writes one `_truncated:` marker line naming the dropped characters and git retention; the metadata line stays byte-for-byte (`verified_patrol`, `last_notified`), `watching` entries and the Watch-list stay whole, fences are kept or dropped whole, a second pass changes nothing, and one console line per truncated entry names the cap, and `cap = 0` is legal (marker only). It runs after the prune and before the carry and the stamp. Rule 29 stays the soft alarm; the report contract names the cap so the model writes closed entries tight. Impl commit also syncs `README.md`'s wiki-tail flow line and its working-set paragraphs, `ARCHITECTURE.md`'s working-set prose, `AGENTS.md`'s test list, `how/reporting-pipeline.md` (the write-path order), and `how/project-structure.md` (the symbol inventory)~~ |
 | ~~#111~~ | Wiki free prose uses plain English (rule 13a; the model-facing half is `reporting-notifications.md` rule 5). The shape pass writes the wiki, so `REPORT_CONTRACT` carries the ask. The ask is short sentences, one idea per sentence, the active voice, simple tenses, no idioms, and one word for one thing. It asks for the same word on the next patrol, which lowers rule 26's churn number. The rule covers free prose only. Frontmatter (rule 10), entry metadata lines (rule 12), `recheck` commands (rule 12a), `code`, and the skeleton (rule 11) are machine text and do not change. The rule is taught, never validated. No sentence counter, no prose lint, no schema change, no configuration key, and `validate_wiki` (rule 15) still judges no prose. The patrol system prompt does not repeat the ask (`patrol-engine.md` rule 3f is unchanged). Impl commit also syncs `AGENTS.md`'s test list, `how/reporting-pipeline.md`'s `REPORT_CONTRACT` row, and `how/project-structure.md`'s `test_wiki_budget.py` inventory~~ |

@@ -133,7 +133,14 @@ under current policy (clean implementation review + `implementation-complete`):
   teaching of #85: the system prompt the model actually receives carrying
   the record-current-state-only clause — no per-patrol headline, no
   `History:` list, no "as of patrol #N" chronology, git history already
-  recording what changed when);
+  recording what changed when — and the pre-report failure-notification
+  wiring of #119: a wire-level 401 on the first exploration turn, a raise
+  from the reporting pass's prompt assembly, from its validation-repair
+  call, from its wiki-repair call, and from model construction each
+  delivering exactly one FAILURE notification naming the error and then
+  re-raising with no wiki write, no commit, and no clock advance — plus the
+  two boundary guards, the total-failure leg keeping its single message, and
+  a post-delivery failure staying log-only);
   `tests/test_wiki_schema.py` covers the
   wiki skeleton schema + validation-on-write contract (#5) plus the
   per-entry recheck-command contract (#6) plus the process-owned-value
