@@ -15,6 +15,7 @@ frontmatter parsing], `apprise>=1.9` [DONE: #9 — multi-sink notifications;
 | fixtures | `FIXTURES`, `fixture_for` | Dry-cluster canned outputs (substring match, first wins) — extended to model the taught sweep: workload-object tables, phase sweeps, the crash-loop sweep, warning events, with sweep keys ordered before the flat `get pods -A` key (rules 13–13a) [DONE: #20] |
 | report schema | `Finding`, `PatrolReport` | Pydantic output contract |
 | guard | `kubectl_readonly`, `resolve_kubectl`, `make_kubectl_tool`, `guard_refusal(command) -> str | None` (the pure pre-execution refusal predicate — parse, verb, Secret-access ban (any command containing `secret`, names/metadata included), local-file/credential-flag ban (rule 6b) [DONE: #33], endpoint-override ban (`--server`/`-s`, rule 6c) [DONE: #34], `--raw`; `None` = accepted; `kubectl_readonly` delegates its refusals to it (the #6 extraction; #33 adds the Secret-access and local-file/credential bans to the same predicate); shared with the wiki validator's recheck check [DONE: #6]) | Read-only cluster CLI tool + its langchain wrapper |
+| remote target | `API_SERVER`, `API_TOKEN`, `api_config_errors(server, token) -> list[str]`, `configure_kubectl_target(server, token) -> Path or None`, `build_kubeconfig(server, token) -> str`, `write_kubeconfig(server, token) -> Path`, `remove_kubeconfig(path)`; `kubectl_readonly`, `make_kubectl_tool`, and `run_patrol` take a `kubeconfig` keyword | Optional remote target (`kubectl-guard.md` rules 12a–12e) [PLANNED: #122] |
 | model/engine | `make_model(*, timeout=REQUEST_TIMEOUT)`, `_disable_default_subagent` | `ChatOpenAI` construction (the request bound parametrized per call shape — the agent's instance and the shape pass's instance [DONE: #49]); deepagents harness profile to kill the default subagent |
 | output | `preview`, `notify` (console `🔔 NOTIFY` + apprise multi-sink, rules 10a–10c [DONE: #9]), `parse_notify_urls`, `report_notify_type`, `report_fields`, `REPORT_CONTRACT`, `wiki_size_note(content, *, budget=None) -> str` (rule 29a: the model-facing size line — count, budget, floored percentage, and the over-budget excess + prune target or the headroom; empty for empty content; `budget` defaults to `WIKI_CHAR_BUDGET` read at call time; appended by `shape_report` after the contract in report/validation-repair modes) [DONE: #67], `notification_entry_id(message) -> str | None` (the `[<entry id>]` tag parser, rule 4a), `wiki_entry_states(content) -> dict[str, dict]` (the old-vs-new diff reader, rule 4a), `filter_state_change_notifications(notifications, old_wiki, new_wiki) -> (delivered, suppressed, notified_ids)` (the state-change filter, rule 4a), `digest_notifications(old_wiki, new_wiki, *, today, digest_after, exclude_ids=(), patrol_count=None, stale_after=None) -> (digest, ids)` (the rule-4c digest) | Console/apprise output; report normalization; the reporting-pass instructions (incl. the wiki skeleton format: frontmatter keys, section set, entry metadata line [DONE: #5]; the Watch-list recheck requirement + its tool-argument form [DONE: #6]; the staleness clock's model-facing half — `verified_patrol` is process-stamped, `last_verified` advances only on actual re-verification, unverified watching entries auto-expire [DONE: #7]; the dedup contract — notification `[id]` tags, state-change-only notifications, and the per-entry `severity` pair [DONE: #35]; the #97 concision ask inside `REPORT_CONTRACT` — one line per finding, no padding around the report, the wiki keeping its own prose, the FULL `updated_wiki` still required) [DONE: #97] |
 | egress | `egress_destinations(base_url, notify_urls, wiki_remote) -> (hosts, notes)` (pure: the only definition of the destination set — the model endpoint's host, each apprise sink's host, the wiki remote's host; sorted, deduped, plus one `egress: ` stderr note per configured value that derives no host), `resolve_hosts(hosts) -> list[str]` (the one impure step: each host's IPv4/IPv6 addresses, literals passed through, `ValueError` naming an unresolvable host so a partial allowlist is impossible), `render_egress_policy(addresses, *, api_server=None) -> str` (pure: the LF-terminated default-deny `NetworkPolicy` text — `ols-patroller-egress`, podSelector `app: ols-patroller`, `policyTypes: [Egress]`, the DNS rule over `EGRESS_DNS_NAMESPACES`, the apiserver peer, one `ipBlock` per destination) [DONE: #34] | The egress allowlist contract (`egress-control.md` rules 4–6, ADR 0030): derivation, resolution, rendering. Nothing here applies, edits, or reads a policy — the artifact is operator surface (rule 9) |
@@ -31,12 +32,194 @@ Other paths:
 | `docs/prior-art.md` | Landscape survey + positioning (drives roadmap #12, #15) |
 | `README.md` | User-facing docs: quickstart, per-patrol walkthrough, engine/wiki/safety explainers, config table, smoke-test results; the in-cluster deployment section — incl. the optional deploy-key remote-push procedure [DONE: #39] and the optional storage-class override procedure [DONE: #68] — is contract surface; the release-pinned default/local-override section and the `## Releasing` procedure are contract surface too [DONE: #102] |
 | `wiki/` | Runtime artifact — the wiki directory: `cluster-wiki.md` + its git repo; **gitignored**, never commit [DONE: #3 — was a bare `cluster-wiki.md` beside `patrol.py`] |
-| `tests/` | `conftest.py` (repo-root import path) + `test_wiki_git.py` — wiki git persistence unit tests (#3 spec PR) + `test_wiki_layout.py` — the fleet wiki layout (#89: the `wiki_branch` slug matrix, the startup config error and its offline-mode ordering, init on the cluster branch, adopted-repo branch preservation, same-named push, never-force, divergence without force, two spokes on one remote, and single-branch isolation) [DONE: #89] + `test_container_image.py` — Containerfile/`requirements.txt` static contract tests [DONE: #1]. `test_manifests.py` (kustomize manifest contract, incl. the deploy-key wiring rules 16a–16d [DONE: #39]; plus #102's exact release-tag default and the README local-override pins [DONE: #102]) + `test_image_ci.py` (post-merge workflow + release-retag contract, plus #102's documented release-pin order) [DONE: #2] [DONE: #36] [DONE: #102]. `test_cli_defaults.py` — patrol.py default-surface contract (interval default, `--quiet` flag) [DONE: #25, #27]. `test_kubectl_guard.py` — guard unit tests: refusals, execution semantics, CLI resolution, dry mode, driven directly against `kubectl_readonly` (safety-model.md rule 6a); `test_secret_access.py` — the #33 Secret-access-ban matrix: every Secret form (names/metadata, value formats, flag positions) refused with the exact message, the over-broad substring cases, pre-execution/dry-fixture preemption, non-secret reads unaffected, the local-file/credential-flag ban (`-f`/`--filename`, kubeconfig/token/cert flags, template-file formats), the combined-shorthand output-value cases of #79 (rule 6b's option-letter walk ending on `o`, so `-Ao`/`-Aho`/`-wo` before a template-file value is refused like `-o`), the per-verb boolean walk of #83 (`p` is `--previous` on `logs`, so `-po`/`-pfo` before a template-file value is refused like `-o` while `logs -p`/`-pf` stay accepted), and the system-prompt + report-contract teaching (kubectl-guard.md rules 5–6b, patrol-engine.md rule 2a, reporting-notifications.md rule 5) [DONE: #33] [DONE: #79] [DONE: #83]. `test_patrol_deepagents.py` — scripted fake-model e2e: an in-process OpenAI-compatible endpoint (httpx.MockTransport) serves scripted completions to a real `ChatOpenAI`/deepagents stack (the seam is `make_model`, monkeypatched), complete patrols run via `main()` with `--dry-cluster` and a tmp wiki/repo/remote; asserts the wire tool surface, both termination paths through the shape pass, guard refusals as the model sees them, and the wiki-git wiring (safety-model.md rules 6b–6c, wiki-memory.md rule 4f) [DONE: #4]; the recheck repair path (a Watch-list entry missing its `recheck` triggers exactly one repair pass whose prompt carries the error) [DONE: #6]; the #7 expiry wiring across patrols (a stale entry flips into the Anomaly log, a re-verified entry's clock resets) [DONE: #7]. `test_wiki_schema.py` — wiki skeleton unit tests (#5 spec PR): `validate_wiki` accept/reject matrix over rules 10–12, `stamp_wiki` field rewrite + body preservation, seed/contract/dependency surfaces [DONE: #5], plus the recheck matrix over rule 12a (required in Watch-list, optional in Anomaly log, guard-grammar and tool-argument-form rejection, duplicate, prose-line-does-not-count, validator/guard single-source equivalence) [DONE: #6]. `test_wiki_expiry.py` — stale-entry expiry unit tests (#7 spec PR): the `verified_patrol` clock matrix (new / carried / reset / cross-section / grace) and the expiry flip (boundary age, move-with-annotation, non-watching and Anomaly-log entries untouched, `0` disables, fence-awareness, minimal rewrite) over `expire_stale_entries`, plus the `STALE_AFTER` config surface [DONE: #7]. `test_wiki_stats.py` — wiki health stats unit + CLI tests (#8 spec PR): the `wiki_stats` matrix (verification rate incl. clock equality and empty Watch-list, resolution counts across sections, confidence counts and the lopsided thresholds, defensive parsing), the `wiki_churn` matrix (all-pairs flag, stamp/date immunity, status stability, full-window presence, section move, fence awareness, order, minimum revisions), `wiki_history` window slicing over a real repo, and the `--wiki-stats` subprocess contract (all four lines, env-free, missing wiki, `--loop` conflict, no repo init, invalid-wiki warning, churn `none`, `--once` precedence, branch-order pin) [DONE: #8]. `test_sweep_efficiency.py` — efficient-sweep unit tests (#20 spec PR): the system prompt's layered-sweep and field-selection teaching (rules 3a–3e) and the dry-cluster fixture contract (rules 13–13a: workload tables, phase sweeps, crash-loop sweep, warning events, flat-table fallback, firehose unserved) [DONE: #20]; the truncation-marker recovery hint (guard rule 11) lands in `test_kubectl_guard.py` with the other rule-11 checks [DONE: #20]. `test_wiki_budget.py` — wiki length-budget unit + CLI tests (#40 spec PR): the `compact_anomaly_log` matrix (prune beyond the last keep in document order, whole items; watching entries and the Watch-list untouched; within-budget no-op; `keep = 0`; minimal rewrite; fence awareness; flipped-entries-survive via expire→compact composition), the `wiki_budget_warnings` matrix (empty within budget, one warning naming count + budget + instruction over; length never gates `validate_wiki`), the `wiki_stats` size keys (`char_count`/`over_budget`), the `--wiki-stats` size line + over-budget warning (subprocess, env-free), and the `REPORT_CONTRACT` working-set pins [DONE: #40]; the patrol-tail wiring (expire → compact → truncate → stamp, prune and truncation console lines, the stderr warning, the repair-pass budget inclusion, and the two-patrol prune-recoverability-from-git-history check) lands in `test_patrol_deepagents.py` with the other e2e checks [DONE: #40]; the #86 matrix (the `WIKI_ANOMALY_ENTRY_CHARS` pin, the truncation head/tail + marker-count + minimal-rewrite + watching-exemption + cap-0 + document-order + idempotence + auto-expired-tail cases, fence awareness three ways — dropped, fitted whole, counted toward the share — and the contract's verbatim closed-entry clause) is in `test_wiki_budget.py`, and its write-path wiring (the truncated write + one console line, the minimal-write exclusion, and truncation recoverable from git history) in `test_patrol_deepagents.py` [DONE: #86]; the #67 size-note matrix (under/over budget, empty content, budget parameter), the contract's consequence-chain/shrink pins, and the shape-pass prompt wiring (report mode uses the on-disk wiki, repair mode the rejected wiki, wiki-repair mode none) [DONE: #67]; the #49 two-model wiring (agent 300 s / shape 900 s through the `make_model` seam) [DONE: #49]; the #51 empty-wiki paths (retry-and-recover, still-empty warning with findings preserved, repair-still-empty falling to the keep-old-wiki outcome) [DONE: #51]; the #111 plain-prose clause pin (the verbatim plain-English clause in `REPORT_CONTRACT` and its absence from `SYSTEM_PROMPT`) [DONE: #111]. `test_request_bounds.py` — request-bound unit tests (#49 spec PR): the two bound constants (28000 reporting since #101), the `test_reporting_bound_headroom_and_gateway_window` inequality guard of #101 (headroom over the exhausted 24k bound, and the ~900 s gateway window at the slowest measured throughput), and the `make_model` timeout passthrough [DONE: #49] [DONE: #97] [DONE: #101]. `test_empty_report.py` — empty-report unit tests (#51 spec PR): the report contract's wiki-required pins and the empty-wiki classification matrix over `shape_report` with a stub structured model (named corrective retry, double-empty returns the report, composition and repair sharing, generic-retry and zero-findings guards) [DONE: #51]; its #63 `classify_empty_result` matrix (default reporting bound, `finish_reason=length`, at/under the bound, garbled metadata) plus #97's reporting default and 20k-floor regression guard, and the attempt-failure log lines' `bound B tokens` field — 28000 since #101 [DONE: #97] [DONE: #101]; the #50 one-event-loop loop-mode run (two patrols through `main() --loop`, one loop, clean ctrl-c, a failed patrol logged and the loop continuing) [DONE: #50]; the #60 wiki-repair mode over `shape_report` (the prompt carries the old wiki verbatim plus the observed findings, the minimal-merge ask, the shared empty-wiki retry) [DONE: #60]; and the #106 bound-truncation qualifier over `shape_report` (rule 7h: the `hit_completion_bound` and `empty_wiki_reason` matrices, the rule-7c/rule-7h agreement pin, the qualified and unqualified attempt-failure lines, and the qualifier reaching the report, validation-repair, and wiki-repair modes through the one construction site) [DONE: #106]. `test_patrol_deepagents.py` also gains the #60 tail wiring (the wiki-repair pass's prompt and never-delivered findings, the repaired wiki writing through the standard tail, the double failure minimal-writing the old wiki with the clock advanced, and the legacy no-frontmatter wiki writing nothing) [DONE: #60]. `test_manifests.py` gains the #61 pull-policy invariant (mutable kustomization tag → container `imagePullPolicy: Always`; a `sha-…`/digest pin is the other legal form) [DONE: #61]. `test_wiki_schema.py` gains the #62 matrix (any value for the process-owned frontmatter fields passes the gate; `validate_wiki(WIKI_SEED)` is empty) [DONE: #62]. `test_shape_input.py` — shape-pass input-compaction and failure-visibility unit tests (#66 spec PR): the `compact_messages` matrix (tool-result truncation with marker, langchain + dict forms, order/roles/non-tool text preserved, input unmutated, `keep_chars` parameter), the `SHAPE_TOOL_KEEP` constant pin (500 since #97, with the retired retry cap asserted absent), the shape-pass prompt compaction (all modes, retry corrective appended after), the `classify_exception` matrix (5xx/timeout → `gateway failure (…)`, 4xx/plain keep their string), the elapsed-seconds log-line pin plus #97's `bound` field (28000 since #101), and #97's cheap-first-attempt pins (the contract's concision sentence on every attempt of every mode, and the rebuilt retry at the same cap); the total-failure tail wiring (FAILURE notification + rule-33 minimal write) lands in `test_patrol_deepagents.py` [DONE: #66]. `test_notification_dedup.py` — notification-dedup unit tests (#35 spec PR): the `notification_entry_id` matrix; the `wiki_entry_states` reader (both metadata sections, optional severity/last_notified, duplicate-first, fence-aware); the `filter_state_change_notifications` matrix (new entry, severity change, status change, removal, standing unchanged suppressed, untagged/unattributable fail-open, order and `notified_ids`); the `digest_notifications` matrix (disabled, age/cadence boundaries, resolved/excluded/soon-to-expire, ordering, singular/plural message); the `stamp_last_notified` matrix (in-place rewrite, append, targeted ids only, byte preservation, fence-aware); the `NOTIFY_DIGEST_AFTER` config surface; `validate_wiki`'s severity-pair matrix; and the `REPORT_CONTRACT` dedup pins [DONE: #35]. The patrol-tail wiring (suppressed console/stderr, digest delivered, `last_notified` written, per-entry clock carried across patrols) lands in `test_patrol_deepagents.py` [DONE: #35]; #93's carry matrix (old clock restored over a dropped or invented model value, pairs dropped where the old wiki has no clock, present/new/removed/unparseable, section move, fence awareness, first occurrence, byte preservation, idempotence) and the two cadence wirings (a dropped rewrite carries the old value instead of re-stamping; three patrols over dropping rewrites digest once) are in `test_notification_dedup.py` / `test_patrol_deepagents.py` [DONE: #93]. `test_host_portability.py` — host-portable text I/O tests (#77 spec PR): `write_wiki_atomic` produces UTF-8/LF/no-BOM bytes under a hostile locale (round-trip byte equality), `--wiki-stats` reads a UTF-8 wiki and emits UTF-8/LF stdout under a hostile ASCII locale, and a legacy non-UTF-8 wiki is decoded leniently rather than crashing; the subprocess helper starts from `os.environ`, deletes `PATROL_*`, and disables Python's UTF-8 mode (rules 4c/4g/9b, ADR 0029); `wiki_history` degrades to the empty list on an undecodable blob (rule 27); the `.python-version` 3.12 dev-pin guard for a bare `uv run`; the e2e adds the two legacy legs — a cp1252 wiki loads at patrol start and a total-failure patrol over one writes nothing (rule 31) [DONE: #77]. `test_egress_control.py` (`#34`): the `egress_destinations` matrix (per-channel host derivation — model URL, apprise schemes incl. the host-less token-in-netloc note, the scp-like wiki remote — dedup/order/notes), `resolve_hosts` (literals passed through, `ValueError` on an unresolvable host, `localhost` resolving without a network), the `render_egress_policy` shape (podSelector, `policyTypes`, DNS rule, apiserver peer present/absent, `/32`+`/128`, byte-stability), the `--egress-policy` subprocess contract (stdout is YAML only, env-free legs, missing `PATROL_BASE_URL`, argparse conflicts, the `--loop`/`--wiki-stats` conflict, and rule 7d's empty-stdout failure), the guard's endpoint-override refusal (every spelling, dry-mode preemption, `--server-print` accepted — including #83's per-verb walk, where `logs -ps`/`-fps`/`-pfs=` are refused past the boolean `p`), and the static pins (committed template shape, gitignored operator copy, README procedure, no `egress-networkpolicy` reference in `patrol.py`) [DONE: #34]. The suite's harness is host-portable, shared through `tests/support.py` (`fake_cli`, `patrol_free_env`, `hostile_locale_env`): fake cluster CLIs are `.cmd`/Python launchers rather than POSIX shell scripts, test wiki fixtures write UTF-8, and a test asserting POSIX-only semantics is marked explicitly |
+| `tests/` | Contract tests; the test map is below the table. |
+| `tests/test_remote_api.py` | Remote-target contract tests (#122): the config matrix, private kubeconfig, startup wiring, and the guard-refusal coverage that stays in `test_egress_control.py` / `test_secret_access.py`. |
 | `pyproject.toml`, `uv.lock` | Project + dev dependency groups for the test environment (`uv run --group dev pytest tests/`); mirrors `patrol.py`'s PEP 723 inline metadata (range constraints) — the image instead installs the exactly-pinned `requirements.txt` [DONE: #1] |
 | `Containerfile` | In-cluster image build recipe: ubi9-minimal base, version-pinned + checksum-verified `oc`/`kubectl` client, pip install from `requirements.txt`, non-root random-UID, default command `--loop --interval 21600 --wiki /wiki/cluster-wiki.md` [DONE: #1] [DONE: #25] (`what/container-image.md`) |
 | `requirements.txt` | Exact pins (`name==version`) of the PEP 723 top-level runtime set; installed into the image at build time [DONE: #1] |
 | `manifests/` | In-cluster deployment kustomize root (#2): namespace, ServiceAccount, ClusterRoleBinding to the built-in `cluster-reader`, RWO PVC `ols-patroller-wiki` (1Gi, default storage class, mounted at `/wiki`), gitignored `secret.yaml` (+ committed `secret.yaml.example` template), single-replica `Recreate` Deployment running `--loop --interval 21600 --wiki /wiki/cluster-wiki.md` with literal env for unbuffered stdout and a git-safe `/wiki` (`PYTHONUNBUFFERED`, `GIT_CONFIG_*`), kustomization with the `images:` override to the CI-published image (the current release tag by default since #102, a local override for latest — [DONE: #102]), committed `deploy-key-patch.yaml.example` template for the optional remote-push wiring (gitignored operator copy + `patches:` opt-in) [DONE: #2] [DONE: #24, #25, #28] [deploy-key template: DONE: #39], committed `pvc-patch.yaml.example` template for the optional storage-class override (gitignored operator copy + `patches:` opt-in) [DONE: #68], committed `egress-networkpolicy.yaml.example` template for the optional default-deny egress allowlist (gitignored operator artifact, rendered by `--egress-policy`, applied out-of-band with `oc apply -f` — never a kustomization resource) [DONE: #34] (`what/in-cluster-deployment.md` rules 8/8b, `what/egress-control.md`) [release-pinned default + local override: DONE: #102] |
 | `.github/workflows/image.yml` | Image CI (#2, #36): on `push` to `main` only (event-guarded build job), builds from the repo-root `Containerfile` (`file: ./Containerfile`, `linux/amd64`) and publishes `ghcr.io/thoraxe/ols-patroller` with `main` + `sha-<SHA>` tags via the built-in `GITHUB_TOKEN`; published `v*` releases and the `workflow_dispatch` manual retag path (required `tag` input) apply the release tag by a registry-side manifest copy (`docker buildx imagetools create`) of the tagged commit's `sha-<SHA>` image — the tag resolved from the tag itself, never `github.sha`; never a rebuild (ADR `decisions/0010-release-retag-not-rebuild.md`) [DONE: #2] [DONE: #36] (`what/container-image.md` rules 13–19) [release pinning: rule 19, DONE: #102] |
+
+### Test map
+
+- `conftest.py` (repo-root import path)
+
+- `test_wiki_git.py` — wiki git persistence unit tests (#3 spec PR)
+
+- `test_wiki_layout.py` — the fleet wiki layout (#89: the `wiki_branch` slug matrix, the startup
+  config error and its offline-mode ordering, init on the cluster branch, adopted-repo branch
+  preservation, same-named push, never-force, divergence without force, two spokes on one remote, and
+  single-branch isolation) [DONE: #89]
+
+- `test_container_image.py` — Containerfile/`requirements.txt` static contract tests [DONE: #1].
+  `test_manifests.py` (kustomize manifest contract, incl. the deploy-key wiring rules 16a–16d [DONE:
+  #39]; plus #102's exact release-tag default and the README local-override pins [DONE: #102])
+
+- `test_image_ci.py` (post-merge workflow
+
+- release-retag contract, plus #102's documented release-pin order) [DONE: #2] [DONE: #36] [DONE:
+  #102]. `test_cli_defaults.py` — patrol.py default-surface contract (interval default, `--quiet`
+  flag) [DONE: #25, #27]. `test_kubectl_guard.py` — guard unit tests: refusals, execution semantics,
+  CLI resolution, dry mode, driven directly against `kubectl_readonly` (safety-model.md rule 6a);
+  `test_secret_access.py` — the #33 Secret-access-ban matrix: every Secret form (names/metadata, value
+  formats, flag positions) refused with the exact message, the over-broad substring cases,
+  pre-execution/dry-fixture preemption, non-secret reads unaffected, the local-file/credential-flag
+  ban (`-f`/`--filename`, kubeconfig/token/cert flags, template-file formats), the combined-shorthand
+  output-value cases of #79 (rule 6b's option-letter walk ending on `o`, so `-Ao`/`-Aho`/`-wo` before
+  a template-file value is refused like `-o`), the per-verb boolean walk of #83 (`p` is `--previous`
+  on `logs`, so `-po`/`-pfo` before a template-file value is refused like `-o` while `logs -p`/`-pf`
+  stay accepted), and the system-prompt
+
+- report-contract teaching (kubectl-guard.md rules 5–6b, patrol-engine.md rule 2a,
+  reporting-notifications.md rule 5) [DONE: #33] [DONE: #79] [DONE: #83]. `test_patrol_deepagents.py`
+  — scripted fake-model e2e: an in-process OpenAI-compatible endpoint (httpx.MockTransport) serves
+  scripted completions to a real `ChatOpenAI`/deepagents stack (the seam is `make_model`,
+  monkeypatched), complete patrols run via `main()` with `--dry-cluster` and a tmp wiki/repo/remote;
+  asserts the wire tool surface, both termination paths through the shape pass, guard refusals as the
+  model sees them, and the wiki-git wiring (safety-model.md rules 6b–6c, wiki-memory.md rule 4f)
+  [DONE: #4]; the recheck repair path (a Watch-list entry missing its `recheck` triggers exactly one
+  repair pass whose prompt carries the error) [DONE: #6]; the #7 expiry wiring across patrols (a stale
+  entry flips into the Anomaly log, a re-verified entry's clock resets) [DONE: #7].
+  `test_wiki_schema.py` — wiki skeleton unit tests (#5 spec PR): `validate_wiki` accept/reject matrix
+  over rules 10–12, `stamp_wiki` field rewrite
+
+- body preservation, seed/contract/dependency surfaces [DONE: #5], plus the recheck matrix over rule
+  12a (required in Watch-list, optional in Anomaly log, guard-grammar and tool-argument-form
+  rejection, duplicate, prose-line-does-not-count, validator/guard single-source equivalence) [DONE:
+  #6]. `test_wiki_expiry.py` — stale-entry expiry unit tests (#7 spec PR): the `verified_patrol` clock
+  matrix (new / carried / reset / cross-section / grace) and the expiry flip (boundary age,
+  move-with-annotation, non-watching and Anomaly-log entries untouched, `0` disables, fence-awareness,
+  minimal rewrite) over `expire_stale_entries`, plus the `STALE_AFTER` config surface [DONE: #7].
+  `test_wiki_stats.py` — wiki health stats unit
+
+- CLI tests (#8 spec PR): the `wiki_stats` matrix (verification rate incl. clock equality and empty
+  Watch-list, resolution counts across sections, confidence counts and the lopsided thresholds,
+  defensive parsing), the `wiki_churn` matrix (all-pairs flag, stamp/date immunity, status stability,
+  full-window presence, section move, fence awareness, order, minimum revisions), `wiki_history`
+  window slicing over a real repo, and the `--wiki-stats` subprocess contract (all four lines,
+  env-free, missing wiki, `--loop` conflict, no repo init, invalid-wiki warning, churn `none`,
+  `--once` precedence, branch-order pin) [DONE: #8]. `test_sweep_efficiency.py` — efficient-sweep unit
+  tests (#20 spec PR): the system prompt's layered-sweep and field-selection teaching (rules 3a–3e)
+  and the dry-cluster fixture contract (rules 13–13a: workload tables, phase sweeps, crash-loop sweep,
+  warning events, flat-table fallback, firehose unserved) [DONE: #20]; the truncation-marker recovery
+  hint (guard rule 11) lands in `test_kubectl_guard.py` with the other rule-11 checks [DONE: #20].
+  `test_wiki_budget.py` — wiki length-budget unit
+
+- CLI tests (#40 spec PR): the `compact_anomaly_log` matrix (prune beyond the last keep in document
+  order, whole items; watching entries and the Watch-list untouched; within-budget no-op; `keep = 0`;
+  minimal rewrite; fence awareness; flipped-entries-survive via expire→compact composition), the
+  `wiki_budget_warnings` matrix (empty within budget, one warning naming count
+
+- budget
+
+- instruction over; length never gates `validate_wiki`), the `wiki_stats` size keys
+  (`char_count`/`over_budget`), the `--wiki-stats` size line
+
+- over-budget warning (subprocess, env-free), and the `REPORT_CONTRACT` working-set pins [DONE: #40];
+  the patrol-tail wiring (expire → compact → truncate → stamp, prune and truncation console lines, the
+  stderr warning, the repair-pass budget inclusion, and the two-patrol
+  prune-recoverability-from-git-history check) lands in `test_patrol_deepagents.py` with the other e2e
+  checks [DONE: #40]; the #86 matrix (the `WIKI_ANOMALY_ENTRY_CHARS` pin, the truncation head/tail
+
+- marker-count
+
+- minimal-rewrite
+
+- watching-exemption
+
+- cap-0
+
+- document-order
+
+- idempotence
+
+- auto-expired-tail cases, fence awareness three ways — dropped, fitted whole, counted toward the
+  share — and the contract's verbatim closed-entry clause) is in `test_wiki_budget.py`, and its
+  write-path wiring (the truncated write
+
+- one console line, the minimal-write exclusion, and truncation recoverable from git history) in
+  `test_patrol_deepagents.py` [DONE: #86]; the #67 size-note matrix (under/over budget, empty content,
+  budget parameter), the contract's consequence-chain/shrink pins, and the shape-pass prompt wiring
+  (report mode uses the on-disk wiki, repair mode the rejected wiki, wiki-repair mode none) [DONE:
+  #67]; the #49 two-model wiring (agent 300 s / shape 900 s through the `make_model` seam) [DONE:
+  #49]; the #51 empty-wiki paths (retry-and-recover, still-empty warning with findings preserved,
+  repair-still-empty falling to the keep-old-wiki outcome) [DONE: #51]; the #111 plain-prose clause
+  pin (the verbatim plain-English clause in `REPORT_CONTRACT` and its absence from `SYSTEM_PROMPT`)
+  [DONE: #111]. `test_request_bounds.py` — request-bound unit tests (#49 spec PR): the two bound
+  constants (28000 reporting since #101), the `test_reporting_bound_headroom_and_gateway_window`
+  inequality guard of #101 (headroom over the exhausted 24k bound, and the ~900 s gateway window at
+  the slowest measured throughput), and the `make_model` timeout passthrough [DONE: #49] [DONE: #97]
+  [DONE: #101]. `test_empty_report.py` — empty-report unit tests (#51 spec PR): the report contract's
+  wiki-required pins and the empty-wiki classification matrix over `shape_report` with a stub
+  structured model (named corrective retry, double-empty returns the report, composition and repair
+  sharing, generic-retry and zero-findings guards) [DONE: #51]; its #63 `classify_empty_result` matrix
+  (default reporting bound, `finish_reason=length`, at/under the bound, garbled metadata) plus #97's
+  reporting default and 20k-floor regression guard, and the attempt-failure log lines' `bound B
+  tokens` field — 28000 since #101 [DONE: #97] [DONE: #101]; the #50 one-event-loop loop-mode run (two
+  patrols through `main() --loop`, one loop, clean ctrl-c, a failed patrol logged and the loop
+  continuing) [DONE: #50]; the #60 wiki-repair mode over `shape_report` (the prompt carries the old
+  wiki verbatim plus the observed findings, the minimal-merge ask, the shared empty-wiki retry) [DONE:
+  #60]; and the #106 bound-truncation qualifier over `shape_report` (rule 7h: the
+  `hit_completion_bound` and `empty_wiki_reason` matrices, the rule-7c/rule-7h agreement pin, the
+  qualified and unqualified attempt-failure lines, and the qualifier reaching the report,
+  validation-repair, and wiki-repair modes through the one construction site) [DONE: #106].
+  `test_patrol_deepagents.py` also gains the #60 tail wiring (the wiki-repair pass's prompt and
+  never-delivered findings, the repaired wiki writing through the standard tail, the double failure
+  minimal-writing the old wiki with the clock advanced, and the legacy no-frontmatter wiki writing
+  nothing) [DONE: #60]. `test_manifests.py` gains the #61 pull-policy invariant (mutable kustomization
+  tag → container `imagePullPolicy: Always`; a `sha-…`/digest pin is the other legal form) [DONE:
+  #61]. `test_wiki_schema.py` gains the #62 matrix (any value for the process-owned frontmatter fields
+  passes the gate; `validate_wiki(WIKI_SEED)` is empty) [DONE: #62]. `test_shape_input.py` —
+  shape-pass input-compaction and failure-visibility unit tests (#66 spec PR): the `compact_messages`
+  matrix (tool-result truncation with marker, langchain
+
+- dict forms, order/roles/non-tool text preserved, input unmutated, `keep_chars` parameter), the
+  `SHAPE_TOOL_KEEP` constant pin (500 since #97, with the retired retry cap asserted absent), the
+  shape-pass prompt compaction (all modes, retry corrective appended after), the `classify_exception`
+  matrix (5xx/timeout → `gateway failure (…)`, 4xx/plain keep their string), the elapsed-seconds
+  log-line pin plus #97's `bound` field (28000 since #101), and #97's cheap-first-attempt pins (the
+  contract's concision sentence on every attempt of every mode, and the rebuilt retry at the same
+  cap); the total-failure tail wiring (FAILURE notification
+
+- rule-33 minimal write) lands in `test_patrol_deepagents.py` [DONE: #66].
+  `test_notification_dedup.py` — notification-dedup unit tests (#35 spec PR): the
+  `notification_entry_id` matrix; the `wiki_entry_states` reader (both metadata sections, optional
+  severity/last_notified, duplicate-first, fence-aware); the `filter_state_change_notifications`
+  matrix (new entry, severity change, status change, removal, standing unchanged suppressed,
+  untagged/unattributable fail-open, order and `notified_ids`); the `digest_notifications` matrix
+  (disabled, age/cadence boundaries, resolved/excluded/soon-to-expire, ordering, singular/plural
+  message); the `stamp_last_notified` matrix (in-place rewrite, append, targeted ids only, byte
+  preservation, fence-aware); the `NOTIFY_DIGEST_AFTER` config surface; `validate_wiki`'s
+  severity-pair matrix; and the `REPORT_CONTRACT` dedup pins [DONE: #35]. The patrol-tail wiring
+  (suppressed console/stderr, digest delivered, `last_notified` written, per-entry clock carried
+  across patrols) lands in `test_patrol_deepagents.py` [DONE: #35]; #93's carry matrix (old clock
+  restored over a dropped or invented model value, pairs dropped where the old wiki has no clock,
+  present/new/removed/unparseable, section move, fence awareness, first occurrence, byte preservation,
+  idempotence) and the two cadence wirings (a dropped rewrite carries the old value instead of
+  re-stamping; three patrols over dropping rewrites digest once) are in `test_notification_dedup.py` /
+  `test_patrol_deepagents.py` [DONE: #93]. `test_host_portability.py` — host-portable text I/O tests
+  (#77 spec PR): `write_wiki_atomic` produces UTF-8/LF/no-BOM bytes under a hostile locale (round-trip
+  byte equality), `--wiki-stats` reads a UTF-8 wiki and emits UTF-8/LF stdout under a hostile ASCII
+  locale, and a legacy non-UTF-8 wiki is decoded leniently rather than crashing; the subprocess helper
+  starts from `os.environ`, deletes `PATROL_*`, and disables Python's UTF-8 mode (rules 4c/4g/9b, ADR
+  0029); `wiki_history` degrades to the empty list on an undecodable blob (rule 27); the
+  `.python-version` 3.12 dev-pin guard for a bare `uv run`; the e2e adds the two legacy legs — a
+  cp1252 wiki loads at patrol start and a total-failure patrol over one writes nothing (rule 31)
+  [DONE: #77]. `test_egress_control.py` (`#34`): the `egress_destinations` matrix (per-channel host
+  derivation — model URL, apprise schemes incl. the host-less token-in-netloc note, the scp-like wiki
+  remote — dedup/order/notes), `resolve_hosts` (literals passed through, `ValueError` on an
+  unresolvable host, `localhost` resolving without a network), the `render_egress_policy` shape
+  (podSelector, `policyTypes`, DNS rule, apiserver peer present/absent, `/32`+`/128`, byte-stability),
+  the `--egress-policy` subprocess contract (stdout is YAML only, env-free legs, missing
+  `PATROL_BASE_URL`, argparse conflicts, the `--loop`/`--wiki-stats` conflict, and rule 7d's
+  empty-stdout failure), the guard's endpoint-override refusal (every spelling, dry-mode preemption,
+  `--server-print` accepted — including #83's per-verb walk, where `logs -ps`/`-fps`/`-pfs=` are
+  refused past the boolean `p`), and the static pins (committed template shape, gitignored operator
+  copy, README procedure, no `egress-networkpolicy` reference in `patrol.py`) [DONE: #34]. The suite's
+  harness is host-portable, shared through `tests/support.py` (`fake_cli`, `patrol_free_env`,
+  `hostile_locale_env`): fake cluster CLIs are `.cmd`/Python launchers rather than POSIX shell
+  scripts, test wiki fixtures write UTF-8, and a test asserting POSIX-only semantics is marked
+  explicitly
 
 ## Key Entry Points
 

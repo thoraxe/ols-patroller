@@ -22,7 +22,9 @@ held to production standards: documented, unit-checked, and verified end-to-end.
    ServiceAccount's RBAC (binding to the built-in `cluster-reader` role — verified on
    live OCP 4.21: 94 rules, zero Secret access, read-equivalent verbs only) is the
    server-side enforcement boundary. The tool guard is defense-in-depth, not the
-   boundary itself. Manifest contract: `in-cluster-deployment.md` (decision record
+   boundary itself. A remote target uses the target cluster's ServiceAccount
+   RBAC instead (`kubectl-guard.md` rule 12a, ADR 0041) [PLANNED: #122].
+   Manifest contract: `in-cluster-deployment.md` (decision record
    `decisions/0006-cluster-reader-binding.md`).
 5. Remediation is **delegated, never local**: a warn/crit finding with a known
    remediation becomes a governed AgenticRun (sandbox + approval + derived RBAC +
@@ -127,6 +129,7 @@ held to production standards: documented, unit-checked, and verified end-to-end.
 |---|---|
 | ~~#83~~ | ~~Guard hardening: the rule-6b/6c option-letter walk takes a per-verb boolean set, so `p` is boolean `--previous` on `logs` and the walk continues past it — `logs -po go-template-file=…`, `logs -ps <host>`, and `logs -fps=<host>` are refused like their `-o`/`-s` spellings, while `logs -p <pod>` and `logs -pf <arg>` stay accepted~~ |
 | ~~#79~~ | ~~Guard hardening: the template-file output-format check reads the value of an `o` option letter spelled inside a combined boolean shorthand (`-Ao go-template-file=…`), closing the combined-shorthand bypass of `kubectl-guard.md` rule 6b's local-file ban~~ |
+| #122 | A remote target uses the target cluster's ServiceAccount RBAC as the layer-3 boundary (rule 4; ADR 0041). No new capability. Impl commit syncs `AGENTS.md`'s test list |
 | ~~#34~~ | ~~Layer 4 — the network egress allowlist (rule 7): default-deny pod egress allowing only cluster DNS, the kube-apiserver, and the destinations derived from the patrol's own egress configuration, rendered by the offline `--egress-policy` mode and applied by the operator (`egress-control.md`, ADR 0030). Layer 1 gains the endpoint-override refusal (rule 6a's list; `kubectl-guard.md` rule 6c)~~ |
 | ~~#2~~ | In-cluster manifests: SA + `cluster-reader` ClusterRoleBinding + RWO PVC at `/wiki` + single-replica non-root Deployment — makes Layer 3 real (`in-cluster-deployment.md`; ADR 0006) |
 | #12 | Remediation handoff: dispatch governed AgenticRuns for actionable findings; harvest their result CRs back into the wiki |

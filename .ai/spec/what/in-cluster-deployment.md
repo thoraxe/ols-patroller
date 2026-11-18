@@ -46,8 +46,9 @@ layer 3 (RBAC boundary) real, and what the CI-published image
    Deployment's pod template sets `serviceAccountName: ols-patroller`. The SA
    token automounts (k8s default) — the image's `oc` authenticates via the
    pod's in-cluster service account and `KUBERNETES_SERVICE_HOST`; no
-   kubeconfig is mounted or built (verified in the #1 container run) [DONE:
-   #2].
+   kubeconfig is mounted or built for the default target (verified in the #1
+   container run) [DONE: #2]. A remote target builds one (ADR 0041)
+   [PLANNED: #122].
 4. A single `ClusterRoleBinding` named `ols-patroller` binds that SA to the
    **built-in** `ClusterRole` `cluster-reader` (`roleRef`: apiGroup
    `rbac.authorization.k8s.io`, kind `ClusterRole`, name `cluster-reader`; one
@@ -56,7 +57,8 @@ layer 3 (RBAC boundary) real, and what the CI-published image
    built-in role is the entire grant (ADR
    `decisions/0006-cluster-reader-binding.md`). This binding is
    `safety-model.md` layer 3 — the server-side enforcement boundary; the
-   `kubectl_readonly` guard is defense-in-depth on top [DONE: #2].
+   `kubectl_readonly` guard is defense-in-depth on top [DONE: #2]. A remote
+   target needs the same binding on that cluster [PLANNED: #122].
 
 ### Persistence (the wiki volume)
 
@@ -355,7 +357,8 @@ layer 3 (RBAC boundary) real, and what the CI-published image
   env trio setting `safe.directory=/wiki` for in-container git (rule 10b)
 - Secret keys — required `PATROL_API_KEY`, `PATROL_BASE_URL`,
   `PATROL_MODEL`; optional `PATROL_NOTIFY_URLS` (apprise URL form,
-  `reporting-notifications.md` rule 10a) [DONE: #9], `PATROL_WIKI_REMOTE` (rule 14)
+  `reporting-notifications.md` rule 10a) [DONE: #9], `PATROL_WIKI_REMOTE` (rule 14),
+  and optional `PATROL_API_SERVER` / `PATROL_API_TOKEN` [PLANNED: #122]
 - `manifests/deploy-key-patch.yaml.example` — committed template for the
   optional remote-push patch; the operator's gitignored
   `deploy-key-patch.yaml` copy + the `patches:` entry in their
@@ -400,9 +403,8 @@ layer 3 (RBAC boundary) real, and what the CI-published image
   [DONE: #34 — this bullet previously read “no NetworkPolicy”; #34
   supersedes that sentence].
 - The deployment adds no patrol behavior: same `patrol.py`, same guard, same
-  env contract — wiring only. No new **patrol** configuration exists; the only
-  change to `system-overview.md`'s Configuration Surface is a pointer to this
-  deployment surface.
+  env contract — wiring only. The one exception is the optional remote-target
+  configuration (`kubectl-guard.md` rules 12a–12e) [PLANNED: #122].
 
 ## Planned Changes
 
@@ -410,6 +412,7 @@ layer 3 (RBAC boundary) real, and what the CI-published image
 |---|---|
 | ~~#89~~ | ~~`PATROL_CLUSTER_ID` must be a slug, because it is the cluster-branch ref component (rule 10's amendment; behavior is `wiki-memory.md` rules 4a1/4f1, ADR 0039). The manifest comment names the rule. The `/wiki` mount, `--wiki /wiki/cluster-wiki.md`, the PVC, and the one-document constraint do not change. The impl commit flips the rule-10 marker once implemented and syncs `README.md`'s operator procedure~~ |
 | ~~#102~~ | The manifests default to the **current release tag**, not `:main` (rule 8's rewrite + new rule 8b's local override + rule 8a's mutable-tag wording + rule 17 step 6's release-update path; contract behavior is `container-image.md` rules 17/19, ADR 0035): `oc apply -k manifests/` deploys the newest published `vX.Y.Z` release, and testing the latest merge or another registry is an explicit local override (uncommitted `images:` edit, overlay, or `oc set image`). Release cutting pins before tagging (`container-image.md` rule 19), and a published tag is never moved. README documents the override and the release order; the static suite pins the default's exact current release tag (flipping the old `newTag == main` assertion) and the README procedures. The v0.3.2 release predates the rule; its pin lands on `main` in the implementation commit, without moving the tag. Impl commit also syncs `AGENTS.md`'s test list and the stale `manifests/deployment.yaml`/`image.yml` rule-range comments |
+| #122 | Optional remote-target env (`kubectl-guard.md` rules 12a–12e, ADR 0041): the operator adds `PATROL_API_SERVER` and `PATROL_API_TOKEN` to the existing Secret; `envFrom` carries them. `secret.yaml.example` is unchanged. The RBAC binding must exist on the target. Impl commit syncs `README.md` and `AGENTS.md`'s test list |
 | ~~#34~~ | ~~The optional egress allowlist artifact (rule 1's directory amendment + the Configuration Surface entry): a committed `manifests/egress-networkpolicy.yaml.example` template, the gitignored operator `egress-networkpolicy.yaml` rendered by `--egress-policy` and applied with `oc apply -f`, and the superseded “no NetworkPolicy” constraint. Contract: `egress-control.md` (ADR 0030)~~ |
 | ~~#68~~ | ~~The storage-class override patch (rule 5a + the rule 1 directory amendment): a committed `manifests/pvc-patch.yaml.example` strategic-merge template setting exactly `spec.storageClassName`, the gitignored operator copy + `patches:` opt-in (the deploy-key pattern), and the README procedure. Impl commit also syncs `AGENTS.md`'s test list~~
 | ~~#61~~ | ~~`imagePullPolicy: Always` on the patrol container while the kustomization tag is rolling (rule 8a), the static-suite invariant (mutable tag → Always; `sha-…`/digest pin is the other legal form), and rule 17 step 6's image-pull premise stated. Impl commit also syncs `AGENTS.md`'s test list~~

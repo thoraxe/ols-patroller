@@ -392,6 +392,8 @@ def run_patrol_cli(monkeypatch, endpoint, wiki, *extra_args, wiki_remote="",
     monkeypatch.setattr(patrol, "CLUSTER_ID", cluster_id)
     monkeypatch.setattr(patrol, "NOTIFY_URLS", [])
     monkeypatch.setattr(patrol, "WIKI_REMOTE", wiki_remote)
+    monkeypatch.setattr(patrol, "API_SERVER", "", raising=False)
+    monkeypatch.setattr(patrol, "API_TOKEN", "", raising=False)
     monkeypatch.setattr(patrol, "NOTIFY_DIGEST_AFTER", digest_after, raising=False)
     # #77: dry-cluster e2e never executes the CLI; pin it so resolve_kubectl
     # does not need `bash -lc` on the dev host (accidental Windows dependency).
