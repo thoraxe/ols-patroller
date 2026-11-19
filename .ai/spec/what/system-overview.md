@@ -44,7 +44,7 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
    `PATROL_BASE_URL` (it never reads `PATROL_API_KEY`/`PATROL_MODEL`)
    [DONE: #34]. A partial remote-target configuration fails startup
    (`kubectl-guard.md` rule 12d); the offline modes stay exempt
-   [PLANNED: #122].
+   [DONE: #122].
 
 ### Component Inventory
 
@@ -159,9 +159,9 @@ Environment variables:
 - `PATROL_MODEL` — model id on that endpoint (required)
 - `KUBECTL` — cluster CLI override; otherwise resolved `oc` → `kubectl` → `oc`
 - `PATROL_API_SERVER` — optional target API base URL; empty means the ambient
-  target [PLANNED: #122]
+  target [DONE: #122]
 - `PATROL_API_TOKEN` — service-account token for the target; environment only
-  [PLANNED: #122]
+  [DONE: #122]
 - `PATROL_NOTIFY_URLS` — if set, apprise sink URLs (comma/newline separated);
   notifications are also delivered to every configured sink [DONE: #9]
 - `PATROL_NOTIFY_DIGEST_AFTER` — periodic-digest threshold in days: a standing
@@ -246,7 +246,7 @@ documents). Milestone shape:
 
 | Ticket | Summary |
 |---|---|
-| #122 | Optional remote cluster target (`kubectl-guard.md` rules 12a–12e, ADR 0041): `PATROL_API_SERVER` and `PATROL_API_TOKEN` build a private kubeconfig for every kubectl call. One process targets one cluster; no fleet read. Tracked in milestone v0.4.0 |
+| ~~#122~~ | ~~Optional remote cluster target (`kubectl-guard.md` rules 12a–12e, ADR 0041): `PATROL_API_SERVER` and `PATROL_API_TOKEN` build a private kubeconfig for every kubectl call. One process targets one cluster; no fleet read. Tracked in milestone v0.4.0~~ |
 | ~~#119~~ | ~~Pre-report failure notification (rules 5 and 15; `reporting-notifications.md` rule 7i, `wiki-memory.md` rule 33, ADR 0040). The patrol sends one FAILURE notification naming the error, then raises. Loop mode's catch-and-continue and `--once`'s nonzero exit do not change. The wiki does not change either: no write, no commit, no clock advance. Tracked in milestone v0.4.0~~ |
 | ~~#89~~ | ~~Fleet wiki layout: one remote repo holds one branch per cluster (rules 4a/4a1/4e/4f1/4f2 in `wiki-memory.md`, ADR 0039). The configuration surface changes: `PATROL_CLUSTER_ID` must be a slug, and it names the cluster branch; `PATROL_WIKI_REMOTE` receives the same-named branch. The `WIKI_BRANCH_PREFIX` constant joins the hard-coded constant line. Tracked in milestone v0.4.0~~ |
 | ~~#101~~ | ~~The hard-coded constant line's `REPORT_MAX_TOKENS` retunes 24000 → 28000 (`reporting-notifications.md` rule 8b, ADR 0036), after the v0.3.2 soak's first attempt exhausted the 24000 completion budget and returned an empty wiki. No other constant changes; `REPORT_TIMEOUT` stays 900 s and #97's cheap first-attempt shape is untouched. Tracked in milestone v0.3.3 (patch)~~ |

@@ -202,8 +202,10 @@ redefined here.
   (`kubectl-guard.md` rule 6b) [DONE: #33].
 - **Endpoint-override refusal** — the guard's companion rule for the egress
   channel: `--server`/`-s` (every spelling) is refused, so a guard-accepted
-  command always talks to the ambient in-cluster API endpoint
-  (`kubectl-guard.md` rule 6c) [DONE: #34].
+  command always talks to the process-owned API endpoint — the ambient
+  in-cluster one or the optional `PATROL_API_SERVER` target built into a
+  private kubeconfig (`kubectl-guard.md` rules 6c and 12a–12e, ADR 0041)
+  [DONE: #34] [DONE: #122].
 - **Egress destination** — one outbound host the patroller's own configuration
   names: the model endpoint's host, an apprise sink's host, or the wiki
   remote's host (`egress-control.md` rule 4). Derived by the pure

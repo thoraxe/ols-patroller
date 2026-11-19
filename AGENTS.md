@@ -290,7 +290,17 @@ under current policy (clean implementation review + `implementation-complete`):
   #83 per-verb boolean walk, where `logs -ps`/`-fps`/`-pfs=` are refused like
   `logs -s`), and the static
   pins (committed template shape, gitignored operator copy, README procedure,
-  no `egress-networkpolicy` reference in `patrol.py`).
+  no `egress-networkpolicy` reference in `patrol.py`); and
+  `tests/test_remote_api.py` covers the optional-remote-target contract (#122,
+  ADR 0041): the `api_config_errors` matrix (ambient pair, both partial pairs,
+  a server without scheme or host), `build_kubeconfig`'s single
+  cluster/user/context + `current-context` shape, `write_kubeconfig`'s POSIX
+  `0600` private file and `remove_kubeconfig`, `configure_kubectl_target`'s
+  ambient `None`, the `KUBECONFIG` wiring through `kubectl_readonly` and
+  `make_kubectl_tool` (the token never in argv), the startup wiring
+  (`configure` before the patrol, the path passed to `run_patrol`, the file
+  removed at exit including after a failed patrol, and the config error landing
+  before any wiki touch).
 - `wiki/` (the wiki directory: `cluster-wiki.md` + its git repo) is a runtime
   artifact (gitignored) — never commit it.
 - Roadmap: GitHub issues + milestones, not documents. Spec files mark planned

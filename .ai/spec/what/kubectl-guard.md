@@ -213,12 +213,12 @@ sees these messages and recovers based on them.
 
 ### Target Cluster
 
-12a. **Target configuration** [PLANNED: #122]. The process targets one cluster.
+12a. **Target configuration** [DONE: #122]. The process targets one cluster.
      `PATROL_API_SERVER` sets its API base URL. `PATROL_API_TOKEN` holds the
      service-account token. Both are environment only.
-12b. **Ambient target** [PLANNED: #122]. With no server, the process uses the
+12b. **Ambient target** [DONE: #122]. With no server, the process uses the
      current in-cluster or kubeconfig target.
-12c. **Private kubeconfig** [PLANNED: #122]. At startup the process builds a
+12c. **Private kubeconfig** [DONE: #122]. At startup the process builds a
      temporary kubeconfig from the server and token. The document has
      `apiVersion: v1`, `kind: Config`, one cluster, one user, one context, and
      a matching `current-context`. The file
@@ -226,11 +226,11 @@ sees these messages and recovers based on them.
      `KUBECONFIG` pointing at it. The process removes the file at exit,
      including after a failed patrol. Neither the server nor the token enters a
      command argument, the model prompt, or a log line.
-12d. **Validation** [PLANNED: #122]. A server without a token is a config error.
+12d. **Validation** [DONE: #122]. A server without a token is a config error.
      A token without a server is a config error. A server without a scheme or
      without a host is a config error. The error names the setting. The check runs after
      the offline modes and the cluster-slug check, before any wiki touch.
-12e. **Guard unchanged** [PLANNED: #122]. The model still cannot supply
+12e. **Guard unchanged** [DONE: #122]. The model still cannot supply
      `--server`, `-s`, `--token`, `--kubeconfig`, or any credential flag. The
      target is process-owned configuration.
 
@@ -244,9 +244,9 @@ sees these messages and recovers based on them.
 - `PATROL_TOOL_TIMEOUT` — per-command timeout in seconds (default 60)
 - `KUBECTL` — CLI override (see rule 12)
 - `PATROL_API_SERVER` — target API base URL; empty means the ambient target
-  (rule 12a) [PLANNED: #122]
+  (rule 12a) [DONE: #122]
 - `PATROL_API_TOKEN` — service-account token for the target; environment only
-  (rule 12a) [PLANNED: #122]
+  (rule 12a) [DONE: #122]
 - `OUT_CAP` — hard-coded 15,000 chars (not env-configurable): the overall cap
   envelope on tool output fed back to the model
 - `OUT_HEAD` / `OUT_TAIL` — hard-coded 9,000 / 5,000 chars (not
@@ -288,4 +288,4 @@ sees these messages and recovers based on them.
 | ~~#79~~ | ~~Guard hardening (rule 6b): when the option-letter walk ends on `o`, the template-file check reads the rest of that token after `=` (or the attached remainder) or the next argument, so `-Ao go-template-file=…` is refused like `-o go-template-file=…`. Strictness increase on an already-banned channel; the matrix lives in `tests/test_secret_access.py` and the impl commit also syncs `AGENTS.md`'s test list and `how/project-structure.md`'s `tests/` row~~ |
 | ~~#83~~ | ~~Guard hardening (rules 6b/6c): the option-letter walk takes a **per-verb boolean set**, so on `logs` `p` is the boolean `--previous` (like `f`'s `--follow`) and the walk continues past it. `logs -po go-template-file=…`, `logs -ps <host>`, and `logs -fps=<host>` are therefore refused like their `-o`/`-s` spellings, while `logs -p <pod>`, `logs -pf <arg>`, and the inline-format spellings stay accepted — the fix costs no new refusals on legal reads. Strictness increase on an already-banned channel, no ADR; the `o` leg lives in `tests/test_secret_access.py`, the `s` leg in `tests/test_egress_control.py`, and the impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#33~~ | ~~Secret access is banned in full (rules 5–6): any command containing `secret` is refused regardless of verb/output format/position — names and metadata included, not only values. The local-file/credential channel is closed too (rule 6b): `-f`/`--filename`, `--kubeconfig`/token/cert flags, and template-file output formats are refused, closing the `get -f <secret-manifest>` bypass. The refusal names the ban and steers to workload metadata; over-broad by design (ADR 0028). The prompt teaching is `patrol-engine.md` rule 2a; the report contract teaches the recheck limit (`reporting-notifications.md` rule 5). Impl commit also syncs `README.md`'s guard bullets, `ARCHITECTURE.md`'s guard labels, `AGENTS.md`'s test list, and `REPORT_CONTRACT`'s recheck wording (the model-facing text must say rechecks may not read a Secret — names/metadata included, not only values)~~ |
-| #122 | Optional remote cluster target (rules 12a–12e, ADR 0041): `PATROL_API_SERVER` and `PATROL_API_TOKEN` build a private temporary kubeconfig for every kubectl call. The guard still refuses model-supplied endpoints and credentials. No CLI flags, no CA surface, no egress change. Impl commit also syncs `README.md`'s configuration table and guard bullet, `glossary.md`'s endpoint term, `AGENTS.md`'s test list, `how/project-structure.md`, and `patrol.py`'s refusal message |
+| ~~#122~~ | ~~Optional remote cluster target (rules 12a–12e, ADR 0041): `PATROL_API_SERVER` and `PATROL_API_TOKEN` build a private temporary kubeconfig for every kubectl call. The guard still refuses model-supplied endpoints and credentials. No CLI flags, no CA surface, no egress change. Impl commit also syncs `README.md`'s configuration table and guard bullet, `glossary.md`'s endpoint term, `AGENTS.md`'s test list, `how/project-structure.md`, and `patrol.py`'s refusal message~~ |

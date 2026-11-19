@@ -206,8 +206,11 @@ Secret access (any command containing `secret` — names and metadata included, 
 just `-o yaml/json/jsonpath` values), local-file/credential flags
 (`-f`/`--filename`, `--kubeconfig`/token/cert, `*-file` output formats),
 endpoint-override flags (`--server`/`-s` in every spelling — kubectl must use the
-ambient in-cluster API endpoint), and `--raw` proxy/stats paths
-(multi-hundred-KB dumps that would truncate). The patrol **never mutates the
+process-owned API endpoint), and `--raw` proxy/stats paths
+(multi-hundred-KB dumps that would truncate). The endpoint is process
+configuration: `PATROL_API_SERVER`/`PATROL_API_TOKEN` (both or neither) build a
+private temporary kubeconfig that every kubectl call receives, so the model
+still cannot supply an endpoint or a credential. The patrol **never mutates the
 cluster**; remediation is out of scope for the patroller itself (the governed
 handoff is #12).
 
@@ -241,6 +244,8 @@ that list into a default-deny policy — render it with `--egress-policy` (see
 | `PATROL_BASE_URL` | — | any OpenAI-compatible endpoint, e.g. `https://api.example.com/v1` (required) |
 | `PATROL_MODEL` | — | model id on that endpoint (required) |
 | `KUBECTL` | `oc`→`kubectl` | cluster CLI |
+| `PATROL_API_SERVER` | — | optional remote cluster target: API base URL (e.g. `https://api.example.com:6443`); requires `PATROL_API_TOKEN`, and vice versa. Empty means the ambient in-cluster/kubeconfig target |
+| `PATROL_API_TOKEN` | — | service-account token for the `PATROL_API_SERVER` target; environment only — the process builds a private temporary kubeconfig (`KUBECONFIG`) for every kubectl call and removes it at exit. The token never enters a command argument, a prompt, or a log line |
 | `PATROL_NOTIFY_URLS` | — | if set, apprise sink URLs (comma/newline separated); notifications are also delivered to every configured sink |
 | `PATROL_NOTIFY_DIGEST_AFTER` | `7` | periodic-digest threshold in days: a standing watching wiki entry older than this many days, and not notified within this many days, is named by one process-authored digest; non-negative integer, `0` disables the digest (state-change notifications are unaffected) |
 | `PATROL_MAX_STEPS` | `30` | LLM-turn exploration budget per patrol (raised from 15 after real-cluster runs; GLM needs >15 turns even single-node — if exhausted, the reporting pass reports from observations so far) |

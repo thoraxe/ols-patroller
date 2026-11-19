@@ -47,6 +47,7 @@ import shlex
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
@@ -88,6 +89,13 @@ def report_notify_type(findings: list[dict]) -> str:
 BASE_URL   = os.environ.get("PATROL_BASE_URL", "")   # e.g. https://api.example.com/v1
 MODEL      = os.environ.get("PATROL_MODEL", "")      # model id on that endpoint
 API_KEY    = os.environ.get("PATROL_API_KEY", "")
+# Optional remote cluster target (kubectl-guard.md rules 12a-12e, #122; ADR
+# 0041). The process — never the model — owns the target: these two values
+# build a private temporary kubeconfig at startup and the guard keeps refusing
+# model-supplied endpoints and credentials (rules 6b/6c). Empty means the
+# ambient in-cluster or kubeconfig target (rule 12b).
+API_SERVER = os.environ.get("PATROL_API_SERVER", "")
+API_TOKEN  = os.environ.get("PATROL_API_TOKEN", "")
 KUBECTL    = os.environ.get("KUBECTL", "")  # resolved later
 NOTIFY_URLS = parse_notify_urls(os.environ.get("PATROL_NOTIFY_URLS", ""))
 MAX_STEPS  = int(os.environ.get("PATROL_MAX_STEPS", "30"))  # LLM turns per patrol
@@ -659,6 +667,90 @@ def resolve_kubectl() -> str:
     return "oc"  # will fail loudly later if truly absent
 
 
+# --------------------------------------------------------------- remote target
+
+def api_config_errors(server: str, token: str) -> list[str]:
+    """Rule 12d (#122): validate the optional remote-target pair. Empty when
+    the process uses the ambient target (rule 12b). The errors name the
+    setting, never its value — the server URL and the token stay out of logs."""
+    server = (server or "").strip()
+    token = (token or "").strip()
+    errors: list[str] = []
+    if server and not token:
+        errors.append("PATROL_API_TOKEN is required when PATROL_API_SERVER is set: "
+                      "a remote target needs a service-account token.")
+    if token and not server:
+        errors.append("PATROL_API_SERVER is required when PATROL_API_TOKEN is set: "
+                      "the token names no target cluster.")
+    if server:
+        parts = urlsplit(server)
+        if not parts.scheme or not parts.hostname:
+            errors.append("PATROL_API_SERVER must be an API base URL with a scheme "
+                          "and a host, e.g. https://api.example.com:6443.")
+    return errors
+
+
+KUBECONFIG_NAME = "ols-patroller"  # cluster/user/context name in the built file
+
+
+def build_kubeconfig(server: str, token: str) -> str:
+    """Rule 12c (#122): the kubeconfig document for the target — apiVersion
+    v1, kind Config, one cluster, one user, one context, and the matching
+    `current-context`."""
+    document = {
+        "apiVersion": "v1",
+        "kind": "Config",
+        "clusters": [{"name": KUBECONFIG_NAME,
+                      "cluster": {"server": server}}],
+        "users": [{"name": KUBECONFIG_NAME,
+                   "user": {"token": token}}],
+        "contexts": [{"name": KUBECONFIG_NAME,
+                      "context": {"cluster": KUBECONFIG_NAME,
+                                  "user": KUBECONFIG_NAME}}],
+        "current-context": KUBECONFIG_NAME,
+    }
+    return yaml.safe_dump(document, sort_keys=False)
+
+
+def write_kubeconfig(server: str, token: str) -> Path:
+    """Rule 12c (#122): write the target kubeconfig to a private temporary
+    file (POSIX mode 0600). The caller removes it at exit."""
+    fd, name = tempfile.mkstemp(prefix="ols-patroller-kubeconfig-", suffix=".yaml")
+    path = Path(name)
+    try:
+        os.chmod(path, 0o600)  # private before the token lands in it
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(build_kubeconfig(server, token))
+    except BaseException:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        remove_kubeconfig(path)
+        raise
+    return path
+
+
+def remove_kubeconfig(path: Path | None) -> None:
+    """Rule 12c (#122): remove the private target kubeconfig. Best-effort — a
+    failed cleanup never fails the patrol."""
+    if not path:
+        return
+    try:
+        Path(path).unlink(missing_ok=True)
+    except OSError as e:
+        print(f"[patrol] note: could not remove the target kubeconfig ({e})",
+              file=sys.stderr)
+
+
+def configure_kubectl_target(server: str, token: str) -> Path | None:
+    """Rules 12b/12c (#122): `None` for the ambient target, else the private
+    temporary kubeconfig every kubectl call receives via `KUBECONFIG`."""
+    if not (server or "").strip():
+        return None
+    return write_kubeconfig(server, token)
+
+
 def fixture_for(args: list[str]) -> str:
     cmd = " ".join(args)
     for key, out in FIXTURES:
@@ -869,8 +961,13 @@ def guard_refusal(command: str) -> str | None:
     return None
 
 
-def kubectl_readonly(arg_string: str, *, kubectl: str, dry: bool, verbose: bool) -> str:
-    """The ONLY tool the model gets. Read-only enforcement is the safety boundary."""
+def kubectl_readonly(arg_string: str, *, kubectl: str, dry: bool, verbose: bool,
+                     kubeconfig: str | Path | None = None) -> str:
+    """The ONLY tool the model gets. Read-only enforcement is the safety boundary.
+
+    Rule 12c (#122): a remote target passes `kubeconfig` — the private
+    temporary file whose path travels in `KUBECONFIG`, never in an argv, a
+    prompt, or a log line."""
     refusal = guard_refusal(arg_string)
     if refusal:
         return refusal
@@ -883,8 +980,10 @@ def kubectl_readonly(arg_string: str, *, kubectl: str, dry: bool, verbose: bool)
         return fixture_for(args)[:OUT_CAP]
 
     try:
+        env = None if not kubeconfig else {**os.environ,
+                                          "KUBECONFIG": str(kubeconfig)}
         proc = subprocess.run([kubectl, *args], capture_output=True, text=True,
-                              timeout=TOOL_TIMEOUT)
+                              timeout=TOOL_TIMEOUT, env=env)
     except FileNotFoundError:
         return f"REFUSED: '{kubectl}' not found on PATH. Use --dry-cluster or install oc/kubectl."
     except subprocess.TimeoutExpired:
@@ -912,7 +1011,8 @@ def kubectl_readonly(arg_string: str, *, kubectl: str, dry: bool, verbose: bool)
     return out.strip() or "(no output)"
 
 
-def make_kubectl_tool(*, kubectl: str, dry: bool, verbose: bool):
+def make_kubectl_tool(*, kubectl: str, dry: bool, verbose: bool,
+                      kubeconfig: str | Path | None = None):
     """Wrap the guarded read-only kubectl as the single langchain tool."""
     @tool("kubectl_readonly")
     def _kubectl_tool(command: str) -> str:
@@ -926,7 +1026,8 @@ def make_kubectl_tool(*, kubectl: str, dry: bool, verbose: bool):
         Args:
             command: args after oc/kubectl, e.g. 'get clusteroperators'
         """
-        return kubectl_readonly(command, kubectl=kubectl, dry=dry, verbose=verbose)
+        return kubectl_readonly(command, kubectl=kubectl, dry=dry, verbose=verbose,
+                                kubeconfig=kubeconfig)
     return _kubectl_tool
 
 
@@ -2919,7 +3020,8 @@ def wiki_history(wiki_path, window: int) -> list[str]:
 
 # --------------------------------------------------------------------------- one patrol
 async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
-                     max_steps: int, token_budget: int) -> None:
+                     max_steps: int, token_budget: int,
+                     kubeconfig: str | Path | None = None) -> None:
     """One patrol end-to-end (async).
 
     Rule 7i (#119, ADR 0040): a patrol that raises before it delivers a report
@@ -2939,7 +3041,8 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
     try:
         await _run_patrol(delivered_marker, kubectl=kubectl,
                           wiki_path=wiki_path, dry=dry, verbose=verbose,
-                          max_steps=max_steps, token_budget=token_budget)
+                          max_steps=max_steps, token_budget=token_budget,
+                          kubeconfig=kubeconfig)
     except Exception as e:  # noqa: BLE001 — re-raised below, never swallowed
         # Rule 7i's order: the notification prints first, the unchanged
         # exception reaches the caller next. A ctrl-c is not a patrol failure
@@ -2956,7 +3059,8 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
 
 async def _run_patrol(delivered_marker: dict[str, bool], *, kubectl: str,
                       wiki_path: Path, dry: bool, verbose: bool,
-                      max_steps: int, token_budget: int) -> None:
+                      max_steps: int, token_budget: int,
+                      kubeconfig: str | Path | None = None) -> None:
     ts = time.strftime("%Y-%m-%dT%H:%M:%S%z")
     print(f"\n[patrol] === patrol start {ts} (model={MODEL}, dry={dry}, engine=deepagents) ===")
 
@@ -2967,7 +3071,8 @@ async def _run_patrol(delivered_marker: dict[str, bool], *, kubectl: str,
                          else (WIKI_SEED, False))
 
     # best-effort dedup context: what's already being handled?
-    inflight = kubectl_readonly("get agenticruns -A", kubectl=kubectl, dry=dry, verbose=verbose)
+    inflight = kubectl_readonly("get agenticruns -A", kubectl=kubectl, dry=dry,
+                                verbose=verbose, kubeconfig=kubeconfig)
 
     dry_note = ""
     if dry:
@@ -3012,7 +3117,8 @@ async def _run_patrol(delivered_marker: dict[str, bool], *, kubectl: str,
     # the OLS agentic sandbox uses.
     agent = create_deep_agent(
         model=model,
-        tools=[make_kubectl_tool(kubectl=kubectl, dry=dry, verbose=verbose)],
+        tools=[make_kubectl_tool(kubectl=kubectl, dry=dry, verbose=verbose,
+                                 kubeconfig=kubeconfig)],
         system_prompt=SYSTEM_PROMPT,
         # Replace deepagents' default FilesystemMiddleware (which would expose
         # ls/read_file/write_file/edit_file/delete/glob/grep/execute) with the minimum
@@ -3512,51 +3618,64 @@ def main() -> None:
     except ValueError as e:
         die(f"PATROL_CLUSTER_ID={CLUSTER_ID!r} is invalid: {e}")
 
-    kubectl = resolve_kubectl()
-    wiki_path = Path(args.wiki)
-    # Git-backed wiki (#3): ensure the wiki directory is a repo before the first
-    # patrol (wiki-memory.md rule 4a), on the cluster branch (rule 4a1). If git
-    # is unusable this warns and the process runs file-only (rule 4b) — patrol
-    # behavior never depends on git.
-    if ensure_wiki_repo(wiki_path.parent, branch):
-        print(f"[patrol] wiki repo: {wiki_path.parent}")
+    # Rule 12d (#122): the remote-target pair is validated after the offline
+    # modes and the cluster-slug check, before any wiki touch (ADR 0041).
+    target_errors = api_config_errors(API_SERVER, API_TOKEN)
+    if target_errors:
+        die("; ".join(target_errors))
 
-    # #27: the per-turn output stream is on by default — verbose is derived
-    # from the --quiet opt-out, never a standalone opt-in flag.
-    verbose = not args.quiet
+    # Rule 12c (#122): one private temporary kubeconfig for every kubectl call
+    # of this process, removed at exit — including after a failed patrol.
+    kubeconfig = configure_kubectl_target(API_SERVER, API_TOKEN)
+    try:
+        kubectl = resolve_kubectl()
+        wiki_path = Path(args.wiki)
+        # Git-backed wiki (#3): ensure the wiki directory is a repo before the first
+        # patrol (wiki-memory.md rule 4a), on the cluster branch (rule 4a1). If git
+        # is unusable this warns and the process runs file-only (rule 4b) — patrol
+        # behavior never depends on git.
+        if ensure_wiki_repo(wiki_path.parent, branch):
+            print(f"[patrol] wiki repo: {wiki_path.parent}")
 
-    async def patrol_once() -> None:
-        await run_patrol(kubectl=kubectl, wiki_path=wiki_path, dry=args.dry_cluster,
-                         verbose=verbose, max_steps=args.max_steps,
-                         token_budget=args.token_budget)
+        # #27: the per-turn output stream is on by default — verbose is derived
+        # from the --quiet opt-out, never a standalone opt-in flag.
+        verbose = not args.quiet
 
-    def one() -> None:
-        asyncio.run(patrol_once())
+        async def patrol_once() -> None:
+            await run_patrol(kubectl=kubectl, wiki_path=wiki_path, dry=args.dry_cluster,
+                             verbose=verbose, max_steps=args.max_steps,
+                             token_budget=args.token_budget,
+                             kubeconfig=str(kubeconfig) if kubeconfig else None)
 
-    if args.loop:
-        print(f"[patrol] loop mode: every {args.interval}s (ctrl-c to stop)")
+        def one() -> None:
+            asyncio.run(patrol_once())
 
-        # #50: every patrol of the process runs on one process-lifetime event
-        # loop — a fresh asyncio.run per patrol stranding loop-bound engine
-        # state (cached async clients, keep-alive pools) on a closed loop
-        # (ADR 0020). The inter-patrol wait is a deliberate blocking
-        # time.sleep: the loop has no concurrent work while idle, and a
-        # blocking sleep is trivially ctrl-c-interruptible.
-        async def loop() -> None:
-            while True:
-                try:
-                    await patrol_once()
-                except Exception as e:  # noqa: BLE001
-                    print(f"[patrol] patrol failed ({e}); continuing loop",
-                          file=sys.stderr)
-                time.sleep(args.interval)
+        if args.loop:
+            print(f"[patrol] loop mode: every {args.interval}s (ctrl-c to stop)")
 
-        try:
-            asyncio.run(loop())
-        except KeyboardInterrupt:
-            print("\n[patrol] stopped.")
-    else:
-        one()
+            # #50: every patrol of the process runs on one process-lifetime event
+            # loop — a fresh asyncio.run per patrol stranding loop-bound engine
+            # state (cached async clients, keep-alive pools) on a closed loop
+            # (ADR 0020). The inter-patrol wait is a deliberate blocking
+            # time.sleep: the loop has no concurrent work while idle, and a
+            # blocking sleep is trivially ctrl-c-interruptible.
+            async def loop() -> None:
+                while True:
+                    try:
+                        await patrol_once()
+                    except Exception as e:  # noqa: BLE001
+                        print(f"[patrol] patrol failed ({e}); continuing loop",
+                              file=sys.stderr)
+                    time.sleep(args.interval)
+
+            try:
+                asyncio.run(loop())
+            except KeyboardInterrupt:
+                print("\n[patrol] stopped.")
+        else:
+            one()
+    finally:
+        remove_kubeconfig(kubeconfig)
 
 
 if __name__ == "__main__":

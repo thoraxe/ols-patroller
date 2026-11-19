@@ -97,8 +97,8 @@ def test_kubectl_readonly_uses_the_private_kubeconfig(tmp_path):
 import os, pathlib, sys
 kube = pathlib.Path(os.environ["KUBECONFIG"])
 pathlib.Path({str(out)!r}).write_text(
-    "ARGS=" + repr(sys.argv[1:]) + "\n" + kube.read_text(encoding="utf-8"),
-    encoding="utf-8", newline="\n")
+    "ARGS=" + repr(sys.argv[1:]) + "\\n" + kube.read_text(encoding="utf-8"),
+    encoding="utf-8", newline="\\n")
 print("ok")
 ''')
     kube = patrol.write_kubeconfig("https://api.example:6443", "secret-token")
@@ -120,8 +120,8 @@ def test_make_kubectl_tool_passes_the_kubeconfig(tmp_path):
     cli = fake_cli(tmp_path, f'''
 import os, pathlib, sys
 pathlib.Path({str(out)!r}).write_text(
-    "ARGS=" + repr(sys.argv[1:]) + "\n" + os.environ["KUBECONFIG"],
-    encoding="utf-8", newline="\n")
+    "ARGS=" + repr(sys.argv[1:]) + "\\n" + os.environ["KUBECONFIG"],
+    encoding="utf-8", newline="\\n")
 print("ok")
 ''')
     kube = patrol.write_kubeconfig("https://api.example:6443", "secret-token")
@@ -144,9 +144,9 @@ def test_subprocess_uses_the_configured_target_before_the_model(tmp_path):
 import os, pathlib, sys
 kube = pathlib.Path(os.environ["KUBECONFIG"])
 pathlib.Path({str(out)!r}).write_text(
-    "ARGS=" + repr(sys.argv[1:]) + "\n" + kube.read_text(encoding="utf-8")
-    + "\nPATH=" + str(kube),
-    encoding="utf-8", newline="\n")
+    "ARGS=" + repr(sys.argv[1:]) + "\\n" + kube.read_text(encoding="utf-8")
+    + "\\nPATH=" + str(kube),
+    encoding="utf-8", newline="\\n")
 print("[]")
 ''')
     wiki = tmp_path / "wiki" / "cluster-wiki.md"
