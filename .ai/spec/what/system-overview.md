@@ -34,6 +34,9 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
    or the inter-patrol wait still stops the process cleanly; `--once` is
    unchanged — one patrol per process run (ADR
    `decisions/0020-one-event-loop-per-process.md`).]
+   [DONE: #119 — a patrol that fails before its report sends one FAILURE
+   notification naming the error. It then raises. The loop's line and the
+   continue stay as they are (`reporting-notifications.md` rule 7i).]
 6. Startup requires `PATROL_API_KEY`, `PATROL_BASE_URL`, and `PATROL_MODEL`; the
    process exits with an error if any is unset — except in the offline
    `--wiki-stats` mode, which reads only the wiki and needs no model env
@@ -122,14 +125,21 @@ wrong. It is a hacky single-file PoC (`patrol.py`, deepagents engine) tracked in
     the frontmatter counters
     [DONE: #5], rewrite the wiki atomically, commit it to the wiki repo, push
     if `PATROL_WIKI_REMOTE` is set [DONE: #3].
-15. If the reporting pass fails entirely, the patrol ends with a warning and the wiki
-    is left unchanged. The same holds when the wiki update fails skeleton
-    validation and its repair pass: the old wiki stands and the patrol's findings
-    and notifications still deliver [DONE: #5]. [DONE: #51 — an
+15. If the reporting pass fails entirely, the patrol warns and delivers one FAILURE
+    notification. It then runs rule 33's minimal write: the old wiki is written
+    with the clock advanced (`wiki-memory.md` rule 33, `reporting-notifications.md`
+    rule 7). Rule 33 carries the exceptions, such as a legacy no-frontmatter wiki
+    that writes nothing. A different outcome covers a wiki that fails skeleton
+    validation and its failing repair pass: the old wiki stands unwritten, and
+    the findings and notifications still deliver [DONE: #5]. [DONE: #51 — an
     empty-`updated_wiki` report is the third degradation: retried once
     inside the reporting pass (`reporting-notifications.md` rule 7b),
     then delivered findings-only with a stderr warning, the wiki
     unchanged.]
+    [DONE: #119 — a patrol that raises before it delivers a report or a
+    failure message sends one FAILURE message and then raises. The wiki stays
+    byte-for-byte unchanged: no write, no commit, no clock advance
+    (`reporting-notifications.md` rule 7i).]
 16. **Doc-surface consistency for the defaults.** Every committed surface that
     names the default cadence or the output flag states the post-#25/#27 truth:
     the `--interval` help text and `patrol.py`'s module docstring, the
@@ -237,6 +247,7 @@ documents). Milestone shape:
 | Ticket | Summary |
 |---|---|
 | #122 | Optional remote cluster target (`kubectl-guard.md` rules 12a–12e, ADR 0041): `PATROL_API_SERVER` and `PATROL_API_TOKEN` build a private kubeconfig for every kubectl call. One process targets one cluster; no fleet read. Tracked in milestone v0.4.0 |
+| ~~#119~~ | ~~Pre-report failure notification (rules 5 and 15; `reporting-notifications.md` rule 7i, `wiki-memory.md` rule 33, ADR 0040). The patrol sends one FAILURE notification naming the error, then raises. Loop mode's catch-and-continue and `--once`'s nonzero exit do not change. The wiki does not change either: no write, no commit, no clock advance. Tracked in milestone v0.4.0~~ |
 | ~~#89~~ | ~~Fleet wiki layout: one remote repo holds one branch per cluster (rules 4a/4a1/4e/4f1/4f2 in `wiki-memory.md`, ADR 0039). The configuration surface changes: `PATROL_CLUSTER_ID` must be a slug, and it names the cluster branch; `PATROL_WIKI_REMOTE` receives the same-named branch. The `WIKI_BRANCH_PREFIX` constant joins the hard-coded constant line. Tracked in milestone v0.4.0~~ |
 | ~~#101~~ | ~~The hard-coded constant line's `REPORT_MAX_TOKENS` retunes 24000 → 28000 (`reporting-notifications.md` rule 8b, ADR 0036), after the v0.3.2 soak's first attempt exhausted the 24000 completion budget and returned an empty wiki. No other constant changes; `REPORT_TIMEOUT` stays 900 s and #97's cheap first-attempt shape is untouched. Tracked in milestone v0.3.3 (patch)~~ |
 | ~~#97~~ | ~~The hard-coded constant line's `REPORT_MAX_TOKENS` drops 32000 → 24000 (`reporting-notifications.md` rule 8b, ADR 0034), alongside the first attempt taking the #88 retry's cheap shape. No other constant changes; `REPORT_TIMEOUT` stays 900 s. Tracked in milestone v0.3.2 (patch), not v0.3.1's reliability gate~~ |
@@ -247,5 +258,5 @@ documents). Milestone shape:
 | v0.3.1 (#88, #85) | Reporting reliability patch: the shape pass must complete inside the model gateway's ~900 s ceiling (#88 — 4 of the last 5 v0.3.0 patrols produced no report; the release gate), with the wiki prose/history payload reduced so the pass reads and re-emits less (#85); the rule-33 total-failure net stays as the last resort |
 | v0.3.2 (#93, #97) | Reporting-cost + digest-cadence patch: the digest cadence's process-owned clock is carried across rewrites (#93), and the reporting pass's first attempt takes the #88 retry's cheap shape with `REPORT_MAX_TOKENS` 32000 → 24000 (#97) |
 | v0.3.3 (#101) | Reporting-bound patch: `REPORT_MAX_TOKENS` 24000 → 28000 — the first attempt exhausted 24000 completion tokens on the v0.3.2 soak while the gateway window was nowhere near binding, so the bound gains reasoning-variance headroom; #97's cheap shape, the 900 s request bound, and the `bound B tokens` diagnostic are unchanged (rule 8b, ADR 0036) |
-| v0.4.0 (#13, #26, #86, #87, #89) | Fleet memory & wiki usability: one remote repo holds many cluster wikis via per-cluster branches (#89, blocking #13's spoke-push/hub-read leg), wiki viewer (#26), anomaly-log character cap (#86), process-generated topology diagram (#87); #41 (runbooks) is a capacity-permitting candidate |
+| v0.4.0 (#13, #26, #86, #87, #89, #119) | Fleet memory & wiki usability: one remote repo holds many cluster wikis via per-cluster branches (#89, blocking #13's spoke-push/hub-read leg), wiki viewer (#26), anomaly-log character cap (#86), process-generated topology diagram (#87), a pre-report patrol failure that notifies instead of staying silent (#119); #41 (runbooks) is a capacity-permitting candidate |
 | future (#12, #14–#16, #31, #41) | Remediation handoff to AgenticRuns (+ its optional-module shape, #31), CRD dispatcher, pluggable investigation engine, MCP-memory decision record, external runbook referencing |

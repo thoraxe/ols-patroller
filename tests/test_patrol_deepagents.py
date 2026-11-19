@@ -85,6 +85,19 @@ Covers (safety-model.md rules 6b-6c, wiki-memory.md rules 4f and 15-19):
   the optional pair carries the OLD date forward (never a fresh stamp on
   a quiet patrol), and three patrols over dropping rewrites digest once
   instead of on every other patrol
+- pre-report failure-notification wiring of #119 (reporting-notifications.md
+  rule 7i): a patrol that raises before the reporting pass — a wire-level
+  401 on the first exploration turn, the failure the issue observed on a
+  redeploy with an expired key — delivers one FAILURE notification naming
+  the error, then re-raises, so loop mode's catch-and-continue line still
+  logs it and the loop goes on, `--once` still exits nonzero, and the
+  failing patrol writes no wiki (rule 33's minimal-write net does not
+  apply); a raise from the reporting pass's own prompt assembly, from
+  its validation-repair call, or from its wiki-repair call is pre-report
+  too and takes the same leg; a model that cannot be constructed at all
+  takes it as well; the total-failure leg keeps its one FAILURE
+  notification and gains no second one, even when its minimal write
+  raises (three guard tests, green before the implementation)
 
 The `--raw` guard refusal is not e2e-covered: it is unit-checked in
 test_kubectl_guard.py (kubectl-guard.md rule 6a, #11).
@@ -100,6 +113,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import httpx
+import pytest
 import yaml
 from langchain_openai import ChatOpenAI
 
@@ -132,16 +146,21 @@ class ScriptedEndpoint:
     list) serves sequential shape requests in order — report first, then the
     #5 repair pass — so a patrol can be scripted to emit an invalid wiki and
     then a corrected one. Every request body is recorded in `requests`.
+
+    `agent_error=(status, count)` answers the first `count` agent-loop requests
+    with that HTTP error status instead (the shape pass is unaffected) — the
+    wire-level model failure path of #119, e.g. a `401` from an expired key.
     """
 
     def __init__(self, turns=(), report=None, on_empty="summary", report_mode="ok",
-                 reports=None, prompt_tokens=10):
+                 reports=None, prompt_tokens=10, agent_error=None):
         self.turns = list(turns)
         self.report = report
         self.on_empty = on_empty
         self.report_mode = report_mode
         self.reports = list(reports) if reports is not None else None
         self.prompt_tokens = prompt_tokens  # #10: fake per-turn input-token usage
+        self.agent_error = agent_error      # #119: (status, remaining)
         self._shape_seen = 0
         self.requests: list[dict] = []
 
@@ -162,6 +181,13 @@ class ScriptedEndpoint:
                 msg = _assistant_tool_call("PatrolReport", served, "call_report")
             return self._completion(msg, "tool_calls" if self.report_mode != "fail" else "stop",
                                     stream=bool(body.get("stream")))
+        if self.agent_error is not None and self.agent_error[1] > 0:
+            status, remaining = self.agent_error
+            self.agent_error = (status, remaining - 1)
+            return httpx.Response(status, json={
+                "error": {"message": "invalid api key",
+                          "type": "invalid_request_error",
+                          "code": "invalid_api_key"}})
         if self.turns:
             msg = self.turns.pop(0)
         elif self.on_empty == "toolcall":
@@ -658,6 +684,301 @@ def test_minimal_write_leaves_over_cap_closed_entries_whole(
     assert "prose line 5 " in final           # the over-cap prose stands whole
     assert frontmatter(final)["patrol_count"] == 10
     assert commit_count(wiki.parent) == 1
+
+
+# ------------------------------------- pre-report failure notification (#119)
+
+def test_exploration_exception_notifies_and_the_loop_continues(tmp_path, monkeypatch, capsys):
+    """Rule 7i (#119): a patrol that raises before the reporting pass is not
+    silent. A wire-level 401 (the issue's expired-key failure) ends the first
+    patrol's exploration; the process delivers exactly one FAILURE
+    notification naming the error, the loop's unchanged catch-and-continue
+    line still logs it, the loop goes on, and the failing patrol writes
+    nothing — while the healthy second patrol writes and commits as usual."""
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    endpoint = ScriptedEndpoint(report=REPORT, agent_error=(401, 1))
+    runs = []
+    real_run = patrol.run_patrol
+    # rule 10b/rule 7i: the failure notification carries notify_type="FAILURE"
+    calls = []
+    real_notify = patrol.notify
+
+    def recording_notify(messages, *, notify_type="WARNING"):
+        calls.append((list(messages), notify_type))
+        real_notify(messages, notify_type=notify_type)
+
+    async def recording_run(**kw):
+        runs.append(1)
+        await real_run(**kw)
+        if len(runs) == 2:
+            raise KeyboardInterrupt            # ctrl-c after the second patrol
+
+    monkeypatch.setattr(patrol, "notify", recording_notify)
+    monkeypatch.setattr(patrol, "run_patrol", recording_run)
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--loop", "--interval", "0")
+
+    captured = capsys.readouterr()
+    # one FAILURE notification, naming the error, with the pinned wording
+    failures = [line for line in captured.out.splitlines()
+                if "patrol failed before the report — " in line]
+    assert len(failures) == 1, (
+        f"expected exactly one pre-report failure notification, got {failures!r}")
+    assert failures[0].startswith(
+        "[patrol] 🔔 NOTIFY: patrol failed before the report — ")
+    assert "401" in failures[0]
+    assert failures[0].endswith("(see pod logs)")
+    # and it went through notify as a FAILURE — one call for that message
+    failure_calls = [(msgs, kind) for msgs, kind in calls
+                     if any("patrol failed before the report" in m for m in msgs)]
+    assert len(failure_calls) == 1, failure_calls
+    assert failure_calls[0][1] == "FAILURE"
+    assert len(failure_calls[0][0]) == 1, failure_calls[0][0]
+
+    # the error is still logged — by the loop's unchanged line, which follows
+    # the notification and still lets the loop continue
+    assert "patrol failed (Error code: 401" in captured.err
+    assert "continuing loop" in captured.err
+    assert len(runs) == 2                     # the loop continued
+    assert commit_count(wiki.parent) == 1     # only the healthy patrol wrote
+    assert len(endpoint.shape_requests) == 1  # the failed patrol never reported
+
+
+def test_pre_report_failure_reraises_and_writes_nothing_in_once_mode(
+        tmp_path, monkeypatch, capsys):
+    """Rule 7i (#119), `--once`: the notification goes out first and the same
+    exception still escapes — the error is never swallowed. The patrol writes
+    no wiki, makes no commit, and advances no clock: rule 33's minimal-write
+    net does not apply to a patrol that never attempted a report, so the
+    on-disk wiki stays byte-for-byte intact."""
+    (tmp_path / "wiki").mkdir()
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    wiki.write_text(wiki_text("on-disk marker", patrol_count=9),
+                    encoding="utf-8", newline="\n")
+    before = wiki.read_bytes()
+    endpoint = ScriptedEndpoint(report=REPORT, agent_error=(401, 1))
+
+    with pytest.raises(Exception, match="401") as excinfo:
+        run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
+    assert "Error code: 401" in str(excinfo.value)
+
+    captured = capsys.readouterr()
+    failures = [line for line in captured.out.splitlines()
+                if "patrol failed before the report — " in line]
+    assert len(failures) == 1 and "401" in failures[0]
+    # no write, no stamp, no commit, no minimal write
+    assert wiki.read_bytes() == before
+    assert frontmatter(wiki.read_text(encoding="utf-8"))["patrol_count"] == 9
+    assert commit_count(wiki.parent) == 0
+    assert "minimal write" not in captured.out
+    assert endpoint.shape_requests == []      # the reporting pass never ran
+
+
+def test_reporting_pass_setup_raise_takes_the_pre_report_leg(
+        tmp_path, monkeypatch, capsys):
+    """Rule 7i (#119), scope clause: the rule covers the reporting pass's own
+    setup, not exploration only. A per-attempt failure is classified inside the
+    pass and returns `None`, but the prompt assembly before the attempt loop can
+    raise. That raise is not a classified failure, so it is a pre-report
+    failure: one FAILURE notification, the same error re-raised, and no write
+    (not rule 33's total-failure leg)."""
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    endpoint = ScriptedEndpoint(turns=NATURAL_TURNS, report=REPORT)
+
+    def failing_compaction(*args, **kwargs):
+        raise RuntimeError("prompt assembly failed")
+
+    # the real setup seam: `shape_report` compacts the conversation before its
+    # per-attempt `try`, so the raise escapes the pass instead of classifying
+    monkeypatch.setattr(patrol, "compact_messages", failing_compaction)
+    with pytest.raises(RuntimeError, match="prompt assembly failed"):
+        run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
+
+    captured = capsys.readouterr()
+    failures = [line for line in captured.out.splitlines()
+                if "patrol failed before the report — " in line]
+    assert len(failures) == 1, (
+        f"expected exactly one pre-report failure notification, got {failures!r}")
+    assert "prompt assembly failed" in failures[0]
+    assert failures[0].endswith("(see pod logs)")
+    assert commit_count(wiki.parent) == 0     # no write, no commit
+    assert "patrol produced no report" not in captured.out  # not rule 33's leg
+    assert endpoint.shape_requests == []      # the pass raised before any call
+
+
+def test_wiki_repair_raise_takes_the_pre_report_leg(tmp_path, monkeypatch, capsys):
+    """Rule 7i (#119), scope clause: a raise in the rule-7d wiki-repair pass is
+    pre-report too. A still-empty report engages the repair pass; a raise there
+    means the patrol delivered nothing at all, so one FAILURE notification
+    fires, the same error re-raises, and the minimal write never runs."""
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    endpoint = ScriptedEndpoint(turns=NATURAL_TURNS[:1],
+                                reports=[EMPTY_WIKI_REPORT])
+    real_shape = patrol.shape_report
+    calls = []
+
+    async def shape_then_raise(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            return await real_shape(*args, **kwargs)
+        raise RuntimeError("wiki-repair prompt assembly failed")
+
+    monkeypatch.setattr(patrol, "shape_report", shape_then_raise)
+    with pytest.raises(RuntimeError, match="wiki-repair prompt assembly failed"):
+        run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
+
+    captured = capsys.readouterr()
+    failures = [line for line in captured.out.splitlines()
+                if "patrol failed before the report — " in line]
+    assert len(failures) == 1, (
+        f"expected exactly one pre-report failure notification, got {failures!r}")
+    assert "wiki-repair prompt assembly failed" in failures[0]
+    assert len(calls) == 2                    # the report pass, then the repair
+    assert commit_count(wiki.parent) == 0     # the minimal write never ran
+    # the empty-wiki report's findings never delivered: no report landed
+    assert "worker-1 has been NotReady for 40 days" not in captured.out
+
+
+def test_validation_repair_raise_takes_the_pre_report_leg(tmp_path, monkeypatch, capsys):
+    """Rule 7i (#119), scope clause: the reporting pass's repair modes are in
+    the rule too. A first report whose wiki fails skeleton validation triggers
+    the rule-7a repair call; a raise there means no report was delivered, so
+    the patrol sends one FAILURE notification, re-raises, and writes nothing.
+    The first report's findings never deliver — rule 7a delivers only after the
+    repair decision resolves."""
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    rejected = wiki_text("REJECTED-WIKI-MARKER").replace(
+        "patrol_count: 9\n", "patrol_count: 9\nbogus_key: 1\n")
+    endpoint = ScriptedEndpoint(turns=NATURAL_TURNS[:1],
+                                reports=[dict(REPORT, updated_wiki=rejected)])
+    real_shape = patrol.shape_report
+    calls = []
+
+    async def shape_then_raise(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            return await real_shape(*args, **kwargs)
+        raise RuntimeError("repair prompt assembly failed")
+
+    monkeypatch.setattr(patrol, "shape_report", shape_then_raise)
+    with pytest.raises(RuntimeError, match="repair prompt assembly failed"):
+        run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
+
+    captured = capsys.readouterr()
+    failures = [line for line in captured.out.splitlines()
+                if "patrol failed before the report — " in line]
+    assert len(failures) == 1, (
+        f"expected exactly one pre-report failure notification, got {failures!r}")
+    assert "repair prompt assembly failed" in failures[0]
+    assert len(calls) == 2                    # the report parsed, the repair raised
+    assert commit_count(wiki.parent) == 0     # no write, no commit
+    # the first report's findings were never delivered: no report landed
+    assert "worker-1 has been NotReady for 40 days" not in captured.out
+
+
+def test_model_construction_raise_takes_the_pre_report_leg(tmp_path, monkeypatch, capsys):
+    """Rule 7i (#119), scope clause: the rule starts at the top of the patrol,
+    not at exploration. A model that cannot be constructed — a bad endpoint or
+    key configuration — is a pre-report failure: one FAILURE notification, the
+    same error re-raised, and no wiki write."""
+    (tmp_path / "wiki").mkdir()
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    wiki.write_text(wiki_text("on-disk marker", patrol_count=9),
+                    encoding="utf-8", newline="\n")
+    before = wiki.read_bytes()
+    endpoint = ScriptedEndpoint(report=REPORT)
+
+    def failing_make_model(**kwargs):
+        raise RuntimeError("no endpoint configured")
+
+    with pytest.raises(RuntimeError, match="no endpoint configured"):
+        run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8",
+                       model_factory=failing_make_model)
+
+    captured = capsys.readouterr()
+    failures = [line for line in captured.out.splitlines()
+                if "patrol failed before the report — " in line]
+    assert len(failures) == 1, (
+        f"expected exactly one pre-report failure notification, got {failures!r}")
+    assert "no endpoint configured" in failures[0]
+    assert wiki.read_bytes() == before        # no write, no stamp
+    assert commit_count(wiki.parent) == 0     # no commit
+    assert endpoint.requests == []            # no model call ever went out
+
+
+def test_total_failure_leg_delivers_no_duplicate_failure_notification(
+        tmp_path, monkeypatch, capsys):
+    """Rule 7i (#119) guard: the reporting-pass total-failure leg already
+    notifies (rule 33), and `shape_report` returns `None` instead of raising —
+    so the pre-report leg adds no second FAILURE notification there. This pin
+    is green before the implementation by design: it protects the existing
+    leg while the new one lands."""
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    endpoint = ScriptedEndpoint(turns=NATURAL_TURNS[:1], report=REPORT,
+                                report_mode="fail")
+    run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
+
+    captured = capsys.readouterr()
+    failure_lines = [line for line in captured.out.splitlines()
+                     if "patrol produced no report" in line
+                     or "patrol failed before the report" in line]
+    assert len(failure_lines) == 1, (
+        f"the total-failure leg delivers exactly one failure notification, "
+        f"got {failure_lines!r}")
+    assert ("patrol produced no report — both reporting-pass attempts failed "
+            "(see pod logs)") in failure_lines[0]
+    assert "patrol failed before the report" not in captured.out
+
+
+def test_post_delivery_exception_keeps_the_log_only_behavior(
+        tmp_path, monkeypatch, capsys):
+    """Rule 7i (#119) boundary guard: the new leg covers the pre-report phase
+    only. A patrol whose report was delivered and whose wiki write then fails
+    keeps today's behavior — the exception escapes unchanged, the loop logs
+    it, and no FAILURE notification fires: the human already received the
+    report. Green before the implementation by design."""
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    endpoint = ScriptedEndpoint(turns=NATURAL_TURNS, report=REPORT)
+
+    def failing_write(path, content):
+        raise OSError("disk full")          # rule 4c: the write's error propagates
+
+    monkeypatch.setattr(patrol, "write_wiki_atomic", failing_write)
+    with pytest.raises(OSError, match="disk full"):
+        run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
+
+    captured = capsys.readouterr()
+    # the report was delivered before the write failed ...
+    assert "🔔 NOTIFY: worker-1 has been NotReady for 40 days" in captured.out
+    # ... and the pre-report leg did not add a failure notification
+    assert "patrol failed before the report" not in captured.out
+
+
+def test_total_failure_write_error_adds_no_second_failure_notification(
+        tmp_path, monkeypatch, capsys):
+    """Rule 7i (#119) boundary guard, rule-33 leg: the total-failure leg
+    delivers its own FAILURE message and then runs the minimal write. An
+    exception in that write is not *before* a failure notification — the human
+    already has rule 33's message — so no second FAILURE notification fires.
+    Green before the implementation by design."""
+    wiki = tmp_path / "wiki" / "cluster-wiki.md"
+    endpoint = ScriptedEndpoint(turns=NATURAL_TURNS[:1], report=REPORT,
+                                report_mode="fail")
+
+    def failing_write(path, content):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(patrol, "write_wiki_atomic", failing_write)
+    with pytest.raises(OSError, match="disk full"):
+        run_patrol_cli(monkeypatch, endpoint, wiki, "--max-steps", "8")
+
+    captured = capsys.readouterr()
+    failure_lines = [line for line in captured.out.splitlines()
+                     if "patrol produced no report" in line
+                     or "patrol failed before the report" in line]
+    assert len(failure_lines) == 1, (
+        f"rule 33's message stays the patrol's only failure notification, "
+        f"got {failure_lines!r}")
+    assert "patrol produced no report" in failure_lines[0]
 
 
 # --------------------------------------------------------------- wiki wiring (#3)

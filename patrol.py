@@ -2920,6 +2920,43 @@ def wiki_history(wiki_path, window: int) -> list[str]:
 # --------------------------------------------------------------------------- one patrol
 async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
                      max_steps: int, token_budget: int) -> None:
+    """One patrol end-to-end (async).
+
+    Rule 7i (#119, ADR 0040): a patrol that raises before it delivers a report
+    or a failure notification is never silent. It makes one FAILURE `notify`
+    call naming the error and then re-raises the same exception unchanged — so
+    `--once` still exits nonzero and loop mode still logs its line and goes on.
+    The wiki write path stays untouched (no write, no commit, no clock advance):
+    rule 33's minimal-write net belongs to a `None` report, not to this leg.
+
+    The shared `delivered_marker` is set at each delivery point — rule 33's
+    total-failure notification and rule 16's report delivery — so one patrol
+    sends at most one failure notification: an exception raised after delivery
+    keeps today's log-only behavior (the human already has the message), and
+    rule 33's minimal write can raise without a second one firing.
+    """
+    delivered_marker: dict[str, bool] = {"done": False}
+    try:
+        await _run_patrol(delivered_marker, kubectl=kubectl,
+                          wiki_path=wiki_path, dry=dry, verbose=verbose,
+                          max_steps=max_steps, token_budget=token_budget)
+    except Exception as e:  # noqa: BLE001 — re-raised below, never swallowed
+        # Rule 7i's order: the notification prints first, the unchanged
+        # exception reaches the caller next. A ctrl-c is not a patrol failure
+        # (`KeyboardInterrupt` is a BaseException) and is not covered here.
+        if not delivered_marker["done"]:
+            try:
+                notify([f"patrol failed before the report — {e} (see pod logs)"],
+                       notify_type="FAILURE")
+            except Exception as notify_error:  # noqa: BLE001 — never mask `e`
+                print(f"[patrol] note: failure notification could not be "
+                      f"delivered ({notify_error})", file=sys.stderr)
+        raise
+
+
+async def _run_patrol(delivered_marker: dict[str, bool], *, kubectl: str,
+                      wiki_path: Path, dry: bool, verbose: bool,
+                      max_steps: int, token_budget: int) -> None:
     ts = time.strftime("%Y-%m-%dT%H:%M:%S%z")
     print(f"\n[patrol] === patrol start {ts} (model={MODEL}, dry={dry}, engine=deepagents) ===")
 
@@ -3087,6 +3124,9 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
         print("[patrol] WARNING: reporting pass produced no report; skipping wiki write.")
         notify(["patrol produced no report — both reporting-pass attempts "
                 "failed (see pod logs)"], notify_type="FAILURE")
+        # Rule 7i (#119): this patrol has delivered its failure message — the
+        # minimal write below may still raise, and no second one may fire.
+        delivered_marker["done"] = True
         findings, notifications, new_wiki = [], [], ""
         still_empty = False
         # Rule 31 (#77): the fallback refuses a leniently-decoded legacy wiki —
@@ -3214,6 +3254,9 @@ async def run_patrol(*, kubectl: str, wiki_path: Path, dry: bool, verbose: bool,
             notify_stamp_ids = list(dict.fromkeys([*notified_ids, *digest_ids]))
 
         notify(delivered, notify_type=report_notify_type(findings))
+        # Rule 7i (#119): the report is delivered — an exception from the wiki
+        # write, the commit, or the push keeps today's log-only behavior.
+        delivered_marker["done"] = True
 
     if new_wiki:
         # Rule 22 (#7): the expiry pass — pure and deterministic, after the
