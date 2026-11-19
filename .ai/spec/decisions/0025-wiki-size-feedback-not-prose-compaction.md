@@ -73,3 +73,19 @@ structured call when the accepted wiki is over budget, asking for a prune
 to the target) or a per-section bound. Both need their own spec and ADR;
 neither is pre-approved here. The operator-facing drift signal stays
 `--wiki-stats` (the `size:` line) and the write-path warning.
+
+## Follow-up: name the live entries (issue #117)
+
+A later soak measured the other shape. Closed history was small. The wiki's
+size lived in 13 `watching` entries, five over 400 characters, at 97% of the
+soft budget. The size note alone did not change that behavior.
+
+Issue #117 chose to teach harder before capping live prose. `wiki_size_note`
+now names the largest live entries and states a 400-character target
+(`wiki-memory.md` rule 29c). The report contract states the same target.
+
+A process cap on live entries stays rejected for now. It cuts the hypothesis
+the wiki exists to keep. A cut can hide the current state of a live problem.
+That is this decision's judgment argument. If a soak still finds the wiki
+over `WIKI_CHAR_BUDGET`, the cap returns. It needs its own ADR. Its marker
+never hides current state. [PLANNED: #117]
