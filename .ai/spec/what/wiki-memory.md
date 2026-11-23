@@ -922,7 +922,9 @@ load-bearing constraint of #5).
     each closed entry's size. The cap bounds closed history: 20 entries hold
     at most 8,000 kept characters. The cap does not bound the whole wiki.
     `watching` entries, metadata lines, and prose sections keep their
-    length. Rule 29 stays the soft drift alarm. This rule is the mechanical bound (rule 28's division).
+    length. Rule 29 stays the soft drift alarm. Rule 29c teaches a
+    live-entry prose target. The process never cuts a live entry. This
+    rule is the mechanical bound (rule 28's division) [DONE: #117].
 
     The pass:
     - keeps the metadata line byte-for-byte. That line carries the id, the
@@ -1059,6 +1061,9 @@ load-bearing constraint of #5).
       (136% of the 20000-character soft budget) — 7296 characters OVER
       budget. Prune at least 7296 characters: rewrite existing prose
       tighter and drop what no longer earns its place.`
+    When `wiki_live_entry_targets` returns pairs, one more sentence names
+    them, their character counts, and their target (rule 29c). It appears
+    within budget and over, and the note stays one line [DONE: #117].
     The note is appended to the **final user message of every attempt's
     prompt**, a blank line between: after `REPORT_CONTRACT` on the first
     attempt, and after the corrective message on a retry — so the note is
@@ -1166,6 +1171,63 @@ load-bearing constraint of #5).
       stop the growth (#85 evidence: 27,773 characters, 39% over the
       20,000 budget, 16,402 of them in the Anomaly log). The Anomaly
       log's own size bound is #86's concern, not this rule's.
+
+29c. **Live-entry prose target** [DONE: #117]. Rule 28a bounds closed
+    history. It leaves `watching` entries whole, because live prose is the
+    hypothesis and the model manages it (rule 28's exemption; ADR 0025).
+    So live entries carry the growth. One demo cluster held 13 watching
+    entries in 5,184 characters. Five of them exceeded the 400 characters
+    that closed entries obey. The wiki stayed at 97% of the soft budget.
+    The process never cuts a live entry. A cut can hide the current state
+    of a live problem. The prose's value is a judgment the process cannot
+    make (ADR 0025). The process teaches the target instead. The report
+    contract states it. The size note names the entries over it.
+    - **The target.** A `watching` entry's continuation prose target is
+      `WIKI_LIVE_ENTRY_CHARS` (400) characters. The number is the rule-28a
+      cap, applied as a taught goal. The two constants carry the same
+      value. The process teaches the live target. It enforces the closed
+      cap. The unit is `len(line)` per line, newlines excluded — the
+      rule-28a measure. The reader ignores a `_truncated:` marker line,
+      like rule 28a. The target covers both metadata sections: a watching
+      Anomaly-log entry is live prose too.
+    - **The reader.** The pure
+      `wiki_live_entry_targets(content, *, target=None, limit=None) ->
+      list[tuple[str, int]]` is the reader. It returns the
+      `(id, characters)` pairs of watching entries over `target`. It
+      scans both metadata sections,
+      fence-aware, like the validator (rule 15). It sorts by descending
+      characters. Ties follow fixed section order: Watch-list document
+      order, then Anomaly-log document order. It keeps the first `limit`
+      pairs.
+      `target` defaults to `WIKI_LIVE_ENTRY_CHARS` and `limit` to
+      `WIKI_LIVE_ENTRY_TARGETS` (3), both read at call time. Closed
+      entries are never returned. It returns an empty list when the
+      content has no metadata section. It makes no I/O and no model calls.
+    - **The note.** Rule 29a's line gains one sentence when the reader
+      returns any pair, within budget or over:
+      `Largest live entries: W-1 (612 chars), W-2 (548 chars) — rewrite each to at most 400 characters of prose.`
+      The ids and counts come from the reader, in its order, comma
+      separated. A single space joins the sentence to the base line. The
+      wording is the same for one entry or several. The target in the
+      sentence is the constant's value. The
+      sentence is absent when no watching entry exceeds the target. The
+      note stays one line. It stays the last text of the prompt.
+    - **The contract.** `REPORT_CONTRACT` carries the target and the ask
+      in three pinned sentences (`reporting-notifications.md` rule 5).
+    - **Taught, never enforced.** `validate_wiki` (rule 15) still judges
+      no prose. No pass truncates a watching entry. The write path does
+      not change. No console line changes: the process makes no cut. The
+      model may exceed the target when a live problem
+      needs the space. The wiki stays a document (Constraints).
+    - **Not a closed-history change.** Rule 28a stands: a closed entry
+      still keeps at most 400 characters, cut by the process.
+    - **The next step.** If a soak still finds the wiki over
+      `WIKI_CHAR_BUDGET`, a process cap on watching prose is the next
+      step. It needs its own ADR. Its marker must never hide the current
+      state of a live problem.
+    - **Acceptance.** A real-cluster soak measures the named live entries
+      and the whole-wiki size. The soak is the acceptance evidence, not a
+      test.
 
 ### Still-Empty Safety Net
 
@@ -1346,6 +1408,14 @@ write.
   lines with one marker line; the metadata line never changes. Passed to
   `truncate_closed_entries` by the write path (read at call time, the
   `WIKI_ANOMALY_KEEP` pattern) [DONE: #86]
+- `WIKI_LIVE_ENTRY_CHARS` — hard-coded constant (not env-configurable), the
+  taught live-entry prose target (rule 29c): 400 characters of continuation
+  prose for a `watching` entry. The target is taught, never enforced; the
+  size note names the entries over it. Read at call time by
+  `wiki_live_entry_targets` [DONE: #117]
+- `WIKI_LIVE_ENTRY_TARGETS` — hard-coded constant (not env-configurable), the
+  number of live entries the size note names (rule 29c): 3, read at call time
+  [DONE: #117]
 - `WIKI_BRANCH_PREFIX` — hard-coded constant (not env-configurable), the
   cluster-branch prefix (rule 4a1): `cluster/`. The full branch is the prefix
   plus the `PATROL_CLUSTER_ID` slug [DONE: #89]
@@ -1382,12 +1452,15 @@ write.
   wiki repo, not the document [DONE: #40]. The keep budget is a count. So
   each closed entry also carries a character cap (rule 28a). Large entries
   can then no longer hold the working set above the soft budget on their own
-  [DONE: #86].
+  [DONE: #86]. Live entries carry a taught target (rule 29c), not a process
+  cap: the model keeps them tight, and the process never cuts a hypothesis
+  [DONE: #117].
 
 ## Planned Changes
 
 | Ticket | Summary |
 |---|---|
+| ~~#117~~ | ~~Live-entry prose target (rule 29c; the model-facing half is `reporting-notifications.md` rule 5). Rule 28a bounds closed history. It leaves `watching` prose whole. So live entries carry the wiki's growth. One demo cluster held 13 watching entries in 5,184 characters. Five were over 400. The wiki sat at 97% of the soft budget. The process does not cut a live hypothesis. Instead the size note (rule 29a) names up to `WIKI_LIVE_ENTRY_TARGETS` (3) largest watching entries with their character counts, within or over budget, and asks for a rewrite to `WIKI_LIVE_ENTRY_CHARS` (400) characters, read by the pure `wiki_live_entry_targets`. The report contract states the target and the ask. Taught, never enforced: no validation rule, no pass, no write-path change, no schema change (`wiki_version` stays 1). A process cap on live prose stays deferred to its own ADR if a soak still finds the wiki over `WIKI_CHAR_BUDGET`. Impl commit also syncs `README.md`'s working-set prose, `ARCHITECTURE.md`'s working-set prose, `AGENTS.md`'s test list, `how/reporting-pipeline.md` (the size-note row and the new symbol), and `how/project-structure.md` (the symbol inventory and the `test_wiki_budget.py` inventory)~~ |
 | ~~#119~~ | ~~Pre-report failure notification (rule 33's amendment, ADR 0040): a patrol that raises before it delivers a report sends one FAILURE message and writes nothing. No schema change: `wiki_version` stays 1. Impl commit also syncs `AGENTS.md`'s test list~~ |
 | ~~#89~~ | ~~Fleet wiki layout (rules 4a, 4a1, 4e, 4f1, 4f2, ADR 0039): one remote repo holds one branch `cluster/<CLUSTER_ID>` per cluster, each carrying its `cluster-wiki.md` at the same path. A wiki repo initializes on the cluster branch; an adopted repo keeps its own branch (typically `main`), and the same-named push follows it — no rename, no history rewrite. `CLUSTER_ID` becomes a ref component, so it must be a slug (lowercase letters, digits, `.`, `_`, `-`; 1–63 characters; starts and ends alphanumeric; no `..`; no `.lock`); `WIKI_BRANCH_PREFIX` (`cluster/`) and the pure `wiki_branch(cluster_id)` expose the rule, and an invalid value fails startup with a config error. The push never forces, fetches, rebases, or merges: a diverged remote branch rejects the push and the local commit stands. The hub read procedure is a fetch of the remote's branches plus a per-branch read of `cluster-wiki.md` at each tip (`git worktree` is optional, operator-only); the hub never pushes to a spoke branch. All local behavior (read, validation, expiry, compaction, stats, churn, commit, push) stays single-branch and never fetches or reads another cluster's branch. `/wiki`, `--wiki /wiki/cluster-wiki.md`, the manifests, and the one-document constraint keep their behavior. No manifest behavior changes. Impl commit also syncs `how/project-structure.md` (the `ensure_wiki_repo`/push signatures and the new `wiki_branch`/`WIKI_BRANCH_PREFIX` symbols), `README.md` (the wiki-remote paragraphs and config table), `ARCHITECTURE.md`'s wiki prose, and `AGENTS.md`'s test list~~ |
 | ~~#86~~ | ~~Closed-entry character bound (rule 28a, ADR 0038; the model-facing half is `reporting-notifications.md` rule 5): rule 28 bounds the count of closed Anomaly-log entries, not their characters — 20 entries held 16,402 characters (59% of the wiki) — so a `resolved`/`expired` entry now keeps at most `WIKI_ANOMALY_ENTRY_CHARS` (400) characters of continuation prose. The pure `truncate_closed_entries(content, cap)` pass keeps whole lines from the top (head share 240) and the bottom (tail share 160), drops the middle, and writes one `_truncated:` marker line naming the dropped characters and git retention; the metadata line stays byte-for-byte (`verified_patrol`, `last_notified`), `watching` entries and the Watch-list stay whole, fences are kept or dropped whole, a second pass changes nothing, and one console line per truncated entry names the cap, and `cap = 0` is legal (marker only). It runs after the prune and before the carry and the stamp. Rule 29 stays the soft alarm; the report contract names the cap so the model writes closed entries tight. Impl commit also syncs `README.md`'s wiki-tail flow line and its working-set paragraphs, `ARCHITECTURE.md`'s working-set prose, `AGENTS.md`'s test list, `how/reporting-pipeline.md` (the write-path order), and `how/project-structure.md` (the symbol inventory)~~ |

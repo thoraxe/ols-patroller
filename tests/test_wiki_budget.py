@@ -1,4 +1,4 @@
-"""Wiki length budget — contract tests for #40 (plus #85's and #111's prose contracts).
+"""Wiki length budget — contract tests for #40 (plus #85's, #111's, and #117's contracts).
 
 These tests pin the public surface of patrol.py's planned working-set
 budgets:
@@ -9,6 +9,9 @@ budgets:
     WIKI_ANOMALY_ENTRY_CHARS                          # rule 28a constant
     truncate_closed_entries(content, cap)             # rule 28a (character cap)
         -> (rewritten content, [truncated entry ids])
+    WIKI_LIVE_ENTRY_CHARS / WIKI_LIVE_ENTRY_TARGETS   # rule 29c constants
+    wiki_live_entry_targets(content, ...)             # rule 29c (taught target)
+    wiki_size_note's live-entry clause                # rule 29c (rule 29a note)
     wiki_budget_warnings(content) -> list[str]        # rule 29 (soft budget)
     wiki_stats: char_count / over_budget keys         # rule 25 amendment
     --wiki-stats: the size line + over-budget warning # rule 24 amendment
@@ -17,12 +20,15 @@ budgets:
     REPORT_CONTRACT: plain-prose clause                # rule 5's #111 clause
     SYSTEM_PROMPT: current-state clause                # patrol-engine rule 3f
 
+    REPORT_CONTRACT: live-entry prose target          # rule 5's #117 clause
+
 They fail before implementation (AttributeError on the missing symbols,
 AssertionError on the missing surfaces) and must pass after.
-Contract: .ai/spec/what/wiki-memory.md rules 28-29 (and rule 28a for the
-closed-entry character bound, rule 29b for the no-patrol-history ban, rule 13a for
-the plain-prose rule) plus the rule 24/25 amendments
-[PLANNED: #40] [PLANNED: #85] [PLANNED: #86] [PLANNED: #111].
+Contract: .ai/spec/what/wiki-memory.md rules 28-29 (rule 28a's closed-entry
+character bound, rule 29c's live-entry target, rule 29b's no-patrol-history
+ban, rule 13a's plain-prose rule) plus the rule 24/25 amendments. The file
+keeps the shipped #40/#85/#86/#111 pins; [PLANNED: #117] is the only planned
+surface.
 
 Scope note: like test_wiki_expiry.py, these tests pin the pure passes. The
 wiring into the patrol tail (expire -> compact -> truncate -> carry -> stamp,
@@ -917,4 +923,199 @@ def test_wiki_repair_pass_carries_no_size_note():
         stub, [HumanMessage("mission")], budget_cut=False,
         current_wiki=big_wiki(target=25_000),
         wiki_repair=("OLD WIKI", [], [])))
-    assert "Current wiki size:" not in _prompt(stub)
+    prompt = _prompt(stub)
+    assert "Current wiki size:" not in prompt
+    assert "Largest live entries" not in prompt  # the #117 ask rides the note
+
+
+def test_validation_repair_live_clause_describes_the_rejected_wiki():
+    """Rule 29c (#117): the validation-repair pass's size note names the
+    **rejected** wiki's live entries, not the on-disk wiki's — the content
+    the model is being asked to fix."""
+    on_disk = build_wiki(watch=[live_entry("W-1", 700)])
+    rejected = build_wiki(watch=[live_entry("W-2", 800)],
+                          anomaly=[live_entry("A-1", 900)])
+    stub = _StubShapeModel([_report("fixed wiki")])
+    asyncio.run(patrol.shape_report(
+        stub, [HumanMessage("mission")], budget_cut=False,
+        current_wiki=on_disk, repair=(rejected, ["bogus_key: 1"])))
+    prompt = _prompt(stub)
+    assert ("Largest live entries: A-1 (900 chars), W-2 (800 chars)"
+            in prompt)
+    assert "W-1 (700 chars)" not in prompt
+
+
+# ------------------------- live-entry prose target (#117, rule 29c)
+# Rule 28a bounds closed history. Live (`watching`) prose carries the rest of
+# the growth, and the process never cuts a hypothesis (ADR 0025). So the size
+# note names the largest live entries and states a target instead.
+
+def live_entry(id, prose_chars, status="watching"):
+    """A watching entry whose continuation prose is exactly `prose_chars`
+    characters (newlines excluded) across whole lines — the rule-29c measure,
+    the same `len(line)` unit as rule 28a."""
+    lines, remaining = [], prose_chars
+    while remaining:
+        n = min(60, remaining)
+        if n < 2:
+            lines.append(" " * n)
+        else:
+            lines.append("  " + "y" * (n - 2))
+        remaining -= n
+    return entry(id=id, status=status, recheck="get pods -n demo-app",
+                 prose="\n".join(lines))
+
+
+def test_live_entry_target_constants_surface():
+    """Rule 29c (#117): the taught live-entry target (400 characters, the
+    rule-28a number) and the number of entries the note names (3) are pinned
+    hard-coded constants — retuning them is a spec change."""
+    assert patrol.WIKI_LIVE_ENTRY_CHARS == 400
+    assert patrol.WIKI_LIVE_ENTRY_TARGETS == 3
+    # rule 29c: the taught target is the rule-28a cap value
+    assert patrol.WIKI_LIVE_ENTRY_CHARS == patrol.WIKI_ANOMALY_ENTRY_CHARS
+
+
+def test_live_entry_targets_returns_empty_without_a_metadata_section():
+    """Rule 29c (#117): content with no metadata section yields no pairs —
+    the defensive degradation the size note relies on for arbitrary input."""
+    assert patrol.wiki_live_entry_targets("") == []
+    assert patrol.wiki_live_entry_targets("x" * 120) == []
+
+
+def test_live_entry_targets_reads_only_watching_entries_over_the_target():
+    """Rule 29c (#117): the reader returns watching entries of both metadata
+    sections whose continuation prose strictly exceeds the target, sorted by
+    descending characters. A closed entry is never returned, however long."""
+    wiki = build_wiki(
+        watch=[live_entry("W-1", 612), live_entry("W-2", 400),
+               live_entry("W-3", 401)],
+        anomaly=[live_entry("A-1", 900),
+                 live_entry("A-2", 900, status="resolved")])
+    assert patrol.wiki_live_entry_targets(wiki, target=400) == [
+        ("A-1", 900), ("W-1", 612), ("W-3", 401)]
+
+
+def test_live_entry_targets_caps_the_list_and_ties_follow_document_order():
+    """Rule 29c (#117): equal counts sort by document order (Watch-list
+    first, then Anomaly log) and the reader keeps only the first `limit`."""
+    wiki = build_wiki(
+        watch=[live_entry("W-1", 500), live_entry("W-2", 700),
+               live_entry("W-3", 700)],
+        anomaly=[live_entry("A-1", 700)])
+    assert patrol.wiki_live_entry_targets(wiki, target=400, limit=2) == [
+        ("W-2", 700), ("W-3", 700)]
+
+
+def test_live_entry_targets_defaults_are_read_at_call_time(monkeypatch):
+    """Rule 29c (#117): like the #40/#86 budgets, the target and the limit
+    are read at call time — monkeypatching them changes the reader."""
+    wiki = build_wiki(
+        watch=[live_entry("W-1", 500), live_entry("W-2", 600),
+               live_entry("W-3", 700), live_entry("W-4", 800)])
+    monkeypatch.setattr(patrol, "WIKI_LIVE_ENTRY_CHARS", 450)
+    monkeypatch.setattr(patrol, "WIKI_LIVE_ENTRY_TARGETS", 1)
+    assert patrol.wiki_live_entry_targets(wiki) == [("W-4", 800)]
+
+
+def test_live_entry_targets_is_fence_aware():
+    """Rule 29c (#117): fenced list-looking lines are prose (rule 11), never
+    entries — the same fence-aware scanning as the validator."""
+    fenced = ["```", meta_line(id="W-9"), "  " + "z" * 900, "```"]
+    wiki = build_wiki(watch=[*fenced, live_entry("W-1", 500)])
+    assert patrol.wiki_live_entry_targets(wiki, target=400) == [("W-1", 500)]
+
+
+def test_live_entry_targets_ignores_a_truncation_marker_line():
+    """Rule 29c (#117): a re-opened closed entry can still carry rule 28a's
+    `_truncated:` marker. The reader ignores that line when it measures, the
+    same exclusion rule 28a makes for its own marker."""
+    marker = ("  _truncated: 512 characters elided; git history has the "
+              "full entry_")
+    block = meta_line(id="W-1") + "\n" + marker + "\n  " + "y" * 898
+    wiki = build_wiki(watch=[block])
+    assert patrol.validate_wiki(wiki) == [], "test fixture must be skeleton-valid"
+    assert patrol.wiki_live_entry_targets(wiki, target=400) == [("W-1", 900)]
+
+
+def test_size_note_names_the_largest_live_entries_within_budget():
+    """Rule 29c (#117): the size note gains one sentence naming the largest
+    live entries with their character counts, within budget as well as over —
+    the wiki can grow while still under the soft budget (the #117 evidence:
+    97% and rising)."""
+    wiki = build_wiki(watch=[live_entry("W-1", 612), live_entry("W-2", 548)])
+    note = patrol.wiki_size_note(wiki)
+    count, budget = len(wiki), patrol.WIKI_CHAR_BUDGET
+    assert note == (
+        f"Current wiki size: {count} characters "
+        f"({int(100 * count / budget)}% of the {budget}-character soft "
+        f"budget) — {budget - count} characters of headroom. Do not grow it "
+        "without pruning something else. Largest live entries: W-1 (612 "
+        "chars), W-2 (548 chars) — rewrite each to at most 400 characters "
+        "of prose.")
+
+
+def test_size_note_live_clause_is_absent_without_an_over_target_entry():
+    """Rule 29c (#117): no watching entry over the target means no sentence.
+    A long closed entry never triggers it (rule 28a owns closed prose)."""
+    wiki = build_wiki(
+        watch=[live_entry("W-1", 400)],
+        anomaly=[live_entry("A-1", 900, status="expired")])
+    assert patrol.wiki_live_entry_targets(wiki, target=400) == []
+    note = patrol.wiki_size_note(wiki)
+    assert "Largest live entries" not in note
+
+
+def test_size_note_live_clause_survives_the_over_budget_branch():
+    """Rule 29c (#117): the sentence joins the over-budget note too, after
+    the excess and prune instruction — both asks reach the model."""
+    live = live_entry("W-1", 700)
+    wiki = big_wiki(target=25_000).replace(
+        "## Watch-list\n_(empty)_", "## Watch-list\n" + live, 1)
+    assert patrol.validate_wiki(wiki) == [], "test fixture must be skeleton-valid"
+    note = patrol.wiki_size_note(wiki)
+    assert "OVER budget" in note and "Prune at least" in note
+    assert note.endswith(
+        "Largest live entries: W-1 (700 chars) — rewrite each to at most "
+        "400 characters of prose.")
+
+
+def test_report_contract_states_the_live_entry_target():
+    """reporting-notifications.md rule 5 (#117): the contract carries the
+    target and the ask verbatim, with the number the constant holds (rule
+    29c). Teaching only: the target never gates validation."""
+    flat = " ".join(patrol.REPORT_CONTRACT.split())
+    cap = patrol.WIKI_LIVE_ENTRY_CHARS
+    clauses = (
+        f"A watching entry's prose target is {cap} characters.",
+        "When a watching entry exceeds its target, the size line names the "
+        "largest live entries and their character counts.",
+        "When the size line names an entry, rewrite it to at most "
+        f"{cap} characters of prose.",
+    )
+    for clause in clauses:
+        assert clause in flat, f"REPORT_CONTRACT must carry {clause!r}"
+
+
+def reorder_sections(content, order):
+    """Rebuild the wiki body with the sections in `order` — rule 11 allows
+    free section order, so the reader must not depend on file order."""
+    head, _, rest = content.partition("\n## ")
+    by_name = {}
+    for chunk in rest.split("\n## "):
+        by_name[chunk.split("\n", 1)[0]] = chunk
+    return head + "\n## " + "\n## ".join(by_name[name] for name in order)
+
+
+def test_live_entry_targets_uses_fixed_section_order_not_file_order():
+    """Rule 29c (#117): ties follow the fixed Watch-list-then-Anomaly-log
+    document order (the rule 26 / `_ordered_entries` convention), not the
+    file's section order — section order is free (rule 11)."""
+    wiki = build_wiki(
+        watch=[live_entry("W-1", 700)],
+        anomaly=[live_entry("A-1", 700)])
+    reordered = reorder_sections(wiki, [
+        "Topology", "Baselines", "Anomaly log", "Watch-list", "Open questions"])
+    assert patrol.validate_wiki(reordered) == [], "test fixture must be skeleton-valid"
+    assert patrol.wiki_live_entry_targets(reordered, target=400) == [
+        ("W-1", 700), ("A-1", 700)]

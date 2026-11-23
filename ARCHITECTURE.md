@@ -108,7 +108,10 @@ closed entry's continuation prose at 400 characters on write (whole lines
 from the head and the tail, the middle replaced by a `_truncated:` marker
 line, recoverable from the repo), and warns when the whole wiki passes the
 soft 20,000-character budget (`.ai/spec/decisions/0017`,
-`.ai/spec/decisions/0038`). Since #20 the prompt teaches an efficient
+`.ai/spec/decisions/0038`). Live (`watching`) prose keeps no process cap — a
+cut can hide the current state of a live problem — so the size note teaches a
+400-character live-entry target and names the largest live entries instead
+(`.ai/spec/decisions/0025`). Since #20 the prompt teaches an efficient
 cluster sweep — layered (operators → nodes → namespaces → workload objects →
 problem pods → warning events), field-selected (`--field-selector`,
 jsonpath/custom-columns, single-object drilldowns) over flat enumeration and

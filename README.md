@@ -185,7 +185,10 @@ closed entry keeps at most 400 characters of prose: the patroller keeps whole
 lines from the top and the bottom of a longer entry, drops the middle, and
 leaves a `_truncated:` marker line naming the dropped characters and git
 history — one console line each, metadata untouched. And a soft 20,000-character budget
-warns on overshoot without ever rejecting a write.
+warns on overshoot without ever rejecting a write. Live (`watching`) prose is
+never cut — a cut can hide the current state of a live problem — but the size
+note teaches the same 400-character target and names the largest live entries
+(`.ai/spec/decisions/0025`).
 
 ## Security model
 

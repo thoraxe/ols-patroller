@@ -188,7 +188,14 @@ under current policy (clean implementation review + `implementation-complete`):
   plain-English clause (short sentences, one idea per sentence, the active
   voice, simple tenses, no idioms, one word for one thing, the same word on
   the next patrol, and the excluded machine fields) and its absence from
-  `SYSTEM_PROMPT`); and
+  `SYSTEM_PROMPT`; plus the live-entry prose-target contract of #117 — the
+  `WIKI_LIVE_ENTRY_CHARS`/`WIKI_LIVE_ENTRY_TARGETS` pins, the
+  `wiki_live_entry_targets` matrix (watching-only, strict `>` boundary, cap,
+  tie order, free section order, fence awareness, marker exclusion,
+  call-time defaults, empty input), the size note's live clause (within and
+  over budget, and the rejected wiki's entries in the validation-repair
+  pass), the wiki-repair pass carrying no live clause, and the contract's
+  three verbatim clauses); and
   `tests/test_request_bounds.py` covers the per-call-shape request-bound
   contract (#49 and #63, plus #88's lowered reporting bound and #101's
   28000 bound — retuned from #97's 24000: the two timeout
