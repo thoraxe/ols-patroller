@@ -88,4 +88,4 @@ A process cap on live entries stays rejected for now. It cuts the hypothesis
 the wiki exists to keep. A cut can hide the current state of a live problem.
 That is this decision's judgment argument. If a soak still finds the wiki
 over `WIKI_CHAR_BUDGET`, the cap returns. It needs its own ADR. Its marker
-never hides current state. [PLANNED: #117]
+never hides current state. [DONE: #117]

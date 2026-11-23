@@ -208,6 +208,8 @@ WIKI_STATS_LOPSIDED_SHARE = 2 / 3   # dominant-level share that fires the warnin
 # so tests can bound them.
 WIKI_ANOMALY_KEEP = 20          # last resolved/expired Anomaly-log entries kept
 WIKI_ANOMALY_ENTRY_CHARS = 400  # closed-entry continuation-prose cap (chars)
+WIKI_LIVE_ENTRY_CHARS = 400     # taught live-entry continuation-prose target (chars)
+WIKI_LIVE_ENTRY_TARGETS = 3     # live entries the size note names (rule 29c)
 WIKI_CHAR_BUDGET = 20_000       # soft whole-wiki character budget (whole file)
 
 # Egress allowlist (egress-control.md rule 6, #34; ADR 0030). Hard-coded, not
@@ -1194,7 +1196,11 @@ Produce the final PatrolReport for the cluster patrol above:
      entry with status resolved or expired keeps at most
      {WIKI_ANOMALY_ENTRY_CHARS} characters of prose. The patroller truncates a
      longer entry on whole lines and leaves a marker line. Git history has the
-     full entry.
+     full entry. A watching entry's prose target is {WIKI_LIVE_ENTRY_CHARS}
+     characters. When a watching entry exceeds its target, the size line names
+     the largest live entries and their character counts. When the size line
+     names an entry, rewrite it to at most {WIKI_LIVE_ENTRY_CHARS} characters
+     of prose.
      The wiki records current state only — never write patrol-history prose: no
      per-patrol headline log, no History: list, no "as of patrol #N" chronology.
      Git history is the record of what changed when. Keep the opening prose to a
@@ -2439,6 +2445,56 @@ def truncate_closed_entries(content: str, cap: int) -> tuple[str, list[str]]:
     return "\n".join(out), truncated
 
 
+def wiki_live_entry_targets(content: str, *, target: int | None = None,
+                            limit: int | None = None) -> list[tuple[str, int]]:
+    """Rule 29c (#117): the taught live-entry prose target — pure, read-only.
+
+    Rule 28a bounds closed history mechanically; `watching` prose stays whole
+    because a live entry is the hypothesis and the process cannot judge what
+    to cut (rule 28's exemption; ADR 0025). So the process teaches the target
+    instead: a `watching` entry's continuation prose should stay at or under
+    `WIKI_LIVE_ENTRY_CHARS` characters (the rule-28a number, applied as a
+    goal). This reader names the entries over it.
+
+    Returns the `(id, characters)` pairs of watching entries whose
+    continuation prose strictly exceeds `target`, sorted by descending
+    characters with ties in fixed section order — Watch-list document order,
+    then Anomaly-log document order — capped at the first `limit` pairs. It
+    scans both metadata sections fence-aware (rule 15), measures `len(line)`
+    summed with newlines excluded (the rule-28a measure), and ignores a
+    `_truncated:` marker line exactly like rule 28a. Closed entries are never
+    returned; content with no metadata section yields []. `target` defaults
+    to WIKI_LIVE_ENTRY_CHARS and `limit` to WIKI_LIVE_ENTRY_TARGETS, both
+    read at call time. No I/O, no model calls, no mutation.
+    """
+    if target is None:
+        target = WIKI_LIVE_ENTRY_CHARS
+    if limit is None:
+        limit = WIKI_LIVE_ENTRY_TARGETS
+    lines = content.split("\n")
+    sections = _scan_sections(lines)
+    over: list[tuple[str, int]] = []
+    for name in WIKI_METADATA_SECTIONS:
+        for section, start, end in sections:
+            if section != name:
+                continue
+            for idx in _scan_section_entries(lines, start, end):
+                pairs = _metadata_pairs(lines[idx])
+                if pairs.get("status") != "watching":
+                    continue
+                entry_id = pairs.get("id")
+                if not entry_id:
+                    continue
+                continuation = lines[idx + 1:_item_extent(lines, idx)]
+                chars = sum(len(line) for line in continuation
+                            if not _is_truncation_marker(line))
+                if chars > target:
+                    over.append((entry_id, chars))
+    # Stable sort: equal counts keep the fixed section/document order above.
+    over.sort(key=lambda pair: pair[1], reverse=True)
+    return over[:limit]
+
+
 # ---- notification dedup (reporting-notifications.md rules 4a-4e, #35) ----
 # Notifications are state-change keyed: the wiki's standing entries are the
 # diff baseline. Everything here is pure — no I/O, no model calls — and uses
@@ -2732,6 +2788,12 @@ def wiki_size_note(content: str, *, budget: int | None = None) -> str:
     nothing. `budget` defaults to WIKI_CHAR_BUDGET read at call time (the
     rule-28/29 convention); the boundary `count == budget` is within budget
     (0 characters of headroom), matching rule 29's strict overshoot test.
+
+    Rule 29c (#117): when `wiki_live_entry_targets` names any entry — within
+    budget or over — one more sentence follows the base line, joined by a
+    single space, naming those `(id, characters)` pairs and the taught
+    target. No over-target watching entry means no sentence, so the note
+    stays one line and stays the last text of the prompt.
     """
     if not content:
         return ""
@@ -2743,11 +2805,19 @@ def wiki_size_note(content: str, *, budget: int | None = None) -> str:
             f"{budget}-character soft budget) — ")
     if count > budget:
         excess = count - budget
-        return (f"{head}{excess} characters OVER budget. Prune at least "
+        note = (f"{head}{excess} characters OVER budget. Prune at least "
                 f"{excess} characters: rewrite existing prose tighter and "
                 "drop what no longer earns its place.")
-    return (f"{head}{budget - count} characters of headroom. Do not grow it "
-            "without pruning something else.")
+    else:
+        note = (f"{head}{budget - count} characters of headroom. Do not grow it "
+                "without pruning something else.")
+    live = wiki_live_entry_targets(content)
+    if live:
+        named = ", ".join(f"{entry_id} ({chars} chars)"
+                          for entry_id, chars in live)
+        note += (f" Largest live entries: {named} — rewrite each to at most "
+                 f"{WIKI_LIVE_ENTRY_CHARS} characters of prose.")
+    return note
 
 
 def wiki_budget_warnings(content: str) -> list[str]:

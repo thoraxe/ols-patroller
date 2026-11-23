@@ -69,7 +69,7 @@ redefined here.
   pass, `--wiki-stats`) without ever failing validation. Live (`watching`)
   prose has a taught target (`WIKI_LIVE_ENTRY_CHARS`, 400) that the size
   note names. The process never cuts it (the **live-entry prose target**,
-  rule 29c) [PLANNED: #117]. The wiki is what
+  rule 29c) [DONE: #117]. The wiki is what
   the next patrol reads; the repo is what the auditor reads.
 - **Patrol-history prose** — document-level prose replaying what each
   patrol did and when (#85, `wiki-memory.md` rule 29b): a per-patrol
@@ -87,7 +87,7 @@ redefined here.
   wiki-in-play's character count, the soft budget, and the over-budget
   excess (with a prune target) or the headroom. When a watching entry
   exceeds its prose target, one more sentence names the largest live
-  entries and the target (rule 29c) [PLANNED: #117]. The process's rule-29
+  entries and the target (rule 29c) [DONE: #117]. The process's rule-29
   warning tells the human; the size note tells the model, whose rewrite
   decides.
 - **Notification dedup** — notification hygiene on state change, not every
