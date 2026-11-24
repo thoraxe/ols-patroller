@@ -257,7 +257,10 @@ that list into a default-deny policy — render it with `--egress-policy` (see
 | `PATROL_CLUSTER_ID` | `local` | cluster identity for wiki commit emails (`patrol@<id>`) and the cluster branch `cluster/<id>`; must be a slug (lowercase letters, digits, `.`, `_`, `-`; 1–63 characters; starts and ends alphanumeric; no `..`; no `.lock` suffix) |
 | `PATROL_WIKI_REMOTE` | — | if set, wiki commits are pushed there on the same-named branch (best-effort replication); one repo can hold one branch per cluster |
 | `PATROL_WIKI_STALE_AFTER` | `5` | auto-expire a watch-list entry — flip to `expired`, move it to the Anomaly log with an `auto-expired` annotation — when its `last_verified` has not advanced for this many accepted wiki writes; `0` disables the flip (the per-entry clock is still kept) |
-| `--wiki-stats` (CLI flag) | — | print the wiki's health numbers (verification rate, resolution ratio, confidence spread, churn, size against the soft 20,000-char budget) and exit — fully offline: no `PATROL_*` env, no cluster, no repo initialization; a missing wiki file is an error, everything else degrades to `n/a`. Churn examines the last 5 wiki commits (prose-only — process stamps and date advances never count as rewording) and the lopsided-confidence warning fires at ≥ 2/3 of ≥ 5 graded entries; both thresholds are hard-coded, not configurable |
+| `--wiki-stats` (CLI flag) | — | print the wiki's health numbers |
+
+- **`--wiki-stats` (CLI flag)** — print the wiki's health numbers (verification rate, resolution ratio, confidence spread, churn, size against the soft 20,000-char budget) and exit — fully offline: no `PATROL_*` env, no cluster, no repo initialization; a missing wiki file is an error, everything else degrades to `n/a`. Churn examines the last 5 wiki commits (prose-only — process stamps and date advances never count as rewording) and the lopsided-confidence warning fires at ≥ 2/3 of ≥ 5 graded
+  entries; both thresholds are hard-coded, not configurable
 
 ## Deploy in-cluster
 

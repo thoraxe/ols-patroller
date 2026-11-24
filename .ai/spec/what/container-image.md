@@ -241,10 +241,13 @@ manifests deploy by default.
 
 | Ticket | Summary |
 |---|---|
-| ~~#102~~ | Release-pinned manifests and the release ordering (rule 16's rewrite + new rule 19; the manifest-side behavior is `in-cluster-deployment.md` rules 8/8b, ADR 0035): the manifest default names the newest published `vX.Y.Z` release, not `:main`; the pin commit (`newTag: vX.Y.Z`) merges and its `sha-<SHA>` build must exist **before** the release tag is published; published tags are never moved (a wrong pin is fixed forward, and pre-rule releases get a follow-up pin on `main`); `image.yml` never writes `manifests/`. The v0.3.2 release predates the rule — its pin lands on `main` in the implementation commit without moving the tag. Impl commit also syncs `AGENTS.md`'s test list and the stale `image.yml` rule-range comment |
+| ~~#102~~ | Release-pinned manifests and the release ordering |
 | ~~#1~~ | This file's own contract: Containerfile + `requirements.txt` (rules 1–12) |
 | ~~#2~~ | Manifests consuming this image (`in-cluster-deployment.md`) + the post-merge CI that publishes it to GHCR (rules 13–16) |
 | ~~#25~~ | Default cadence 6 h: CMD `--interval 21600` (rule 9), kept identical to the Deployment args and the `patrol.py` env default |
 | ~~#36~~ | Release image tags: published `v*` releases retag the matching `sha-<SHA>` image — no rebuild — plus a `workflow_dispatch` manual retag path (rules 17–18; ADR 0010). Impl commit also syncs the image-CI entries in `how/project-structure.md`, `ARCHITECTURE.md`, and the `image.yml` pointer in `in-cluster-deployment.md`'s Configuration Surface |
 | ~~#5~~ | `pyyaml` joins the pinned runtime set (rules 6, 12) — the wiki skeleton's frontmatter parser (`wiki-memory.md` rule 15) |
 | ~~#9~~ | `apprise` joins the pinned runtime set and `requests` drops from it (rules 6, 12) — multi-sink notifications (`reporting-notifications.md` rules 10a–10c) |
+
+- **~~#102~~** — Release-pinned manifests and the release ordering (rule 16's rewrite + new rule 19; the manifest-side behavior is `in-cluster-deployment.md` rules 8/8b, ADR 0035): the manifest default names the newest published `vX.Y.Z` release, not `:main`; the pin commit (`newTag: vX.Y.Z`) merges and its `sha-<SHA>` build must exist **before** the release tag is published; published tags are never moved (a wrong pin is fixed forward, and pre-rule releases get a follow-up pin on `main`);
+  `image.yml` never writes `manifests/`. The v0.3.2 release predates the rule — its pin lands on `main` in the implementation commit without moving the tag. Impl commit also syncs `AGENTS.md`'s test list and the stale `image.yml` rule-range comment
