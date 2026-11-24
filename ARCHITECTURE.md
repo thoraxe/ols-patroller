@@ -11,7 +11,8 @@ cluster's topology, baselines, and watch-list, refined patrol after patrol.
 It is a hacky single-file PoC (`patrol.py`, tracked in
 [OLS-4439](https://redhat.atlassian.net/browse/OLS-4439)) whose safety model is held
 to production standards. Roadmap: GitHub issues + milestones (v0.1 in-cluster, v0.2
-compounding wiki, v0.3 operational hardening).
+compounding wiki, v0.3 operational hardening and patches, v0.4.0 fleet memory &
+wiki usability, plus a `future` research milestone).
 
 ## One patrol, end to end
 

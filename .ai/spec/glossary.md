@@ -287,7 +287,7 @@ redefined here.
   exhausted 24000 completion tokens while the gateway window was not
   binding), v0.4.0 fleet
   memory & wiki usability (#89: one repo, one branch per cluster; #13: fleet
-  spoke push/hub read; #26: wiki viewer; #86: anomaly-log character cap; #87:
+  spoke push/hub read; #86: anomaly-log character cap; #87:
   process-generated topology diagram; #106: the empty-wiki reason names bound
   truncation; #119: a patrol that fails before its report notifies),
   future (#12, #14–#16, #31, #41). Plans live

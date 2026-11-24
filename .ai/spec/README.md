@@ -111,8 +111,8 @@ review-checked. Rule 11's table-row cap is the row half of rule 13's line cap.
 
 The line cap in rule 13 covers every `.ai/spec/` file and the top-level docs
 (`README.md`, `ARCHITECTURE.md`, `AGENTS.md`). The gitignored `verification/`
-reports are exempt. The corpus does not yet comply with rules 11–13. The #124
-cleanup [DONE: #124] brings it under them.
+reports are exempt. The #124 cleanup [DONE: #124] brought the corpus under rules
+11–13.
 Moving existing code-map detail out of `what/` is deferred: rule 14 applies to
 new and changed text, and existing signatures are contract text. A line over the
 cap splits into a short table row plus a bulleted list below the table, or into
