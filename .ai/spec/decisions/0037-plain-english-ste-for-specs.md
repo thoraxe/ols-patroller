@@ -20,6 +20,8 @@ both `what/` and `how/` text.
 - Easier: a reviewer reads each rule once and checks it.
 - Harder: specs are longer because each sentence has one idea.
 - The rules apply to new and changed text only. We do not migrate whole files.
+- The document-shape rules 11–13 amend this scope: they apply to the whole
+  documented set ([0042](0042-readable-spec-documents.md)).
 - No runtime behavior changes. The rules are process rules, not behavioral
   contracts.
 - The wiki's own prose is a separate change (#111). This record does not govern

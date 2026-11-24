@@ -88,13 +88,39 @@ these rules. ASD-STE100 (Simplified Technical English) is the model.
 8. Put the plain rule first. Put exact fields and limits after it.
 9. Every behavioral rule must be testable.
 10. Write what the change will not do.
+11. Keep every table row at most 500 characters. Put longer detail in a
+    bulleted list below the table.
+12. Keep each table cell on one line. Escape a literal `|` as `\|`. Use the same
+    number of cells in every row of a table block. A pipe inside a code span is
+    still a separator.
+13. Keep each non-fenced line at most 500 characters in `.ai/spec/` (except the
+    gitignored `verification/` reports) and the top-level docs.
+14. Put behavior in `what/`. Put function names, signatures, and module internals
+    in `how/`. Put history and rationale in `decisions/`.
+15. Never change a rule's meaning in a readability edit. A wording change that
+    alters behavior needs its own spec-first PR. A readability PR states what it
+    moved and what it rewrote.
 
-The rules apply to new and changed text in `what/` files, `glossary.md`,
-`constraints.md`, the ADRs, and the PR body. A `how/` file uses the same sentence
-rules with the exact names from the code.
+Rules 11–13 apply outside fenced code blocks to every `.ai/spec/` file and the
+top-level docs. Rules 1–10 and 14–15 apply to new and changed text in `what/`
+files, `glossary.md`, `constraints.md`, the ADRs, and the PR body. A `how/` file
+uses the same sentence rules with the exact names from the code.
+
+Rules 11–13 are pinned by `tests/test_spec_docs.py`. Rules 14–15 are
+review-checked. Rule 11's table-row cap is the row half of rule 13's line cap.
+
+The line cap in rule 13 covers every `.ai/spec/` file and the top-level docs
+(`README.md`, `ARCHITECTURE.md`, `AGENTS.md`). The gitignored `verification/`
+reports are exempt. The corpus does not yet comply with rules 11–13. The #124
+cleanup [PLANNED: #124] brings it under them.
+Moving existing code-map detail out of `what/` is deferred: rule 14 applies to
+new and changed text, and existing signatures are contract text. A line over the
+cap splits into a short table row plus a bulleted list below the table, or into
+wrapped prose.
 
 When a spec PR touches a rule, simplify that rule and its immediate neighbors in
-the same section. Do not migrate whole files.
+the same section. Do not migrate whole files for the sentence rules. Rules 11–13
+are the exception: the #124 cleanup brings the existing corpus under them.
 
 ## Conventions
 

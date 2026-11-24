@@ -44,6 +44,12 @@ Other paths:
 
 - `conftest.py` (repo-root import path)
 
+- `test_spec_docs.py` — spec-document shape (rules 11–13: the 500-character cap
+  on non-fenced lines across `.ai/spec/` and the top-level docs, one cell count
+  per table block (only an escaped pipe is a literal; a pipe in a code span
+  still separates cells), fence awareness, and the
+  README's pinned shape rules) [PLANNED: #124]
+
 - `test_wiki_git.py` — wiki git persistence unit tests (#3 spec PR)
 
 - `test_wiki_layout.py` — the fleet wiki layout (#89: the `wiki_branch` slug matrix, the startup

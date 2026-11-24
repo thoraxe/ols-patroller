@@ -81,6 +81,11 @@ under current policy (clean implementation review + `implementation-complete`):
   error with the offline-mode ordering, init on the cluster branch, adopted-repo
   branch preservation, the same-named push, never-force, divergence without
   force, two spokes on one remote path, and single-branch isolation);
+  `tests/test_spec_docs.py` covers the spec-document shape contract of #124
+  (rules 11–13: the 500-character cap on non-fenced lines across
+  `.ai/spec/` and the top-level docs, one cell count per table block (only an
+  escaped pipe is a literal; a pipe in a code span still separates cells),
+  fence awareness, and the README's pinned shape rules);
   `tests/test_container_image.py` covers
   the image contract (#1); `tests/test_kubectl_guard.py` covers the guard
   contract; `tests/test_secret_access.py` covers the Secret-access and
